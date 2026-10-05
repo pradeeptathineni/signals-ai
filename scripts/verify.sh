@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+npm run release:check
+npm run corpus -- check
 npm run db:init
 npm run db:seed
 npm run db:schema-check

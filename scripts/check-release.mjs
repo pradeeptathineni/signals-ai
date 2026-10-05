@@ -1,4 +1,6 @@
 import { readFileSync } from 'node:fs';
+import { URL } from 'node:url';
+import process from 'node:process';
 
 // The withdrawn stable name cannot be reused by the ordinary milestone process.
 const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url)));
