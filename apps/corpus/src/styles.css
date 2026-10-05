@@ -197,7 +197,8 @@ h2 {
 }
 .finding {
   display: grid;
-  grid-template-columns: 1fr 1.5fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  overflow-wrap: anywhere;
   gap: 3rem;
   padding: 2rem 0;
   border-bottom: 1px solid #c4cdc1;
@@ -264,6 +265,7 @@ summary {
   min-height: 44px;
 }
 .comparison {
+  overflow-wrap: anywhere;
   margin: 2.5rem 0;
   padding: 1.5rem;
   background: #fff;

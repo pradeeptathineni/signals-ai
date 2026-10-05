@@ -117,3 +117,22 @@ test('rejects corrupt public JSON before rendering and can recover', async ({ pa
   await page.getByRole('button', { name: 'Retry loading' }).click();
   await expect(page.locator('.finding').first()).toBeVisible();
 });
+
+test('all real records reflow on a narrow screen including long provider identifiers', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 900 });
+  await page.goto('');
+  await expect(page.locator('.finding').first()).toBeVisible();
+  await page
+    .locator('.finding details')
+    .evaluateAll((nodes) => nodes.forEach((node) => node.setAttribute('open', '')));
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByLabel('Search keywords').fill('How can I keep reusable prompt prefixes stable?');
+  await page.getByLabel('Text matching').selectOption('ranked');
+  await expect(page.locator('.finding').first()).toHaveAttribute(
+    'data-option-id',
+    'option-claude-prefix-cache',
+  );
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
