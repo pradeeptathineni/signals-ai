@@ -4,7 +4,7 @@
   "review": {
     "digest": "f2d6172b49720e864e037b794f507c4b7107f45f642c84a3e58f7584cf39b9b3",
     "category": "Research",
-    "reviewedAt": "2026-10-05T20:08:28Z",
+    "reviewedAt": "2026-10-05T21:33:40Z",
     "reviewer": "agent-reviewed",
     "rationale": "Primary source supports each paraphrased claim within the stated scope; recommendation and unobserved benefit are explicit. No private fields or reproduced source content admitted.",
     "claimReviews": [
@@ -14,7 +14,33 @@
         "reviewAfterDays": null
       }
     ],
-    "state": "admitted"
+    "state": "admitted",
+    "quality": {
+      "policyVersion": "signal-review-v1",
+      "evidenceDigest": "f2d6172b49720e864e037b794f507c4b7107f45f642c84a3e58f7584cf39b9b3",
+      "researchRunId": "host-agent-acquisition-20261005",
+      "reviewRunId": "source-research-quality-review-20261005",
+      "reviewer": "agent:source_research",
+      "reviewedAt": "2026-10-05T21:33:40Z",
+      "options": [
+        {
+          "optionId": "option-source-lineage",
+          "ratings": {
+            "relevance": 3,
+            "evidence": 3,
+            "usefulness": 3,
+            "clarity": 3
+          },
+          "reasons": {
+            "relevance": "Per-claim identity and attribution are concrete; provenance remains distinct from truth and corroboration.",
+            "evidence": "Per-claim identity and attribution are concrete; provenance remains distinct from truth and corroboration.",
+            "usefulness": "Per-claim identity and attribution are concrete; provenance remains distinct from truth and corroboration.",
+            "clarity": "Per-claim identity and attribution are concrete; provenance remains distinct from truth and corroboration."
+          },
+          "blockers": []
+        }
+      ]
+    }
   },
   "evidence": {
     "schema_version": 1,

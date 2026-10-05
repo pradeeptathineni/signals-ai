@@ -4,6 +4,7 @@ import tseslint from 'typescript-eslint';
 export default tseslint.config(
   {
     ignores: [
+      '.signals/**',
       'dist/**',
       'node_modules/**',
       'coverage/**',

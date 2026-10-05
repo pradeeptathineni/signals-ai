@@ -2,13 +2,21 @@
 
 ## 0.3.0
 
-- Git-backed JSON records in signal-type folders are the primary Corpus. Indexes and Pages are generated
-  views; the default development, build and verification commands require no database service.
-  Conversion preserves every previously published evidence byte and digest.
-
-- New readiness assessments distinguish documented practice from runtime trials and bind useful
-  feedback to the exact task and action. Claim-specific freshness replaces the universal review
-  window for new assessments; immutable v1 records keep their recorded meaning.
+- Git-backed JSON records in signal-type folders are the Corpus database. Indexes and Pages are generated
+  views. Database services, containers, dependencies and compatibility commands are removed.
+  All 83 retained database snapshots (981,522 rows) were migrated to private immutable JSONL files,
+  hash/count checked and compared through four representative typed restores before removal.
+  Source commits and historical policy results remain preserved; published evidence bytes keep their digests.
+- A separate review gate admits only options whose relevance, evidence, usefulness and clarity each
+  score at least 3/4, with supported claims and current observations. The weakest dimension sets the
+  ordinal score; threshold 75 is policy, not probability or proven benefit. Weak findings are withdrawn
+  and revised through successors.
+- Ordinary questions use shared literal and ranked word retrieval, optional bounded model organization
+  and an independent answer challenge. Precise filters constrain both retrieval paths. Invalid model output
+  retains deterministic candidates. Local question history is private
+  JSON; users do not author evidence receipts. Pages remains a static public view.
+- Actual Signals concept definitions drive coverage evaluation. Missing semantic indexing and cache-hit
+  verification remain explicit gaps; fixture validation is separate from configured-live model performance.
 - Context instructions use a narrower explicit resource closure and a portable checked selection.
 
 Reviewed public Corpus files now drive a searchable static preview and structured CLI results.
@@ -17,9 +25,8 @@ optional evidence downloads make the collection useful without a model or databa
 Closed public fields and atomic derived snapshots protect publication. Browser and regression
 checks cover corrupt downloads, partial export failure and late model results after a query change.
 
-Local Corpus text search no longer creates model work. Historical numeric ranking is optional
-detail. Development evaluation/benchmark commands use feature names; their frozen policies and
-fixtures are unchanged.
+Local Corpus text search does not create model work. Retired numeric policies and their recorded
+results retain their historical meaning in Git and private migrated snapshots.
 
 Stable designation withdrawn pending broader product review. The premature `v1.0.0` release and
 tag pointed to `c834bea242106511463d3bff934011d3a3cfa1ac`; that commit and ordinary history remain

@@ -27,6 +27,28 @@ function Corpus() {
   const [attempt, setAttempt] = useState(0);
   const [filters, setFilters] = useState<PublicFilters>({});
   const [selected, setSelected] = useState<string[]>([]);
+  const [savedQuery, setSavedQuery] = useState('');
+  async function saveQuestion() {
+    setSavedQuery('Saving locally…');
+    try {
+      const response = await fetch(`${base}__signals/query`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ question: filters.query ?? '' }),
+      });
+      if (!response.ok) throw new Error('Unable to save this question.');
+      const saved: unknown = await response.json();
+      if (!saved || typeof saved !== 'object' || !('saved' in saved) || saved.saved !== true)
+        throw new Error('Question save was not acknowledged.');
+      setSavedQuery(
+        'Question saved privately in this repository. Saving it does not admit new knowledge.',
+      );
+    } catch {
+      setSavedQuery(
+        'Unable to save this question. Keep the development server open and try again.',
+      );
+    }
+  }
   useEffect(() => {
     const controller = new AbortController();
     setError('');
@@ -80,7 +102,7 @@ function Corpus() {
         <a href={base} className="brand">
           Signals<span>Public Corpus · pre-1 preview</span>
         </a>
-        <a href="https://github.com/pradeeptathineni/signals-ai">Source & local app</a>
+        <a href="https://github.com/pradeeptathineni/signals-ai">Source & agent workflow</a>
       </header>
       <main>
         <section className="intro" aria-labelledby="intro-title">
@@ -94,9 +116,9 @@ function Corpus() {
             choose.
           </p>
           <p className="scope">
-            This reviewed public collection is held in Git. Text search stays in your browser and
-            uses literal matches. It covers {options?.length ?? '…'} options; the local application
-            has a separate, larger Corpus and optional live research.
+            Browse {options?.length ?? '…'} reviewed options. Search runs in your browser. Choose
+            every-keyword matching or rank word matches, then check the source claims and limits for
+            your question.
           </p>
         </section>
         {error ? (
@@ -120,6 +142,16 @@ function Corpus() {
                 />
               </label>
               <div className="filters">
+                <label>
+                  Text matching
+                  <select
+                    value={filters.textMode ?? 'literal'}
+                    onChange={(event) => change('textMode', event.target.value)}
+                  >
+                    <option value="literal">Every keyword</option>
+                    <option value="ranked">Rank word matches</option>
+                  </select>
+                </label>
                 <label>
                   Signal type
                   <select
@@ -197,7 +229,13 @@ function Corpus() {
                 </p>
                 <button onClick={() => setFilters({})}>Clear filters</button>
                 <button onClick={download}>Download these results</button>
+                {import.meta.env.DEV ? (
+                  <button disabled={!filters.query?.trim()} onClick={() => void saveQuestion()}>
+                    Save question locally
+                  </button>
+                ) : null}
               </div>
+              {savedQuery ? <p role="status">{savedQuery}</p> : null}
               {active.length ? (
                 <ul className="active-filters" aria-label="Active constraints">
                   {active.map(([key, value]) => (
@@ -279,6 +317,7 @@ function Corpus() {
                   </div>
                   <div className="evidence">
                     <p className="review">
+                      {option.quality?.level === 'high' ? 'High signal · ' : ''}
                       {display(option.reviewer)} · reviewed {date(option.reviewedAt)}
                     </p>
                     <ul className="claims">
@@ -311,6 +350,13 @@ function Corpus() {
                     </ul>
                     <details>
                       <summary>Limits and exact evidence</summary>
+                      {option.quality ? (
+                        <p>
+                          Signal review: each of relevance, source applicability, useful next action
+                          and clarity must be strong. This is a judgment policy, not a success
+                          probability. {option.quality.reasons.evidence}
+                        </p>
+                      ) : null}
                       <ul>
                         {option.limitations.map((text, i) => (
                           <li key={i}>{text}</li>

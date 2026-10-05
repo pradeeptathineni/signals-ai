@@ -12,6 +12,7 @@ const excluded = new Set([
   'coverage',
   'playwright-report',
   'test-results',
+  '.signals',
 ]);
 const textExtensions = new Set([
   '.cjs',

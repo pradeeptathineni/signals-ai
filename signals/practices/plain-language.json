@@ -4,7 +4,7 @@
   "review": {
     "digest": "2d257dd89ba48792da0932a3509f67d132967fa276451f7c91850cb87cad1d97",
     "category": "Communication",
-    "reviewedAt": "2026-10-05T20:08:28Z",
+    "reviewedAt": "2026-10-05T21:33:40Z",
     "reviewer": "agent-reviewed",
     "rationale": "Primary source supports each paraphrased claim within the stated scope; recommendation and unobserved benefit are explicit. No private fields or reproduced source content admitted.",
     "claimReviews": [
@@ -19,7 +19,33 @@
         "reviewAfterDays": null
       }
     ],
-    "state": "admitted"
+    "state": "admitted",
+    "quality": {
+      "policyVersion": "signal-review-v1",
+      "evidenceDigest": "2d257dd89ba48792da0932a3509f67d132967fa276451f7c91850cb87cad1d97",
+      "researchRunId": "host-agent-acquisition-20261005",
+      "reviewRunId": "source-research-quality-review-20261005",
+      "reviewer": "agent:source_research",
+      "reviewedAt": "2026-10-05T21:33:40Z",
+      "options": [
+        {
+          "optionId": "option-plain-language",
+          "ratings": {
+            "relevance": 3,
+            "evidence": 3,
+            "usefulness": 3,
+            "clarity": 3
+          },
+          "reasons": {
+            "relevance": "Familiar words, explained terminology and specific actions are concrete editorial checks without claiming measured comprehension gains.",
+            "evidence": "Familiar words, explained terminology and specific actions are concrete editorial checks without claiming measured comprehension gains.",
+            "usefulness": "Familiar words, explained terminology and specific actions are concrete editorial checks without claiming measured comprehension gains.",
+            "clarity": "Familiar words, explained terminology and specific actions are concrete editorial checks without claiming measured comprehension gains."
+          },
+          "blockers": []
+        }
+      ]
+    }
   },
   "evidence": {
     "schema_version": 1,

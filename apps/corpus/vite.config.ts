@@ -1,11 +1,38 @@
 import { fileURLToPath, URL } from 'node:url';
+import { resolve } from 'node:path';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
+import { localQueries } from './local-query.js';
+
+const queryDirectory = resolve(
+  process.env.SIGNALS_QUERY_DIRECTORY || '.signals/queries',
+).replaceAll('\\', '/');
+if (['[', ']', '{', '}', '*', '?', '!'].some((character) => queryDirectory.includes(character)))
+  throw new Error('Private query directory must be a literal path.');
 
 export default defineConfig({
   root: fileURLToPath(new URL('.', import.meta.url)),
   base: '/signals-ai/',
-  plugins: [react()],
+  plugins: [react(), localQueries()],
+  server: {
+    host: '127.0.0.1',
+    port: 5178,
+    strictPort: true,
+    fs: {
+      deny: [
+        '.env',
+        '.env.*',
+        '.npmrc',
+        '.yarnrc.yml',
+        '*.{crt,pem,key,p12,pfx,cer,der}',
+        '**/.git/**',
+        '**/.signals/**',
+        '**/.context-ai/lock.json',
+        '**/.codex/**',
+        `${queryDirectory}/**`,
+      ],
+    },
+  },
   publicDir: fileURLToPath(new URL('../../dist/public-data', import.meta.url)),
   build: {
     outDir: fileURLToPath(new URL('../../dist/public-site', import.meta.url)),

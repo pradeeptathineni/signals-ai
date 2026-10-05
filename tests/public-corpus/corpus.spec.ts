@@ -2,7 +2,7 @@ import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test, expect } from '@playwright/test';
 import { AxeBuilder } from '@axe-core/playwright';
-import { loadPublicCorpus } from '../../packages/seed/src/public-corpus.js';
+import { loadPublicCorpus } from '../../packages/corpus/src/public-corpus.js';
 import { filterPublicOptions } from '../../packages/domain/src/public-corpus.js';
 import { parsePublicIndex } from '../../packages/domain/src/public-index.js';
 
@@ -42,6 +42,18 @@ test('human and machine find the same real public options with combined filters'
   await expect(page.getByRole('heading', { name: 'No matching options' })).toBeVisible();
   await page.getByRole('button', { name: 'Clear filters' }).click();
   await expect(page.locator('.finding')).toHaveCount(options.length);
+  const question = 'How can I recover verbose test output?';
+  await page.getByLabel('Search keywords').fill(question);
+  await page.getByLabel('Text matching').selectOption('ranked');
+  expect(
+    await page
+      .locator('.finding')
+      .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-option-id'))),
+  ).toEqual(
+    filterPublicOptions(options, { query: question, textMode: 'ranked' }).map(
+      (option) => option.id,
+    ),
+  );
 });
 
 test('compares supported scope and limits, with keyboard access and responsive reflow', async ({

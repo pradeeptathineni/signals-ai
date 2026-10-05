@@ -1,4 +1,8 @@
-# Signals v1 execution ledger
+# Signals v1 execution ledger (historical, withdrawn)
+
+This describes the withdrawn `c834bea242106511463d3bff934011d3a3cfa1ac` implementation.
+Its receipts and screenshots remain in that Git commit. ADR-009 supersedes its runtime and
+storage; current commands have no database option. See `validation-0.3.md` for current checks.
 
 Authority: the local context-signals-v1-kit, reviewed 2026-10-05. Local checkout remains
 `/Users/pradeeptathineni/code/personal/ai-systems/maestro-ai`. Do not modify Context's checkout.

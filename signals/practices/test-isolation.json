@@ -4,7 +4,7 @@
   "review": {
     "digest": "ebe1508ccda2724cef9261d868fd88c4cc12e65a617d61f51369b18cfe305af9",
     "category": "Development",
-    "reviewedAt": "2026-10-05T20:08:28Z",
+    "reviewedAt": "2026-10-05T21:33:40Z",
     "reviewer": "agent-reviewed",
     "rationale": "Primary source supports each paraphrased claim within the stated scope; recommendation and unobserved benefit are explicit. No private fields or reproduced source content admitted.",
     "claimReviews": [
@@ -14,7 +14,33 @@
         "reviewAfterDays": 30
       }
     ],
-    "state": "admitted"
+    "state": "withdrawn",
+    "quality": {
+      "policyVersion": "signal-review-v1",
+      "evidenceDigest": "ebe1508ccda2724cef9261d868fd88c4cc12e65a617d61f51369b18cfe305af9",
+      "researchRunId": "host-agent-acquisition-20261005",
+      "reviewRunId": "source-research-quality-review-20261005",
+      "reviewer": "agent:source_research",
+      "reviewedAt": "2026-10-05T21:33:40Z",
+      "options": [
+        {
+          "optionId": "option-test-isolation",
+          "ratings": {
+            "relevance": 3,
+            "evidence": 3,
+            "usefulness": 2,
+            "clarity": 3
+          },
+          "reasons": {
+            "relevance": "Cleanup and reuse claims are supported, but the current recommendation does not define a concrete trial boundary or pass criterion.",
+            "evidence": "Cleanup and reuse claims are supported, but the current recommendation does not define a concrete trial boundary or pass criterion.",
+            "usefulness": "Cleanup and reuse claims are supported, but the current recommendation does not define a concrete trial boundary or pass criterion.",
+            "clarity": "Cleanup and reuse claims are supported, but the current recommendation does not define a concrete trial boundary or pass criterion."
+          },
+          "blockers": []
+        }
+      ]
+    }
   },
   "evidence": {
     "schema_version": 1,

@@ -4,7 +4,7 @@
   "review": {
     "digest": "160f3f5ab3557ae4d3c9243e0e7228df6a774f5c7f401c0a0505bda8e7fdd6ae",
     "category": "Photography",
-    "reviewedAt": "2026-10-05T21:23:29Z",
+    "reviewedAt": "2026-10-05T21:33:40Z",
     "reviewer": "agent-reviewed",
     "rationale": "Revalidated primary source claims and their applicability; examples are not universal settings or measured outcomes. Attribution and original dates retained; public-only paraphrases, no private context or reproduced content.",
     "claimReviews": [
@@ -19,7 +19,49 @@
         "reviewAfterDays": null
       }
     ],
-    "state": "admitted"
+    "state": "admitted",
+    "quality": {
+      "policyVersion": "signal-review-v1",
+      "evidenceDigest": "160f3f5ab3557ae4d3c9243e0e7228df6a774f5c7f401c0a0505bda8e7fdd6ae",
+      "researchRunId": "host-agent-acquisition-20261005",
+      "reviewRunId": "source-research-quality-review-20261005",
+      "reviewer": "agent:source_research",
+      "reviewedAt": "2026-10-05T21:33:40Z",
+      "options": [
+        {
+          "optionId": "option-waterfall-available-light",
+          "ratings": {
+            "relevance": 3,
+            "evidence": 3,
+            "usefulness": 3,
+            "clarity": 3
+          },
+          "reasons": {
+            "relevance": "Baseline metering, stabilization and conditional ND use are actionable; examples do not become universal settings or product superiority.",
+            "evidence": "Baseline metering, stabilization and conditional ND use are actionable; examples do not become universal settings or product superiority.",
+            "usefulness": "Baseline metering, stabilization and conditional ND use are actionable; examples do not become universal settings or product superiority.",
+            "clarity": "Baseline metering, stabilization and conditional ND use are actionable; examples do not become universal settings or product superiority."
+          },
+          "blockers": []
+        },
+        {
+          "optionId": "option-waterfall-nd",
+          "ratings": {
+            "relevance": 3,
+            "evidence": 3,
+            "usefulness": 3,
+            "clarity": 3
+          },
+          "reasons": {
+            "relevance": "Baseline metering, stabilization and conditional ND use are actionable; examples do not become universal settings or product superiority.",
+            "evidence": "Baseline metering, stabilization and conditional ND use are actionable; examples do not become universal settings or product superiority.",
+            "usefulness": "Baseline metering, stabilization and conditional ND use are actionable; examples do not become universal settings or product superiority.",
+            "clarity": "Baseline metering, stabilization and conditional ND use are actionable; examples do not become universal settings or product superiority."
+          },
+          "blockers": []
+        }
+      ]
+    }
   },
   "evidence": {
     "schema_version": 1,

@@ -7,6 +7,8 @@ test-results/
 .codex/context-compression/gain.jsonl
 .codex/context-compression/raw/
 .env
+.signals/
+private-query-probe/
 .context-ai/lock.json
 .context-ai/pending.json
 *.log

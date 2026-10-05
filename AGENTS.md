@@ -1,39 +1,28 @@
 # Signals repository guide
 
-Read `README.md`, root `ARCHITECTURE.md`, `docs/architecture/ADR-001-v0-foundation.md`, the latest numbered ADR, and `docs/architecture/schema.md` before changing cross-cutting behavior. Phase-specific execution evidence lives in the adjacent `../maestro-ai-planning/outputs/` workspace; do not copy private planning text into public code or fixtures.
+Read `README.md`, `ARCHITECTURE.md`, ADR-001, the latest numbered ADR, and `docs/architecture/schema.md` before cross-cutting changes. Historical ADRs describe superseded systems; ADR-009 governs the current file-based product. Private phase evidence remains in `../maestro-ai-planning/outputs/`; never copy it into public records or fixtures.
 
 ## Boundaries
 
-- Maestro owns evidence, query/selection policy, project context, decisions and human-directed lifecycle state. Cataloged systems remain data unless a later approved execution phase adds typed authority.
-- Keep `catalog` public/shareable, `workspace` private, and `ops` operational. Public records must never depend on private workspace content.
-- No candidate installation or execution, arbitrary crawling, cloud/model fallback, hosted auth, sandbox, gateway or agent-runtime implementation is authorized by the current intelligence-product scope.
-- Preserve immutable records and old replay semantics. New corrections create revisions or append-only successors.
-- Keep open-world interpretation, refinement, and organization in the bounded research-model protocol. Deterministic mechanisms should validate, constrain, retrieve, compare, or replay; do not add evaluation-query vocabulary or one-off semantic branches.
+- Git is the public Corpus database. `signals/<type>/*.json` is canonical; indexes and Pages are generated views. Domains and concepts are metadata, not duplicated folder trees.
+- `.signals/` is private local query/history storage. Never publish it, serve it through Vite, or remove retained snapshots during cleanup. Database services, containers, drivers and compatibility commands have been retired.
+- Systems remain data. No candidate installation/execution, arbitrary crawling, hosted auth, cloud/model fallback, sandbox, gateway or agent-runtime implementation is authorized.
+- Evidence is immutable. Corrections create successors; historical commits and migrated rows preserve old policy meanings. Review metadata may withdraw a finding without rewriting its evidence.
+- Keep interpretation and organization in the bounded model protocol. Deterministic code validates, filters, retrieves, compares, admits and replays. Do not add evaluation vocabulary or one-off semantic branches.
+- Automatic admission requires supported material claims and a separate model review meeting every signal dimension. Scores are ordinal judgment, never calibrated probability or proven user benefit. Humans ask questions; agents generate technical evidence and review metadata.
 
-## Safe commands
+## Commands and code map
 
-- Inspect `package.json`, `scripts/verify.sh`, `packages/test-fixtures/src/database.ts`, `.env`, and the exact database URL before any DB command.
-- Defaults use loopback port `54329` and may point at retained development data. For tests, provide explicit `DATABASE_URL` and `TEST_DATABASE_URL` for a named disposable database/container on a non-default port.
-- `test:integration` and `test:e2e` drop the target test schemas. `verify` is the database-free public gate. `verify:local-app` runs `db:init` against `DATABASE_URL` before rebuilding the test database. Never aim that compatibility gate at retained data.
-- Prefer `npm test`, `npm run typecheck`, `npm run lint`, and `npm run format:check` for non-database checks. Run the complete gate only after destination isolation is proven.
+- `npm run verify` checks the file-based product and isolated browser fixtures. It requires no database or model service. `npm run clean` removes generated build/test output only.
+- `npm run research -- query QUESTION` saves a private result. An explicitly configured loopback model can organize and separately challenge known evidence. Failure preserves deterministic matches and reports the gap.
+- `apps/corpus`: Pages view and development-only same-origin query save endpoint.
+- `packages/domain`: frozen evidence decoding, public projection, literal retrieval, bounded model query and signal policy.
+- `packages/corpus`: native record validation, atomic export/admission, private query/history files and explicit loopback model client.
+- `packages/contracts`: frozen schema-v1 interchange. `concepts.json`: the actual Signals concept catalog used in coverage evaluation.
 
-## Code map
+Use `apply_patch` for deliberate source edits. Keep exact dependency versions and `docs/dependencies.md` current. Add negative tests for privacy, authority, evidence binding and historical continuity.
 
-- `signals/<type>/*.json`: canonical public findings, reviews and domain/tag metadata.
-- `apps/corpus`: database-free human view, using the shared machine filtering path.
-
-- `apps/web`: React UI and accessible list/map/detail/compare flows.
-- `apps/api`: loopback Fastify/OpenAPI boundary; schemas come from `packages/contracts`.
-- `apps/worker`: Graphile jobs and one retry owner for bounded external/local adapter work.
-- `packages/domain`: pure identity, privacy, canonicalization and decision/query contracts.
-- `packages/scoring`: pure versioned policies; no database or UI logic.
-- `packages/db`: forward SQL migrations, Drizzle mirror and explicit repositories.
-- `packages/adapters`: bounded external/local integrations; fetched content is untrusted data.
-- `packages/seed`: deterministic, source-backed fixtures; live fetches never run during migration/CI.
-
-Use `apply_patch` for deliberate source edits. Keep exact dependency versions, update `docs/dependencies.md`, and add negative tests for authority, privacy, evidence-binding and historical-continuity changes.
-
-For broad repository analysis or noisy validation output, use the repository's `signals-context-engineering` skill. Treat generated packs as disposable maps, retain source files as authority, and recover any compressed command detail from its local `raw_ref` instead of rerunning work.
+For broad analysis or noisy validation, use `signals-context-engineering`. Generated packs are disposable maps. Source remains authoritative; recover compressed output from its local `raw_ref` before rerunning commands. CCA references preserve normalized/redacted text, not necessarily the original byte stream.
 <!-- context-ai:begin -->
 ## Context AI project loadout
 Project instructions and explicit task authority take precedence. Use the pinned `.context-ai/lock.json`.

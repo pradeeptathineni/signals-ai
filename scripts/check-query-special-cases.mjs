@@ -4,16 +4,7 @@ import process from 'node:process';
 import { fileURLToPath, URL } from 'node:url';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
-const sourceRoots = [
-  'apps/api/src',
-  'apps/web/src',
-  'apps/worker/src',
-  'packages/adapters/src',
-  'packages/db/src',
-  'packages/domain/src',
-  'packages/scoring/src',
-  'packages/seed/src',
-];
+const sourceRoots = ['apps/corpus/src', 'packages/domain/src', 'packages/corpus/src'];
 const runtimeExtensions = new Set(['.ts', '.tsx', '.js', '.mjs']);
 
 async function filesUnder(directory) {

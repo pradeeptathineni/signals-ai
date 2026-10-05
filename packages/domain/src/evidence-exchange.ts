@@ -49,12 +49,12 @@ const ajv = new Ajv2020({ allErrors: true, strict: true });
 const addFormats = formats as unknown as (instance: Ajv2020) => void;
 addFormats(ajv);
 const check = ajv.compile<EvidenceBundle>(schema);
-export const MAX_EVIDENCE_BYTES = 262_144;
+const MAX_EVIDENCE_BYTES = 262_144;
 export function evidenceDigest(bytes: string): string {
   return createHash('sha256').update(bytes, 'utf8').digest('hex');
 }
 
-export class EvidenceValidationError extends Error {}
+class EvidenceValidationError extends Error {}
 function requireEvidence(condition: unknown, message: string): asserts condition {
   if (!condition) throw new EvidenceValidationError(message);
 }

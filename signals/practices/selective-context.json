@@ -4,7 +4,7 @@
   "review": {
     "digest": "23036270adffdeafb6da20a2847476239a86d00702970d07e72402f7e579670c",
     "category": "Development",
-    "reviewedAt": "2026-10-05T20:08:28Z",
+    "reviewedAt": "2026-10-05T21:33:40Z",
     "reviewer": "agent-reviewed",
     "rationale": "Primary source supports each paraphrased claim within the stated scope; recommendation and unobserved benefit are explicit. No private fields or reproduced source content admitted.",
     "claimReviews": [
@@ -19,7 +19,33 @@
         "reviewAfterDays": null
       }
     ],
-    "state": "admitted"
+    "state": "withdrawn",
+    "quality": {
+      "policyVersion": "signal-review-v1",
+      "evidenceDigest": "23036270adffdeafb6da20a2847476239a86d00702970d07e72402f7e579670c",
+      "researchRunId": "host-agent-acquisition-20261005",
+      "reviewRunId": "source-research-quality-review-20261005",
+      "reviewer": "agent:source_research",
+      "reviewedAt": "2026-10-05T21:33:40Z",
+      "options": [
+        {
+          "optionId": "option-selective-context",
+          "ratings": {
+            "relevance": 3,
+            "evidence": 2,
+            "usefulness": 3,
+            "clarity": 3
+          },
+          "reasons": {
+            "relevance": "Source facts are supported but build dependency and input-position findings do not establish the proposed instruction-selection rule.",
+            "evidence": "Source facts are supported but build dependency and input-position findings do not establish the proposed instruction-selection rule.",
+            "usefulness": "Source facts are supported but build dependency and input-position findings do not establish the proposed instruction-selection rule.",
+            "clarity": "Source facts are supported but build dependency and input-position findings do not establish the proposed instruction-selection rule."
+          },
+          "blockers": []
+        }
+      ]
+    }
   },
   "evidence": {
     "schema_version": 1,
