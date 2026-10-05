@@ -14,7 +14,7 @@ an expanding word-list substitute for open-world understanding.
 
 **Exchange** lets a user's research agent submit a cited draft, review and admit it to Corpus,
 export exact bytes, record scoped adoption readiness and consumer feedback, and append refresh
-successors. Read the [1.x supported contract](docs/signals-contract.md) for modes, CLI operations,
+successors. Read the [current product contract](docs/signals-contract.md) for modes, CLI operations,
 privacy, configuration compatibility and upgrade behavior.
 
 Signals does not install or execute cataloged software. No model key is required. The canonical
@@ -60,7 +60,7 @@ with v2 proposals. Copy
 `.env.example` to `.env` only when changing local configuration. `SIGNALS_ALLOW_NETWORK_FETCH=false`
 also keeps the original Consider/refresh metadata path offline. Unknown public hosts enter manual
 review; local, private, credential-bearing, non-HTTPS, and nonstandard-port public URLs are rejected
-as safe failure receipts. Both the API bind and browser origin remain loopback-only in 1.x.
+as safe failure receipts. Both the API bind and browser origin remain loopback-only.
 
 ## Primary demonstration
 

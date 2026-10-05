@@ -1,4 +1,4 @@
-# Signals AI 1.x supported contract
+# Signals AI product contract (pre-1)
 
 Signals owns evidence acquisition, interpretation, query/selection policy, source and claim history,
 project context and human-directed decisions. Context AI owns vocabulary, capability decisions,
@@ -75,7 +75,7 @@ Old bytes and historical replay remain intact. Refresh is manual; no always-on a
 
 ## Configuration, storage and upgrade compatibility
 
-New configuration uses `SIGNALS_*`; legacy `MAESTRO_*` aliases remain accepted in 1.x. Equal values
+New configuration uses `SIGNALS_*`; legacy `MAESTRO_*` aliases remain accepted. Equal values
 under both names are accepted; conflicting values fail startup. `DATABASE_URL` and
 `TEST_DATABASE_URL` retain their names. New mutation clients send `x-signals-request: 1`; legacy
 `x-maestro-request: 1` remains accepted. Loopback binds/origins, JSON validation, CSP and rate limits
@@ -92,7 +92,7 @@ recognizable paths and credentials are rejected. These bounded guards plus revie
 arbitrary prose is free of sensitive information. Keep private content out of drafts. No arbitrary
 crawling, cloud/model gateway, general runtime, sandbox, hosted tenancy or candidate execution is shipped.
 
-Stable software contracts do not imply infallible inference, calibrated confidence, broad research
+Versioned data contracts do not imply infallible inference, calibrated confidence, broad research
 superiority, configured-live model proof, independent evaluation or field performance measurements.
 
 The checked-in Context instructions record repository development guidance, separately from the

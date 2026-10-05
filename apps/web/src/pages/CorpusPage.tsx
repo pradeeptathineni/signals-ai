@@ -73,6 +73,16 @@ export function CorpusPage() {
   const [draftQuery, setDraftQuery] = useState('');
   const [researchRunId, setResearchRunId] = useState<string | null>(null);
   const [previousCursors, setPreviousCursors] = useState<string[]>([]);
+  const integrations = useQuery({
+    queryKey: ['integrations'],
+    queryFn: () =>
+      api<{
+        items: Array<{ sourceClass: string; enabled: boolean; modelIdentifier: string | null }>;
+      }>('/api/v1/integrations'),
+  });
+  const modelAvailable = integrations.data?.items.some(
+    (item) => item.sourceClass === 'local_semantic' && item.enabled && item.modelIdentifier,
+  );
   const queryString = useMemo(() => {
     const query = new URLSearchParams();
     for (const key of ['layer', 'state', 'source', 'kind', 'cursor']) {
@@ -138,13 +148,14 @@ export function CorpusPage() {
     const normalized = draftQuery.trim();
     setAppliedQuery(normalized);
     setResearchRunId(null);
-    if (normalized) startResearch.mutate(normalized);
+    startResearch.reset();
   }
 
   function clearFilters(): void {
     setDraftQuery('');
     setAppliedQuery('');
     setResearchRunId(null);
+    startResearch.reset();
     setPreviousCursors([]);
     setParameters({});
   }
@@ -192,8 +203,8 @@ export function CorpusPage() {
           <div>
             <h2 id="corpus-controls-heading">Search and filter</h2>
             <p>
-              Enter a need to calculate query-specific signals. Leave it empty to browse saved
-              records by source, kind, or review state.
+              Search saved records immediately, without a model or network access. Combine text with
+              source, kind, and review filters.
             </p>
           </div>
         </div>
@@ -211,6 +222,21 @@ export function CorpusPage() {
             Search corpus
           </button>
         </form>
+        <p className="hint">
+          Indexed text matches use the local collection.{' '}
+          {modelAvailable ? (
+            <button
+              type="button"
+              className="button secondary compact"
+              disabled={!appliedQuery || startResearch.isPending}
+              onClick={() => startResearch.mutate(appliedQuery)}
+            >
+              Organize this need with the configured model
+            </button>
+          ) : (
+            <Link to="/exchange">Add research from your own agent</Link>
+          )}
+        </p>
         <div className="corpus-filters">
           <label>
             Layer

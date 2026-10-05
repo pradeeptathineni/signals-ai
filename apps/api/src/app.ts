@@ -43,7 +43,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     openapi: {
       info: {
         title: 'Signals local API',
-        version: '1.0.0',
+        version: '0.3.0',
         description: 'Local, deterministic evidence-to-decision API. No execution routes exist.',
       },
       servers: [{ url: `http://127.0.0.1:${config.port}` }],

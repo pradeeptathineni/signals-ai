@@ -1,6 +1,6 @@
 {
   "name": "signals-ai",
-  "version": "1.0.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -12,6 +12,7 @@
     "npm": ">=12.1.0 <13"
   },
   "scripts": {
+    "release:check": "node scripts/check-release.mjs",
     "evidence": "node --env-file-if-exists=.env --import tsx scripts/evidence.ts",
     "build": "npm run typecheck && vite build --config apps/web/vite.config.ts && tsc -p tsconfig.build.json",
     "benchmark:phase06": "node --import tsx scripts/benchmark-phase06.ts",

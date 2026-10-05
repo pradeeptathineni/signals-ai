@@ -525,6 +525,11 @@ test('G6 map stays bounded and interactive at declared synthetic sizes', async (
 test('corpus excludes live leads from admitted knowledge and scores an explicit search', async ({
   page,
 }) => {
+  const researchRequests: string[] = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().includes('/research-runs'))
+      researchRequests.push(request.url());
+  });
   const assertRuntime = observeRuntime(page);
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto('/corpus');
@@ -543,6 +548,7 @@ test('corpus excludes live leads from admitted knowledge and scores an explicit 
   await expect(page.getByText('Query-scored records')).toBeVisible();
   await expect(page.getByText(/^Legacy query estimate \d+$/).first()).toBeVisible();
   await expect(page.getByText(/preserved Phase 07 query-ranking estimate/i)).toBeVisible();
+  expect(researchRequests).toEqual([]);
   await expectNoSeriousAccessibilityViolations(page);
   await captureIfRequested(page, 'corpus-1440-search.png');
 
