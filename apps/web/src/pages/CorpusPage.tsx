@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { type FormEvent, useMemo, useState } from 'react';
+import { type FormEvent, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, formatDate, formatFractionPercent, label } from '../api.js';
 import {
@@ -73,6 +73,7 @@ export function CorpusPage() {
   const [draftQuery, setDraftQuery] = useState('');
   const [researchRunId, setResearchRunId] = useState<string | null>(null);
   const [previousCursors, setPreviousCursors] = useState<string[]>([]);
+  const queryGeneration = useRef(0);
   const integrations = useQuery({
     queryKey: ['integrations'],
     queryFn: () =>
@@ -104,7 +105,7 @@ export function CorpusPage() {
     },
   });
   const startResearch = useMutation({
-    mutationFn: async (query: string) => {
+    mutationFn: async ({ query }: { query: string; generation: number }) => {
       const session = await api<{ id: string }>('/api/v1/explorer/sessions', {
         method: 'POST',
         body: JSON.stringify({ query, searchConnectedSources: false }),
@@ -120,7 +121,9 @@ export function CorpusPage() {
         },
       );
     },
-    onSuccess: (run) => setResearchRunId(run.id),
+    onSuccess: (run, request) => {
+      if (request.generation === queryGeneration.current) setResearchRunId(run.id);
+    },
   });
   const researchRun = useQuery({
     queryKey: ['corpus-research-run', researchRunId],
@@ -141,6 +144,7 @@ export function CorpusPage() {
 
   function submit(event: FormEvent): void {
     event.preventDefault();
+    queryGeneration.current += 1;
     const next = new URLSearchParams(parameters);
     next.delete('cursor');
     setPreviousCursors([]);
@@ -152,6 +156,7 @@ export function CorpusPage() {
   }
 
   function clearFilters(): void {
+    queryGeneration.current += 1;
     setDraftQuery('');
     setAppliedQuery('');
     setResearchRunId(null);
@@ -229,7 +234,9 @@ export function CorpusPage() {
               type="button"
               className="button secondary compact"
               disabled={!appliedQuery || startResearch.isPending}
-              onClick={() => startResearch.mutate(appliedQuery)}
+              onClick={() =>
+                startResearch.mutate({ query: appliedQuery, generation: queryGeneration.current })
+              }
             >
               Organize this need with the configured model
             </button>
@@ -378,14 +385,14 @@ export function CorpusPage() {
             <div className="section-heading">
               <div>
                 <p className="eyebrow">
-                  {corpus.data.scoringApplied ? 'Query-scored records' : 'Recently observed'}
+                  {corpus.data.scoringApplied ? 'Text matches' : 'Recently observed'}
                 </p>
                 <h2 id="corpus-results-heading">Corpus records</h2>
               </div>
               <p className="hint">
                 {corpus.data.scoringApplied
-                  ? 'Displayed matches use the preserved Phase 07 query-ranking estimate. Confidence and review state remain separate.'
-                  : 'Browse mode does not invent a universal score. Search for a need to calculate a query-specific ranking estimate.'}
+                  ? 'Indexed matches use the local text ranking. Source support and review state remain separate.'
+                  : 'Browse saved records by source and review state, or enter text to narrow the collection.'}
               </p>
             </div>
             {corpus.data.items.length ? (
@@ -418,16 +425,21 @@ export function CorpusPage() {
                     </div>
                     {corpus.data.scoringApplied ? (
                       <div className="query-signal">
-                        <strong>Legacy query estimate {item.signalDisplay}</strong>
                         <span>
                           {item.relevanceOrdinal
                             ? `${label(item.relevanceOrdinal)} relevance · `
                             : ''}
                           {evidenceLabel(item.displayState)}
                         </span>
-                        <small>
-                          {formatFractionPercent(item.evidenceCoverage ?? 0)} evidence coverage
-                        </small>
+                        <details>
+                          <summary>Ranking details</summary>
+                          <p>Historical query estimate: {item.signalDisplay ?? 'Unknown'}</p>
+                          <small>
+                            {item.evidenceCoverage === null
+                              ? 'Evidence coverage unknown'
+                              : `${formatFractionPercent(item.evidenceCoverage)} evidence coverage`}
+                          </small>
+                        </details>
                       </div>
                     ) : null}
                     <div className="corpus-record-action">

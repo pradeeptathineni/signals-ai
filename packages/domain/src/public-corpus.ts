@@ -31,7 +31,12 @@ export interface PublicOption {
   reviewedAt: string;
   reviewer: PublicAdmission['reviewer'];
   publishedAt: string;
-  claims: Array<EvidenceBundle['claims'][number] & { freshness: 'current' | 'due' | 'unknown' }>;
+  claims: Array<
+    EvidenceBundle['claims'][number] & {
+      freshness: 'current' | 'due' | 'unknown';
+      review: ClaimReview;
+    }
+  >;
   sources: EvidenceBundle['sources'];
 }
 
@@ -46,6 +51,7 @@ export function claimFreshness(
   const bound = sources.filter((source) => claim.source_ids.includes(source.id));
   const times = bound.map((source) => Date.parse(source.observed_at ?? ''));
   const now = Date.parse(asOf);
+  if (!Number.isFinite(now)) return 'unknown';
   if (!bound.length || times.some((time) => !Number.isFinite(time) || time > now)) return 'unknown';
   if (review.basis === 'stable') return 'current';
   return times.some((time) => now - time > (review.reviewAfterDays ?? 0) * 86_400_000)
@@ -80,6 +86,7 @@ export function projectPublicOptions(
       publishedAt: bundle.created_at,
       claims: claims.map((claim) => ({
         ...claim,
+        review: admission.claimReviews.find((review) => review.claimId === claim.id)!,
         freshness: claimFreshness(
           claim,
           sources,
@@ -90,6 +97,17 @@ export function projectPublicOptions(
       sources,
     };
   });
+}
+
+/** Static exports retain review inputs so a later browser visit can recompute due dates. */
+export function refreshPublicFreshness(options: PublicOption[], asOf: string): PublicOption[] {
+  return options.map((option) => ({
+    ...option,
+    claims: option.claims.map((claim) => ({
+      ...claim,
+      freshness: claimFreshness(claim, option.sources, claim.review, asOf),
+    })),
+  }));
 }
 
 export interface PublicFilters {

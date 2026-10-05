@@ -545,9 +545,10 @@ test('corpus excludes live leads from admitted knowledge and scores an explicit 
   await page.getByLabel('Search the corpus').fill('context reduction for coding agents');
   await page.getByRole('button', { name: 'Search corpus' }).click();
   expect(page.url()).not.toContain('context');
-  await expect(page.getByText('Query-scored records')).toBeVisible();
-  await expect(page.getByText(/^Legacy query estimate \d+$/).first()).toBeVisible();
-  await expect(page.getByText(/preserved Phase 07 query-ranking estimate/i)).toBeVisible();
+  await expect(page.getByText('Text matches')).toBeVisible();
+  await page.getByText('Ranking details', { exact: true }).first().click();
+  await expect(page.getByText(/^Historical query estimate: \d+$/).first()).toBeVisible();
+  await expect(page.getByText(/Source support and review state remain separate/i)).toBeVisible();
   expect(researchRequests).toEqual([]);
   await expectNoSeriousAccessibilityViolations(page);
   await captureIfRequested(page, 'corpus-1440-search.png');

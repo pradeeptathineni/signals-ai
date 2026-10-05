@@ -4,6 +4,7 @@ coverage
 playwright-report
 test-results
 package-lock.json
+corpus/*.json
 packages/contracts/src/evidence-bundle-v1.schema.json
 docs/evidence/*.json
 docs/evidence/study/*.json

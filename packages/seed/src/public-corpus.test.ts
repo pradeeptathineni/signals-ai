@@ -22,6 +22,7 @@ async function copyRecord(change: (bundle: Record<string, unknown>) => void = ()
   const bytes = JSON.stringify(bundle);
   const admission = { ...record.admission, digest: evidenceDigest(bytes) };
   await writeFile(join(root, admission.file), bytes);
+  await writeFile(join(root, `${admission.file}.sha256`), `${admission.digest}\n`);
   await writeFile(
     join(root, 'manifest.json'),
     JSON.stringify({ schemaVersion: 1, admissions: [admission] }),

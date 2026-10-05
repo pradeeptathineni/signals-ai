@@ -62,6 +62,7 @@ const validate = ajv.compile<{ schemaVersion: 1; admissions: PublicAdmission[] }
 const defaultRoot = fileURLToPath(new URL('../../../corpus/', import.meta.url));
 
 export async function loadPublicCorpus(root = defaultRoot, asOf = new Date().toISOString()) {
+  if (!Number.isFinite(Date.parse(asOf))) throw new Error('Invalid freshness evaluation date.');
   const manifest: unknown = JSON.parse(await readFile(resolve(root, 'manifest.json'), 'utf8'));
   if (!validate(manifest)) throw new Error('Public admission manifest schema mismatch.');
   const rootPath = await realpath(root);
@@ -77,7 +78,10 @@ export async function loadPublicCorpus(root = defaultRoot, asOf = new Date().toI
     if (inside.startsWith('..') || isAbsolute(inside))
       throw new Error('Public record path escapes Corpus.');
     const bytes = await readFile(path, 'utf8');
+    if ((await readFile(`${path}.sha256`, 'utf8')).trim() !== admission.digest)
+      throw new Error('Public sidecar disagrees with the admission digest.');
     const bundle = parseEvidenceBundle(bytes, admission.digest);
+    if (!/^[a-zA-Z0-9-]+$/.test(bundle.bundle_id)) throw new Error('Unsafe public download name.');
     // The interchange permits inert metadata; the public collection does not.
     // Review plus this closed field boundary replaces regex-only publication checks.
     if (bundle.extensions || bundle.candidates.some((candidate) => candidate.signal))

@@ -1,140 +1,100 @@
 # Architecture
 
-Signals is a local-first research system for finding high-signal existing knowledge that
-can help a project. **Search** investigates current public sources for a user's live need.
-**Corpus** searches admitted, refreshable knowledge. They use one research judgment protocol but
-remain different evidence universes and user experiences.
+Signals has two useful entry points: browse admitted knowledge immediately, or research a new
+public need with an explicitly available model/agent. Both produce source-bound options.
+Private project choices remain local. Cataloged software is data, never execution authority.
 
-Signals AI is the public product/repository name approved on 2026-10-05. Historical Maestro
-records, protocol identifiers and local storage names remain compatible; see
-[ADR-005](docs/architecture/ADR-005-signals-evidence-v1.md).
+## Public and local ownership
 
-## Value loop
+The curated public collection is held in Git. Its admission manifest selects reviewed frozen
+evidence-bundle-v1 files and records each claim's review basis. The loader validates public fields,
+exact bytes, sources, IDs, paths and reviews. Browser and CLI use one pure literal-filter function.
+Generated indexes are disposable; complete snapshots are selected atomically before the Pages
+build copies them. The public site contains no private service configuration or workspace data.
+
+PostgreSQL owns the larger independently acquired local Corpus, private projects/queries/decisions
+and operational research. Imported curated bundles are local projections of their exact source
+pin. There are no independently editable Git and database masters for the same curated record.
+[ADR-006](docs/architecture/ADR-006-public-corpus.md) defines promotion, retraction and alternatives.
+
+The local database keeps three boundaries:
+
+- `catalog`: shareable admitted identities, documents, sources, evidence and revisions;
+- `workspace`: private queries, project context, shortlists, choices and lifecycle state;
+- `ops`: untrusted drafts/leads, adapters, jobs, research attempts and validation history.
+
+Public records never depend on private workspace content. Acquiring a lead does not admit it.
+Corrections append revisions/successors; applied migrations and old immutable bytes stay intact.
+
+## Exact mechanisms and judgment
+
+Deterministic code owns identity, schemas, exact filters, source bindings, disclosure policy,
+allowed network destinations, budgets, deadlines, writes, transactions and replay. Text matching
+is explicitly lexical. No query vocabulary dictionary is added to impersonate open-world judgment.
+
+A research model or the user's host agent understands the need, identifies gaps, refines questions,
+organizes alternatives and explains applicability. Its proposals are untrusted. The application
+host validates source authority, limits and every evidence reference before accepting a result.
+A literal match, valid citation ID or provenance hash does not establish human relevance or truth.
+
+The configured application path uses one explicitly enabled loopback OpenAI-compatible model.
+The host-agent path acquires and reviews evidence through the existing interchange. They are
+separate modes. Neither uses silent cloud fallback, arbitrary crawling or candidate execution.
+
+## Maintained workflow
 
 ```text
-public need
-  -> model proposes questions + allowed-source searches
-  -> deterministic host validates privacy, tools, and budgets
-  -> live adapters OR admitted Corpus return attributed evidence
-  -> model assesses coverage and proposes one bounded refinement or stop
-  -> deterministic host validates every referenced evidence ID
-  -> model selects, groups, explains, and cites the useful landscape
-  -> Search result
-       -> explicit reviewed admission -> Corpus
-       -> watches + new observations -> append-only revisions
-       -> future Search candidate generation and comparison
+reviewed public files -> validation -> shared filter -> browser / structured results
+                                              -> exact evidence download
+
+public need -> host agent OR configured bounded research
+            -> attributed source/claim/option draft
+            -> explicit source/privacy review -> admission
+            -> local Corpus -> export -> consumer selection -> scoped outcome
 ```
 
-The model owns open-world interpretation, terminology, search refinement, relevance judgment,
-organization, and explanation. It does not receive shell access, general tool authority, private
-project context, or permission to install or execute candidates.
+Corpus indexed search does not create research work. Optional model organization is a separate
+action, bound to the active query so late results cannot overwrite a newer need.
 
-Deterministic code owns the parts where exactness is both achievable and valuable: schemas,
-enabled-source allowlists, network policy, disclosure, budgets, deadlines, identifiers,
-deduplication, citation existence, provenance, persistence, explicit admission, privacy, and replay.
-It also provides a transparent fallback and evaluation comparator. It must not grow a query-word
-rulebook that impersonates open-world understanding.
+The persisted `research-skill-v1` contract has plan, one bounded refinement and synthesis outputs.
+Search uses explicitly enabled adapters; Corpus research uses only admitted indexed knowledge.
+Sufficient `research-protocol-v2` synthesis needs item and summary citations. Insufficient work
+abstains. Historical protocol-v1 output is read at a narrow presentation boundary; queued old work
+is rejected without new source/model calls. Worker leases and parent-row locking preserve recovery
+and prevent late child writes from extending terminal history.
 
-## One protocol, two modes
+## Evidence and advice
 
-`research-skill-v1` has three untrusted structured model outputs:
+Keep relevance, source support, intrinsic properties and private project fit separate.
+The public preview displays claims, reasons, limits and review inputs without numeric estimates.
+Stable claim semantics, volatile availability and unknown observations have different review
+bases. Export time never refreshes an observation. Downloaded public indexes are validated and
+freshness is recomputed at browser visit time.
 
-1. **Plan** — interpretation, research questions, allowed-source queries, and stop tests.
-2. **Refinement** — evidence-bound gap assessment and either another bounded action or a stop.
-3. **Synthesis** — an explicit sufficient/insufficient context judgment. Sufficient results require
-   ordered/grouped candidate IDs, reasons, uncertainty, and exact item plus summary citations;
-   insufficient results abstain without findings and state why.
+Local historical query/intrinsic/fit policies retain their versions for replay. Their numeric
+outputs are estimates, not calibrated probabilities; optional ranking details preserve inspection
+without requiring a human to interpret them before finding sources.
 
-In `search` mode, allowed actions address only explicitly enabled public adapters. In `corpus` mode,
-the only source is admitted indexed knowledge and no network call is possible. A provider-neutral
-model interface currently has one explicit loopback OpenAI-compatible implementation. There is no
-cloud fallback, automatic model download, or model router. The model choice and token economics are
-evaluation variables, not product ontology.
+Evidence-bundle schema v1 remains frozen independently of software maturity. Explicit review
+creates public source bindings atomically. Export preserves exact bytes, refresh creates successors,
+and feedback binds an exact candidate/bundle/task. Advice does not grant installation, runtime or
+deployment permission. [The product contract](docs/signals-contract.md) owns current operations;
+[the schema map](docs/architecture/schema.md) owns persisted compatibility details.
 
-Stored protocol-v1 syntheses are normalized only at the presentation boundary and remain immutable.
-The worker refuses queued historical-protocol jobs without calling a model or source. Research child
-writes take a parent-row lock, and source dispatch waits for a competing worker to reach a terminal
-state before synthesis can continue.
+## Code owners
 
-The existing deterministic query and retrieval policies remain versioned for Phase 06/07 replay.
-When no model is configured, they remain the declared fallback. They also support exact identity,
-literal constraints, candidate generation, must-find checks, and model-output auditing. New
-semantic quality should be attributed to the model protocol rather than silently credited to the
-fallback.
+| Path                | Responsibility                                                            |
+| ------------------- | ------------------------------------------------------------------------- |
+| `apps/corpus`       | Public browser, comparison and downloads                                  |
+| `apps/web`          | Local indexed search, research, private workspaces and evidence authoring |
+| `apps/api`          | Loopback Fastify boundary, schemas, origin/host checks and safe errors    |
+| `apps/worker`       | Bounded adapters, one retry owner, recovery and outbox                    |
+| `packages/domain`   | Pure identity, privacy, protocols and shared public filters               |
+| `packages/scoring`  | Versioned local advice and historical scoring                             |
+| `packages/db`       | Forward SQL migrations, Drizzle mirror and explicit repositories          |
+| `packages/seed`     | Reviewed offline records, public loader and derived export                |
+| `packages/adapters` | Bounded source/model integrations                                         |
 
-The retained Phase 08 fallback substrate adds faceted entity/document metadata, inspectable
-retrieval lineage, typed intrinsic Signal inputs, source reliability and corroboration evidence,
-and append-only current views. Its query grammar and rank fusion remain bounded deterministic
-comparators; they do not displace the model-led protocol or turn seeded vocabulary into an
-open-world completeness claim. The superseded spike is documented as an
-[experiment](docs/architecture/phase-08-deterministic-refoundation-experiment.md).
-
-## Signal is not one opaque score
-
-The product must keep these questions separate:
-
-- **query relevance:** why this item addresses the current need;
-- **evidence confidence:** what sources support each material claim and how independent/current
-  they are;
-- **intrinsic Signal:** evidence-backed indicators of reuse leverage, adoption burden, maturity,
-  maintenance, safety, and similar value dimensions independent of this query;
-- **project fit:** private constraints and preferences, assessed only inside the workspace.
-
-Model judgment may propose labels and explanations. Numeric or categorical measures require a
-versioned policy, observable inputs, missing-data semantics, evidence bindings, and replay. Old
-`query-signal-v1` and `query-signal-v2` receipts retain their historical meaning. The system will not
-invent a stronger intrinsic Signal from stars, mentions, model confidence, or absent evidence.
-
-## Trust and data boundaries
-
-- `catalog`: public/shareable admitted entities, documents, sources, observations, evidence, and
-  append-only revisions;
-- `workspace`: private queries, project context, shortlists, decisions, and user lifecycle state;
-- `ops`: adapter configuration, research runs, attempts, raw leads, model proposals, validation
-  receipts, leases, health, and audit records.
-
-Live leads stay in `ops`. Collection does not make them Corpus knowledge. Admission is an explicit,
-typed, evidence-bound action. Public records may not depend on private workspace content. Fetched
-content is untrusted data.
-
-Historical migrations are never rewritten. Stored model output can be hash-verified and rendered
-again; a fresh model invocation is not claimed to reproduce it. Corrections append a successor or
-revision rather than mutating an immutable receipt.
-
-## Product surfaces
-
-- **Local/agent use:** the repository API and `.agents/skills/signals-research` let a user's own
-  model-enabled agent apply the method while Signals supplies evidence and guardrails.
-- **Search UI:** live research progress, source outcomes, organized findings, exact citations,
-  uncertainty, and the explicit admission boundary are primary. The typed API admission workflow
-  remains the current write path; cached Corpus matches are a visible cross-check.
-- **Corpus UI:** browse and query durable admitted knowledge, evidence state, revisions, and refresh
-  status. Raw Search leads are not a Corpus layer.
-- **Hosted direction:** an operator can continuously curate and refresh a larger public Corpus so
-  users receive value without maintaining it themselves. Hosted auth, billing, and deployment are
-  not implemented in this phase.
-
-## Evaluation before optimization
-
-Freeze prompts and semantics, then compare model-led research, the deterministic fallback, and a
-strong direct-model answer under declared evidence/tool budgets. Evaluate unseen domains for human
-relevance, coverage, useful organization, citation support, false inclusion, important omission,
-stability, calls/tokens, elapsed time, and cost. Must-find lists must be independently created and
-kept out of production code and prompts.
-
-Latency and scale work are warranted only after usefulness is credible, except where a bounded
-operational mechanism is necessary to make the evidence trustworthy.
-
-## Reused prior art and current decisions
-
-The detailed evidence and adoption status live in the
-[architecture reuse register](docs/architecture/reuse-register.md). The governing decision is
-[ADR-004](docs/architecture/ADR-004-model-led-research.md). Earlier ADRs and
-[the schema map](docs/architecture/schema.md) remain historical authority for preserved records.
-
-## Explicit non-goals
-
-No candidate installation or execution, arbitrary crawling, general browser automation, hosted
-identity, payment, deployment control, model gateway, multi-agent runtime, or old Maestro
-orchestration end-state is authorized here. Cataloged systems remain evidence-bearing data until a
-separate approved phase grants typed authority.
+[ADR-004](docs/architecture/ADR-004-model-led-research.md) and
+[ADR-005](docs/architecture/ADR-005-signals-evidence-v1.md) retain protocol/exchange decisions.
+Earlier ADRs describe supported historical records, not the current product navigation.

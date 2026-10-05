@@ -1,5 +1,10 @@
 # Dependency baseline
 
+The public Corpus preview reuses exact-pinned React/Vite, TypeBox's interpreted value checker,
+Ajv, Playwright and axe. It adds no search dependency. MiniSearch and Pagefind remain documented
+alternatives in ADR-006. GitHub Pages actions are pinned to reviewed upstream commits in
+`.github/workflows/pages.yml`; they upload only the validated static public output.
+
 Evidence interchange v1 adds `ajv@8.20.0` and `ajv-formats@3.0.1` (MIT), reviewed
 2026-10-05. A separate Ajv draft-2020 instance validates the frozen peer schema without
 coercion or default insertion; semantic reference/privacy checks remain in the domain.

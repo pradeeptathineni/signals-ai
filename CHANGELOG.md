@@ -2,6 +2,16 @@
 
 ## 0.3.0
 
+Reviewed public Corpus files now drive a searchable static preview and structured CLI results.
+Shared exact filters, source-bound claims, claim-sensitive freshness, two-option comparison and
+optional evidence downloads make the collection useful without a model or database.
+Closed public fields and atomic derived snapshots protect publication. Browser and regression
+checks cover corrupt downloads, partial export failure and late model results after a query change.
+
+Local Corpus text search no longer creates model work. Historical numeric ranking is optional
+detail. Development evaluation/benchmark commands use feature names; their frozen policies and
+fixtures are unchanged.
+
 Stable designation withdrawn pending broader product review. The premature `v1.0.0` release and
 tag pointed to `c834bea242106511463d3bff934011d3a3cfa1ac`; that commit and ordinary history remain
 available. This is an explicit maturity reset to pre-1 development, not a persisted-schema downgrade.
