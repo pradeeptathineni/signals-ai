@@ -35,13 +35,17 @@ export function registerSecurityBoundary(
       });
     }
     if (mutationMethods.has(request.method)) {
-      if (request.headers['x-maestro-request'] !== '1') {
+      if (
+        request.headers['x-signals-request'] !== '1' &&
+        request.headers['x-maestro-request'] !== '1'
+      ) {
         return reply.code(403).send({
           type: 'about:blank',
           title: 'Mutation boundary rejected',
           status: 403,
           code: 'csrf_header_required',
-          detail: 'Local browser mutations require the Maestro request header.',
+          detail:
+            'Local browser mutations require a Signals request header (legacy Maestro header accepted).',
           correlationId: request.id,
         });
       }

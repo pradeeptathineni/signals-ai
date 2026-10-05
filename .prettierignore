@@ -5,3 +5,7 @@ playwright-report
 test-results
 package-lock.json
 packages/contracts/src/evidence-bundle-v1.schema.json
+docs/evidence/*.json
+.context-ai/
+.agents/skills/context-loadout/
+AGENTS.md

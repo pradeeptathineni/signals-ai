@@ -1,0 +1,33 @@
+{
+  "build": "production",
+  "bundle": "web-foundation-2026-10-05",
+  "checks": [
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "overflow": false,
+      "reducedMotion": true,
+      "seriousAxe": [],
+      "allAxe": [],
+      "skipFocus": true
+    },
+    {
+      "viewport": {
+        "width": 320,
+        "height": 800
+      },
+      "overflow": false,
+      "reducedMotion": true,
+      "seriousAxe": [],
+      "allAxe": [],
+      "skipFocus": true
+    }
+  ],
+  "errors": [],
+  "limits": [
+    "Builder visual review; no human usability study.",
+    "No field Core Web Vitals or Lighthouse measurement."
+  ]
+}

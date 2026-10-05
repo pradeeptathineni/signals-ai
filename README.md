@@ -1,21 +1,25 @@
-# Maestro AI
+# Signals AI
 
-Maestro is a local-first research system for finding high-signal existing knowledge that can help a
+Signals is a local-first research system for finding high-signal existing knowledge that can help a
 project. **Search** investigates enabled public sources for a live need. **Corpus** searches durable,
 admitted, refreshable knowledge. Both use one evidence-bound research protocol for interpretation,
 refinement, filtering, and organization while keeping their evidence universes and user experience
 distinct.
 
-The strongest path is model-led: one explicitly configured structured-output model proposes
+The configured model-led path uses one structured-output model to propose
 bounded source searches, assesses evidence gaps, and organizes cited findings. Deterministic code
 controls privacy, tools, budgets, identity, provenance, admission, and replay. The preserved Phase
 06/07 deterministic search remains a transparent no-model fallback and evaluation comparator, not
 an expanding word-list substitute for open-world understanding.
 
-It does **not** install, authorize, invoke, or orchestrate cataloged software. No
-model key is required. The narrow v0 establishes the policy, evidence, project-context, adapter,
-and receipt seams that later Maestro-owned orchestration can use without making an executor's
-ontology the core domain.
+**Exchange** lets a user's research agent submit a cited draft, review and admit it to Corpus,
+export exact bytes, record scoped adoption readiness and consumer feedback, and append refresh
+successors. Read the [1.x supported contract](docs/signals-contract.md) for modes, CLI operations,
+privacy, configuration compatibility and upgrade behavior.
+
+Signals does not install or execute cataloged software. No model key is required. The canonical
+repository is [pradeeptathineni/signals-ai](https://github.com/pradeeptathineni/signals-ai);
+Maestro's repository identity, history, storage and old receipt semantics are preserved.
 
 ## Prerequisites
 
@@ -27,6 +31,9 @@ No hosted database, external account, API key, model, or live seed fetch is need
 and local Corpus.
 
 ## Local setup
+
+Inspect existing containers and the exact database URL first: the default volume may hold retained
+development data. The setup below initializes that configured destination.
 
 ```bash
 npm ci
@@ -50,10 +57,10 @@ run abstains explicitly. Otherwise Search uses the preserved deterministic path,
 started explicitly after a model-run failure. Immutable v1 synthesis history remains replayable;
 queued v1 work is terminally rejected without a new model or source call instead of being mixed
 with v2 proposals. Copy
-`.env.example` to `.env` only when changing a documented port. `MAESTRO_ALLOW_NETWORK_FETCH=false`
+`.env.example` to `.env` only when changing local configuration. `SIGNALS_ALLOW_NETWORK_FETCH=false`
 also keeps the original Consider/refresh metadata path offline. Unknown public hosts enter manual
 review; local, private, credential-bearing, non-HTTPS, and nonstandard-port public URLs are rejected
-as safe failure receipts. Both the API bind and browser origin remain loopback-only in v0.
+as safe failure receipts. Both the API bind and browser origin remain loopback-only in 1.x.
 
 ## Primary demonstration
 
@@ -73,16 +80,22 @@ as safe failure receipts. Both the API bind and browser origin remain loopback-o
 
 ## Verification
 
-With Docker running:
+Non-database checks are `npm test`, `npm run typecheck`, `npm run lint`, and
+`npm run format:check`. The complete gate initializes `DATABASE_URL` and **drops/rebuilds test
+schemas** on `TEST_DATABASE_URL`. Run it only against explicitly named disposable destinations,
+on a non-default port. For example, after starting a disposable PostgreSQL container on port 55601:
 
 ```bash
+DATABASE_URL=postgres://signals_test:disposable@127.0.0.1:55601/signals_verify \
+TEST_DATABASE_URL=postgres://signals_test:disposable@127.0.0.1:55601/signals_verify_test \
 npm run verify
 ```
 
 The gate checks formatting, lint, strict types, unit/property tests, a fresh-schema real-PostgreSQL
 integration suite, the production build, deterministic provenance, the documented strict
-dependency-advisory policy, and Playwright/axe browser tests. Integration tests create and rebuild
-only the dedicated `maestro_test` database; they do not reset the development `maestro` database.
+dependency-advisory policy, and Playwright/axe browser tests. Never use retained data for these
+commands. The [v1 execution evidence](docs/signals-v1-execution.md) records the isolated destinations,
+actual source/UI/consumer observations and their limits.
 
 Useful individual commands:
 
@@ -139,7 +152,8 @@ authority, admission, or private context. The local index is an evidence substra
 contain all useful knowledge.
 
 See [ADR-001](docs/architecture/ADR-001-v0-foundation.md),
-[ADR-004](docs/architecture/ADR-004-model-led-research.md), the
+[ADR-004](docs/architecture/ADR-004-model-led-research.md),
+[ADR-005](docs/architecture/ADR-005-signals-evidence-v1.md), the
 [schema contract](docs/architecture/schema.md), and the adjacent authoritative planning workspace
 for the complete product decisions.
 
@@ -148,5 +162,5 @@ for the complete product decisions.
 - If `db:init` cannot connect, run `docker compose ps` and wait for PostgreSQL to report `healthy`.
 - If a URL remains queued, confirm `npm run dev:worker` is running; readiness reports worker state.
 - If dependency lifecycle scripts are blocked by local npm policy, do not globally approve them for
-  Maestro. The checked build and tests are the authority for this slice.
+  Signals. The checked build and tests are the authority for this slice.
 - Stop local services with `docker compose stop`. The named volume preserves development data.

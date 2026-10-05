@@ -1,11 +1,11 @@
 ---
-name: maestro-research
-description: Research an open-ended project need against live public sources or a local Maestro Corpus and return organized, evidence-bound options. Use when the user asks to discover, survey, compare, or find high-signal existing tools, services, practices, standards, models, articles, or other reusable knowledge. Do not use it to install or execute candidates.
+name: signals-research
+description: Research an open-ended project need against live public sources or a local Signals Corpus and return organized, evidence-bound options. Use when the user asks to discover, survey, compare, or find high-signal existing tools, services, practices, standards, models, articles, or other reusable knowledge. Do not use it to install or execute candidates.
 ---
 
-# Maestro Research
+# Signals Research
 
-Produce a better result than an ungrounded model answer by coupling model judgment to acquired evidence.
+Ground model judgment in acquired evidence and report its practical limits.
 
 ## Choose the evidence universe
 
@@ -13,7 +13,7 @@ Produce a better result than an ungrounded model answer by coupling model judgme
 - Use **Corpus** for admitted indexed knowledge. Do not silently substitute live leads for Corpus records.
 - Use both when the user wants current coverage plus a check against durable knowledge. Report which universe produced each item.
 
-If a local Maestro API or repository is in scope, read [references/research-protocol.md](references/research-protocol.md) before driving it. Otherwise apply the method with the agent's available public research tools and return the same evidence-bound result shape.
+If a local Signals API or repository is in scope, read [references/research-protocol.md](references/research-protocol.md) before driving it. Otherwise apply the method with the agent's available public research tools and return the same evidence-bound result shape.
 
 ## Research method
 

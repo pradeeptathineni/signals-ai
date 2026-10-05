@@ -1,7 +1,75 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { AxeBuilder } from '@axe-core/playwright';
+import { createHash, randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { evidenceExample } from '../../packages/test-fixtures/src/evidence.js';
 import { expect, test, type Page } from '@playwright/test';
+
+test('evidence import, review, exact export, readiness, feedback and refresh work on mobile', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  const verifyRuntime = observeRuntime(page);
+  const bundle = evidenceExample('agent-assisted');
+  bundle.bundle_id = `browser-regression-${randomUUID()}`;
+  const bytes = JSON.stringify(bundle, null, 2) + '\n';
+  const digest = createHash('sha256').update(bytes).digest('hex');
+  await page.setViewportSize({ width: 320, height: 800 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/exchange');
+  await page.getByText('Import an evidence draft', { exact: true }).click();
+  await page.getByLabel('Evidence bytes', { exact: true }).fill(bytes);
+  await page.getByLabel('Expected SHA-256').fill(digest);
+  await page.getByRole('button', { name: 'Validate and save draft' }).click();
+  await expect(page.getByRole('status')).toContainText('Draft saved');
+  await page.getByRole('button', { name: new RegExp(bundle.bundle_id) }).click();
+  await page
+    .getByLabel('Review rationale')
+    .fill('Synthetic browser regression only; no live research claim.');
+  await page.getByRole('checkbox').check();
+  await page.getByRole('button', { name: 'Admit reviewed evidence' }).click();
+  await expect(page.getByRole('button', { name: 'Export exact JSON' })).toBeVisible();
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export exact JSON' }).click();
+  const download = await downloadPromise;
+  expect(await readFile(await download.path(), 'utf8')).toBe(bytes);
+  await page.getByText('Assess readiness for a particular use', { exact: true }).click();
+  await page.getByLabel('Purpose', { exact: true }).selectOption('use');
+  await page.getByLabel('Bounded check', { exact: true }).selectOption('passed');
+  await page.getByLabel('Compatibility', { exact: true }).selectOption('compatible');
+  await page.getByLabel('Documented interface', { exact: true }).check();
+  await page.getByLabel('Authority is safe for this purpose').check();
+  await page.getByLabel('Critical claims are supported').check();
+  await page.getByRole('button', { name: 'Assess scoped readiness' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'broader benefit' })).toBeVisible();
+  await page.getByText('Record consumer feedback', { exact: true }).click();
+  await page.getByLabel('Consumer task', { exact: true }).fill('browser-regression');
+  await page
+    .getByLabel('Observed result', { exact: true })
+    .fill('Synthetic feedback contract check.');
+  await page.getByRole('button', { name: 'Save feedback' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Feedback recorded' })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await expectNoSeriousAccessibilityViolations(page);
+  await page.getByRole('button', { name: 'Start reassessment' }).click();
+  const next = JSON.parse(
+    await page.getByRole('textbox', { name: 'Evidence bytes', exact: true }).inputValue(),
+  ) as typeof bundle;
+  expect(next.sources[0]!.observed_at).toBe(bundle.sources[0]!.observed_at);
+  await page.getByRole('button', { name: 'Validate and save draft' }).click();
+  await page.getByRole('button', { name: new RegExp(next.bundle_id) }).click();
+  await page.getByLabel('Review rationale').fill('Rechecked; supported scope unchanged.');
+  await page.getByRole('checkbox').check();
+  await page.getByRole('button', { name: 'Admit reviewed evidence' }).click();
+  await expect(
+    page.getByText('Sources rechecked; material claims and recommendations unchanged.'),
+  ).toBeVisible();
+  await page.goto('/exchange');
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('link', { name: 'Skip to content' })).toBeFocused();
+  verifyRuntime();
+});
 
 async function expectNoSeriousAccessibilityViolations(page: Page) {
   const results = await new AxeBuilder({ page })

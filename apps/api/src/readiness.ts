@@ -1,5 +1,6 @@
 export interface ReadinessState {
   migrations: number;
+  migrationFilenames?: string[];
   providers: number;
   workerSchemaReady: boolean;
   workerActive: boolean;
@@ -7,7 +8,7 @@ export interface ReadinessState {
   unhealthyAdapters: number;
 }
 
-export const REQUIRED_SCHEMA_MIGRATIONS = 14;
+export const REQUIRED_SCHEMA_MIGRATIONS = requiredMigrationFilenames.length;
 
 export function assessReadiness(state: ReadinessState): {
   ready: boolean;
@@ -17,7 +18,10 @@ export function assessReadiness(state: ReadinessState): {
   integrations: 'disabled' | 'healthy' | 'degraded';
   warnings: string[];
 } {
-  const coreReady = state.migrations >= REQUIRED_SCHEMA_MIGRATIONS;
+  const coreReady =
+    state.migrations >= REQUIRED_SCHEMA_MIGRATIONS &&
+    (!state.migrationFilenames ||
+      requiredMigrationFilenames.every((name) => state.migrationFilenames!.includes(name)));
   const worker = !state.workerSchemaReady
     ? 'schema_missing'
     : state.workerActive
@@ -44,3 +48,4 @@ export function assessReadiness(state: ReadinessState): {
     warnings,
   };
 }
+import { requiredMigrationFilenames } from '../../../packages/db/src/migration-contract.js';

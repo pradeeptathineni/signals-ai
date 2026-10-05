@@ -1,4 +1,4 @@
-# Maestro research protocol
+# Signals research protocol
 
 Use this reference only when driving or extending the local repository/service.
 

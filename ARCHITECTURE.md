@@ -1,12 +1,13 @@
 # Architecture
 
-Maestro is currently a local-first research system for finding high-signal existing knowledge that
+Signals is a local-first research system for finding high-signal existing knowledge that
 can help a project. **Search** investigates current public sources for a user's live need.
 **Corpus** searches admitted, refreshable knowledge. They use one research judgment protocol but
 remain different evidence universes and user experiences.
 
-`Signals AI` is a working product name only. The repository and package remain `maestro-ai` because
-the [naming gate](docs/product-split-and-naming.md) found material active-market collisions.
+Signals AI is the public product/repository name approved on 2026-10-05. Historical Maestro
+records, protocol identifiers and local storage names remain compatible; see
+[ADR-005](docs/architecture/ADR-005-signals-evidence-v1.md).
 
 ## Value loop
 
@@ -102,8 +103,8 @@ revision rather than mutating an immutable receipt.
 
 ## Product surfaces
 
-- **Local/agent use:** the repository API and `.agents/skills/maestro-research` let a user's own
-  model-enabled agent apply the method while Maestro supplies evidence and guardrails.
+- **Local/agent use:** the repository API and `.agents/skills/signals-research` let a user's own
+  model-enabled agent apply the method while Signals supplies evidence and guardrails.
 - **Search UI:** live research progress, source outcomes, organized findings, exact citations,
   uncertainty, and the explicit admission boundary are primary. The typed API admission workflow
   remains the current write path; cached Corpus matches are a visible cross-check.

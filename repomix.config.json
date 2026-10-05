@@ -4,7 +4,7 @@
     "style": "xml",
     "filePathStyle": "target-relative",
     "parsableStyle": true,
-    "headerText": "Disposable architecture map for Maestro. Source files, tests, migrations, bulk seed/evaluation records, client DTO mirrors, and established decision-detail pages remain authoritative; inspect them directly before work in those areas or before making a claim.",
+    "headerText": "Disposable architecture map for Signals. Source files, tests, migrations, bulk seed/evaluation records, client DTO mirrors, and established decision-detail pages remain authoritative; inspect them directly before work in those areas or before making a claim.",
     "fileSummary": true,
     "directoryStructure": true,
     "compress": true,

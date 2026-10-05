@@ -1,4 +1,5 @@
 import { beforeAll, afterAll, expect, it } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
 import { createPool } from './client.js';
 import { testDatabaseUrl } from '../../test-fixtures/src/database.js';
@@ -11,6 +12,7 @@ import {
   exportEvidence,
   recordEvidenceFeedback,
 } from './evidence-repository.js';
+import { recordAdoptionReadiness } from './adoption-repository.js';
 let pool: Pool;
 beforeAll(() => {
   pool = createPool(testDatabaseUrl());
@@ -41,6 +43,13 @@ it('admits exact evidence, labels agent review, retains Corpus provenance and pr
     draft.id,
   ]);
   expect(audit.rows[0].actor_type).toBe('agent-reviewed');
+  await expect(
+    reviewEvidenceDraft(pool, localWorkspaceId, draft.id, {
+      actor: 'human',
+      rationale: 'A different actor cannot relabel this review.',
+      blockers: [],
+    }),
+  ).rejects.toThrow('immutable review');
   const document =
     await pool.query(`SELECT so.retrieval_method,so.observed_at FROM catalog.knowledge_documents d
     JOIN catalog.source_observations so ON so.id=d.source_observation_id WHERE d.title='Resource' ORDER BY d.created_at DESC LIMIT 1`);
@@ -102,4 +111,96 @@ it('rejects fixture promotion and a model-led label without a stored run', async
       importEvidenceDraft(pool, localWorkspaceId, bytes, evidenceDigest(bytes)),
     ).rejects.toThrow();
   }
+});
+it('binds readiness and feedback to exact candidates and enforces bytes for alternate writers', async () => {
+  const bundle = evidenceExample('agent-assisted');
+  bundle.bundle_id = `binding-${randomUUID()}`;
+  const bytes = JSON.stringify(bundle);
+  const draft = await importEvidenceDraft(pool, localWorkspaceId, bytes, evidenceDigest(bytes));
+  const admitted = await reviewEvidenceDraft(pool, localWorkspaceId, draft.id, {
+    actor: 'agent-reviewed',
+    rationale: 'Synthetic integrity regression.',
+    blockers: [],
+  });
+  const input = {
+    candidateId: 'candidate',
+    actor: 'agent-reviewed' as const,
+    purpose: 'use' as const,
+    supportedClaimIds: ['c1'],
+    documentedInterface: true,
+    boundedCheck: 'passed' as const,
+    compatibility: 'compatible' as const,
+    redistribution: 'unknown' as const,
+    authoritySafe: true,
+    criticalClaimSupported: true,
+    unknowns: [],
+  };
+  expect(await recordAdoptionReadiness(pool, localWorkspaceId, admitted.id, input)).toMatchObject({
+    disposition: 'trial',
+    authority: 'recommendation-only',
+  });
+  await expect(
+    recordAdoptionReadiness(pool, localWorkspaceId, admitted.id, {
+      ...input,
+      supportedClaimIds: ['missing'],
+    }),
+  ).rejects.toThrow('exact candidate');
+  await expect(
+    recordAdoptionReadiness(pool, localWorkspaceId, admitted.id, {
+      ...input,
+      feedbackId: randomUUID(),
+    }),
+  ).rejects.toThrow('exact bundle');
+  const feedback = await recordEvidenceFeedback(pool, localWorkspaceId, admitted.id, {
+    candidateId: 'candidate',
+    consumerTask: 'regression-only',
+    outcome: 'useful',
+    detail: 'Synthetic trial outcome for contract testing.',
+    idempotencyKey: randomUUID(),
+  });
+  expect(
+    await recordAdoptionReadiness(pool, localWorkspaceId, admitted.id, {
+      ...input,
+      feedbackId: feedback.id,
+    }),
+  ).toMatchObject({ disposition: 'adopt' });
+  await expect(
+    pool.query(
+      'INSERT INTO ops.evidence_drafts (id,workspace_id,bundle_id,bytes,digest,mode) VALUES ($1,$2,$3,$4,$5,$6)',
+      [randomUUID(), localWorkspaceId, 'tampered', bytes, 'b'.repeat(64), 'agent-assisted'],
+    ),
+  ).rejects.toThrow();
+  await expect(
+    pool.query(
+      'INSERT INTO ops.evidence_feedback (id,workspace_id,bundle_id,candidate_id,consumer_task,outcome,detail,idempotency_key) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+      [
+        randomUUID(),
+        localWorkspaceId,
+        admitted.id,
+        'wrong',
+        'direct-writer',
+        'useful',
+        'Invalid binding',
+        randomUUID(),
+      ],
+    ),
+  ).rejects.toThrow('exact evidence bundle');
+  await expect(
+    pool.query(
+      'INSERT INTO ops.adoption_readiness (id,workspace_id,bundle_id,candidate_id,actor_type,policy_version,input,result) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+      [
+        randomUUID(),
+        localWorkspaceId,
+        admitted.id,
+        'wrong',
+        'agent-reviewed',
+        'adoption-readiness-v1',
+        {},
+        {},
+      ],
+    ),
+  ).rejects.toThrow('exact evidence bundle');
+  await expect(
+    pool.query('DELETE FROM ops.adoption_readiness WHERE bundle_id=$1', [admitted.id]),
+  ).rejects.toThrow();
 });

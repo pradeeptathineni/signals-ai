@@ -10,6 +10,7 @@ import {
 import { localWorkspaceId, referenceProjectContextId } from '../../seed/src/import.js';
 import { testDatabaseUrl } from '../../test-fixtures/src/database.js';
 import { createPool } from './client.js';
+import { projectResearchEvidence } from './evidence-repository.js';
 import {
   configureAdapter,
   getDiscoveryOperation,
@@ -213,6 +214,9 @@ describe('bounded model-led research persistence', () => {
 
     const run = (await getResearchRun(pool, localWorkspaceId, requested.id)) as RunView;
     expect(run.state).toBe('complete');
+    await expect(projectResearchEvidence(pool, localWorkspaceId, requested.id)).rejects.toThrow(
+      'Fixture',
+    );
     expect(run.proposals.map((proposal) => proposal.proposalType)).toEqual([
       'plan',
       'refinement',

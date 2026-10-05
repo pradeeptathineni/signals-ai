@@ -208,6 +208,15 @@ export function ExplorePage() {
     },
   });
 
+  const projectEvidence = useMutation({
+    mutationFn: () =>
+      api(`/api/v1/research/runs/${researchRunId}/evidence-draft`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      }),
+    onSuccess: () => setNotice('Evidence draft saved. Open Exchange to review and admit it.'),
+  });
+
   const resultQuery = useMemo(() => {
     const query = new URLSearchParams({ limit: String(resultPageSize), sort });
     if (kind) query.set('kind', kind);
@@ -480,8 +489,12 @@ export function ExplorePage() {
         <p className="eyebrow">Evidence-backed research</p>
         <h1 id="explorer-heading">Find what exists for what you need</h1>
         <p>
-          Describe what you need. Maestro searches admitted knowledge and enabled public sources,
+          Describe what you need. Signals searches admitted knowledge and enabled public sources,
           preserves source outcomes, and keeps evidence quality separate from project fit.
+        </p>
+        <p className="hint">
+          <Link to="/exchange">Import agent-assisted research</Link> when a configured local model
+          is unavailable. Offline Corpus remains available.
         </p>
         <form
           className="explorer-query"
@@ -712,6 +725,19 @@ export function ExplorePage() {
               </summary>
               <div className="source-results-body">
                 <p className="hint">{researchRun.data.safeDetail}</p>
+                {researchRun.data.state === 'complete' ? (
+                  <>
+                    <button
+                      className="button secondary"
+                      disabled={projectEvidence.isPending}
+                      onClick={() => projectEvidence.mutate()}
+                    >
+                      Prepare evidence draft
+                    </button>
+                    <Link to="/exchange">Review in Exchange</Link>
+                    {projectEvidence.isError ? <ErrorPanel error={projectEvidence.error} /> : null}
+                  </>
+                ) : null}
                 {researchRun.data.operations.length ? (
                   <div className="source-status-row" aria-label="Model-led source outcomes">
                     {researchRun.data.operations.map((operation) => (

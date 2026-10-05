@@ -12,7 +12,13 @@ The same model-led research protocol interprets and organizes both. Their acquis
 lifecycle, and interface remain visibly different. Future orchestration or execution is a separate
 product decision and is not part of this phase.
 
-## Naming result
+## Settled naming decision — 2026-10-05
+
+The user approved the Maestro AI -> Signals AI rename. The repository identity and history are
+preserved at `pradeeptathineni/signals-ai`; the active local directory remains `maestro-ai`.
+This decision supersedes the prior gate below. No further naming research is a release requirement.
+
+## Historical naming result — superseded
 
 `Signals AI` is useful as a working description but is **not cleared for a public repository,
 package, domain, or product rename**. Current active collisions include:

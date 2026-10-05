@@ -1,4 +1,5 @@
 import { run } from 'graphile-worker';
+import { signalsSetting } from '../../../packages/domain/src/configuration.js';
 import {
   createGraphileJobQueue,
   createGitHubMetadataAdapter,
@@ -18,7 +19,7 @@ const queue = await createGraphileJobQueue(connectionString);
 await queue.migrate();
 
 const adapter = createGitHubMetadataAdapter({
-  allowNetwork: process.env.MAESTRO_ALLOW_NETWORK_FETCH === 'true',
+  allowNetwork: signalsSetting('ALLOW_NETWORK_FETCH') === 'true',
 });
 const runner = await run({
   connectionString,

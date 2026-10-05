@@ -1,6 +1,6 @@
 {
-  "name": "maestro-ai",
-  "version": "0.2.0",
+  "name": "signals-ai",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "workspaces": [

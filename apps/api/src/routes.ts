@@ -144,6 +144,7 @@ export function registerRoutes(app: FastifyInstance, pool: Pool): void {
   routes.get('/api/v1/health/ready', { schema: { tags: ['health'] } }, async (_request, reply) => {
     const result = await pool.query<{
       migrations: number;
+      migrationFilenames: string[];
       providers: number;
       workerSchemaReady: boolean;
       workerActive: boolean;
@@ -152,6 +153,7 @@ export function registerRoutes(app: FastifyInstance, pool: Pool): void {
     }>(`
       SELECT
         (SELECT count(*)::int FROM ops.schema_migrations) AS migrations,
+        (SELECT array_agg(filename ORDER BY filename) FROM ops.schema_migrations) AS "migrationFilenames",
         (SELECT count(*)::int FROM catalog.providers) AS providers,
         (to_regclass('graphile_worker.jobs') IS NOT NULL) AS "workerSchemaReady",
         EXISTS (

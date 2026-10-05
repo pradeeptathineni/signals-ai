@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { signalsSetting } from '../../../packages/domain/src/configuration.js';
 import type { TaskList } from 'graphile-worker';
 import {
   createGitHubMetadataAdapter,
@@ -59,7 +60,7 @@ function isResearchPayload(value: unknown): value is ResearchTaskPayload {
 export function createTaskList(
   pool: Pool,
   adapter: GitHubMetadataAdapter = createGitHubMetadataAdapter({
-    allowNetwork: process.env.MAESTRO_ALLOW_NETWORK_FETCH === 'true',
+    allowNetwork: signalsSetting('ALLOW_NETWORK_FETCH') === 'true',
   }),
 ): TaskList {
   return {

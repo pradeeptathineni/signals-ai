@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { requiredMigrationFilenames } from './migration-contract.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
 import { hashCanonical, replayDecisionReceipt } from '../../domain/src/index.js';
@@ -88,8 +89,11 @@ describe('reviewed PostgreSQL contract', () => {
       '0028_typed_discovery_admission.sql',
       '0030_precomputed_search_vectors.sql',
       '0031_corroboration_entity_binding.sql',
+      '0032_evidence_exchange_v1.sql',
+      '0033_evidence_readiness_and_integrity.sql',
     ]);
     expect(migrations.rows.every((row) => /^[a-f0-9]{64}$/.test(row.sha256))).toBe(true);
+    expect(migrations.rows.map((row) => row.filename)).toEqual([...requiredMigrationFilenames]);
   });
 
   it('imports the source manifest idempotently while preserving additive authored data', async () => {
@@ -198,7 +202,7 @@ describe('reviewed PostgreSQL contract', () => {
   });
 
   it('keeps reviewed SQL and Drizzle table/column declarations aligned', async () => {
-    expect(await checkSchemaDefinitions(pool)).toEqual({ checkedTables: 103, errors: [] });
+    expect(await checkSchemaDefinitions(pool)).toEqual({ checkedTables: 108, errors: [] });
   });
 
   it('keeps JIT disabled for bounded local request queries', async () => {

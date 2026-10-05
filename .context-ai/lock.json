@@ -1,0 +1,340 @@
+{
+  "agents_created": false,
+  "owned": {
+    ".agents/skills/context-loadout/SKILL.md": "c7de5f384b4ec1d7e936ffe539783e5750dfbb60d497c561988dfcebfb7381ca",
+    ".context-ai/resources/.agents/skills/standard/SKILL.md": "9a859350a5ab2af9de14b8014d00fc66b23e026919a03082bbf044d8fcd0197b",
+    ".context-ai/resources/AGENTS.md": "079c960790a52dd9ad9fe8e98f8d4c8d92022a8dd7333c925f6ed72c187c9aa4",
+    ".context-ai/resources/LICENSE": "69e8bc0e7e498d3dbc421855f3be2857130648cc0ef343e81d95afd2ad168296",
+    ".context-ai/resources/capabilities.yaml": "cf58bb7a425d1bf678c317047e26e813552c2f9d3428894b0a76d7695dc12a7c",
+    ".context-ai/resources/concepts.yaml": "fa7756b1dedee5564f689b148775d9149e541f70db1ad8489b31a337a07fe1f6",
+    ".context-ai/resources/core/benchmarking.md": "70bc2700fb0c5043a333035c93ded5e846ac31ae1d3904e798a06ef355ce18de",
+    ".context-ai/resources/core/compression.md": "f632cf52ae1aaa2b19dc3d0d57d007902b4452c181623a2af41efa36576adbfb",
+    ".context-ai/resources/core/context.md": "e8b7f0a2e707fc6330a49f69f30def12a3879125dca37af8a63af557f7da6e2a",
+    ".context-ai/resources/core/development.md": "1c6f67e58430e5a5ae2181bc79860b88635f24d12755cfb66eb43a64aae5d08f",
+    ".context-ai/resources/core/engineering.md": "fbb7bdf251f1310329eec33f7adaf0ac8911f9e5fc069f08bff36e3d0fa4c657",
+    ".context-ai/resources/core/research.md": "c28861cf5cbbd7bce10614e0f3c44931fddfbe6362252f11cc6007e01b02e189",
+    ".context-ai/resources/core/review.md": "8e247f385e1258f82e6f34087c51aa2b93d9da81241ccd75634e7b0659e99082",
+    ".context-ai/resources/core/testing.md": "9d423038a8000331a536995c84825368f90062de01ded9cebdb7c488974b764f",
+    ".context-ai/resources/core/versioning.md": "69fa36d327c9193dbc5aa38af80b51943b39477d4a4d15b829cad95d2e609ee7",
+    ".context-ai/resources/custom/README.md": "b1cd1f8a8511f69d045822104dce159989382e46d46132cd3edf0b812ac99e18",
+    ".context-ai/resources/custom/ai-implementation.md": "36db2df73541e3dfdc675eaa4639889c75aa5564399ea495b887ce7869ada315",
+    ".context-ai/resources/custom/code-comments.md": "de4045aaa7b9e360d79a7b339a5a1d3ba8135d98b8df8ad4ec4cf0f0fb01885a",
+    ".context-ai/resources/custom/context-efficiency.md": "49c754cefc8006ad1428ccd7d2a4b5f18255dfa0c2f16a094cc0609149787b3a",
+    ".context-ai/resources/custom/delivery.md": "8c5b613ac70ae0a1316088e32524377ce25f46b80be691b01a31140c9fb61e90",
+    ".context-ai/resources/custom/evidence-claims.md": "842911a933db6ae2b3cbd84e786cfff6c9f95993b7369de44d6619207a6975be",
+    ".context-ai/resources/custom/model-deliberation.md": "ee4980b07519a1319fe4af0739665ce79c47d2d0898749d01d459febff63389c",
+    ".context-ai/resources/custom/orchestration.md": "3368af30d805e364dde687b1ea486c145294d27e621c8996d894a440a295eafb",
+    ".context-ai/resources/custom/patterns.md": "00c60304c999e447e2511ebcdebfc7ed7b85870bc05a5f5a4db33f41304a708c",
+    ".context-ai/resources/custom/prior-art.md": "36911c2ad1ad2c24745aab947fea4f2989bc6465265315b8fc57f9eedbef3487",
+    ".context-ai/resources/custom/project-intent.md": "203889e90c91921675c5edb688bc2184f099e03f690b39eefe60250924a8e0e5",
+    ".context-ai/resources/custom/technical-design.md": "be417aa1335bf4aeda22f02327c789cd928dd2c00990791510f641fc7cd460bb",
+    ".context-ai/resources/custom/writing.md": "e8cbd29927fc49a207f6632a0e2eda2c3bde55491d4ba438cbdec2b3b46b8a68",
+    ".context-ai/resources/decisions/bootstrap.yaml": "cbe609e4c3a521ca27a5512c67e25d6e7050c65336aa78a04f0b06f72ecce8a6",
+    ".context-ai/resources/docs/adoption.md": "1949cfc58af1bff9eb6ad81957c2f6f1827ae3ebe892792b2648c9c569cd42e9",
+    ".context-ai/resources/docs/loadouts.md": "a50af6a4aa14dccb3400180422deb1dbb5754517836c2dd1c0350b1829d358d4",
+    ".context-ai/resources/evals/README.md": "52a69179ac22d7a0799001de032b0112d768d57ca17c14ffd636c516290318f5",
+    ".context-ai/resources/evals/usage-cases.md": "b98e8ac119ca437f9b6340e61ccb2aeb17c937607d31e0af918cf4989803841e",
+    ".context-ai/resources/loadouts/research-evidence.yaml": "b1718fe87fc7c1b5599224e0313eff195cd7153c75999e521084d11ff6999c37",
+    ".context-ai/resources/loadouts/standard.yaml": "d7a79333a321b39aaf8d4f4529c8374f9829502310e0cdcf18804b1e7b4d9132",
+    ".context-ai/resources/models/routing.yaml": "8f1996f30dcebacd8f2910c6035e147c3ed50d555886e1958d9b2c85cc87bd7e",
+    ".context-ai/resources/procedures/research-evidence.md": "598c0a10a320a23f3d684a8997f4423c0783dfea270055580955686ea618bc74",
+    ".context-ai/resources/providers/openai/codex.md": "1129561d2be3318f4901630d1f2cdb7fa33e4795aa639136b3a38fba8017dad6",
+    ".context-ai/resources/providers/openai/signals.yaml": "52ab96055affd6c57731256c9d3fdfa8c6671722cce5c7993a8363c815520d49",
+    ".context-ai/resources/requirements.txt": "f226f05863d6bad01a959923eae90c99e2ab7abcb12fd44b214ba90ecf8d60bb",
+    ".context-ai/resources/scripts/lookup.rb": "687e42c32883b5c36f33f9cfa0766e2072883fe50a4645b5b21f5886f83196bf",
+    ".context-ai/resources/signals/common.yaml": "c210be332c6830a4e7004cb248c1c07fc1a8cb56ece0d01283399da87024e8f5",
+    ".context-ai/resources/skills/context-loadout/SKILL.md": "c28a7924235f3260882ec11cba1d94d1a191f34943cd0a5c471ca18721f662d3",
+    ".context-ai/resources/sources.yaml": "41c66f3b911d1d8f9ed82cf9ee003f45a094c43287ae327f28d466a82e6b2d1f"
+  },
+  "resolution": {
+    "capabilities": {
+      "git": {
+        "available": true,
+        "definition": {
+          "boundary": "Read-only discovery; mutation needs task authority.",
+          "command": "git",
+          "kind": "command"
+        },
+        "requirement": "required"
+      },
+      "python-runtime": {
+        "available": true,
+        "definition": {
+          "boundary": "Python 3.10+ and requirements.txt; no installer side effects.",
+          "command": "python3",
+          "kind": "command"
+        },
+        "requirement": "required"
+      }
+    },
+    "checks": [
+      {
+        "loadout": "standard",
+        "recipe": "Use the repository validation commands; inspect the actual diff; preserve unrelated work."
+      },
+      {
+        "loadout": "research-evidence",
+        "recipe": "Verify claim/source references, freshness, producer mode and exact-byte interchange integrity."
+      }
+    ],
+    "decisions": {
+      "D-001": {
+        "action": "adopt",
+        "alternatives": [
+          "existing repository guidance"
+        ],
+        "applicability": "Context AI v1 consumers",
+        "concept": "agent-instruction-entrypoint",
+        "evidence": [
+          "kit:04-BOOTSTRAP-DECISIONS.yaml"
+        ],
+        "id": "D-001",
+        "rationale": "Use the cross-agent repository instruction convention as the small routing entry point.",
+        "revision": 1,
+        "revisit_when": "Provider discovery semantics materially change or a better interoperable convention wins.",
+        "rollback": "Undo unchanged owned materialization; retain old pins.",
+        "selection": "AGENTS.md",
+        "supersedes": null,
+        "unknowns": [
+          "Comparative benefit is not measured."
+        ],
+        "validation": [
+          "Source review and bounded consumer tests before release."
+        ]
+      },
+      "D-002": {
+        "action": "adopt",
+        "alternatives": [
+          "existing repository guidance"
+        ],
+        "applicability": "Context AI v1 consumers",
+        "concept": "progressive-procedure-packaging",
+        "evidence": [
+          "kit:04-BOOTSTRAP-DECISIONS.yaml"
+        ],
+        "id": "D-002",
+        "rationale": "Use skills for on-demand procedures and references rather than expanding always-loaded instructions.",
+        "revision": 1,
+        "revisit_when": "A target agent cannot consume the format or measured discovery/activation fails.",
+        "rollback": "Undo unchanged owned materialization; retain old pins.",
+        "selection": "Agent Skills / SKILL.md",
+        "supersedes": null,
+        "unknowns": [
+          "Comparative benefit is not measured."
+        ],
+        "validation": [
+          "Source review and bounded consumer tests before release."
+        ]
+      },
+      "D-003": {
+        "action": "adopt",
+        "alternatives": [
+          "existing repository guidance"
+        ],
+        "applicability": "Context AI v1 consumers",
+        "concept": "canonical-behavior-format",
+        "evidence": [
+          "kit:04-BOOTSTRAP-DECISIONS.yaml"
+        ],
+        "id": "D-003",
+        "rationale": "Keep durable human/LLM-readable behavioral guidance diffable and provider-neutral.",
+        "revision": 1,
+        "revisit_when": "A machine-readable contract is needed instead of natural-language guidance.",
+        "rollback": "Undo unchanged owned materialization; retain old pins.",
+        "selection": "Markdown context modules",
+        "supersedes": null,
+        "unknowns": [
+          "Comparative benefit is not measured."
+        ],
+        "validation": [
+          "Source review and bounded consumer tests before release."
+        ]
+      },
+      "D-004": {
+        "action": "adopt",
+        "alternatives": [
+          "existing repository guidance"
+        ],
+        "applicability": "Context AI v1 consumers",
+        "concept": "loadout-definition",
+        "evidence": [
+          "kit:04-BOOTSTRAP-DECISIONS.yaml"
+        ],
+        "id": "D-004",
+        "rationale": "Compose references to context, skills, capabilities and checks without inventing an executable DSL.",
+        "revision": 1,
+        "revisit_when": "Repeated real consumers require semantics YAML cannot express safely and clearly.",
+        "rollback": "Undo unchanged owned materialization; retain old pins.",
+        "selection": "declarative YAML manifests",
+        "supersedes": null,
+        "unknowns": [
+          "Comparative benefit is not measured."
+        ],
+        "validation": [
+          "Source review and bounded consumer tests before release."
+        ]
+      },
+      "D-005": {
+        "action": "adopt",
+        "alternatives": [
+          "existing repository guidance"
+        ],
+        "applicability": "Context AI v1 consumers",
+        "concept": "evidence-decision-separation",
+        "evidence": [
+          "kit:04-BOOTSTRAP-DECISIONS.yaml"
+        ],
+        "id": "D-005",
+        "rationale": "Preserve the difference between what sources support, what a project adopts, what is installed, and what actually worked.",
+        "revision": 1,
+        "revisit_when": "Never collapse these states; only refine their contracts.",
+        "rollback": "Undo unchanged owned materialization; retain old pins.",
+        "selection": "Signals evidence -> Context decision -> project lock -> use receipt",
+        "supersedes": null,
+        "unknowns": [
+          "Comparative benefit is not measured."
+        ],
+        "validation": [
+          "Source review and bounded consumer tests before release."
+        ]
+      },
+      "D-006": {
+        "action": "adopt",
+        "alternatives": [
+          "existing repository guidance"
+        ],
+        "applicability": "Context AI v1 consumers",
+        "concept": "context-runtime-boundary",
+        "evidence": [
+          "kit:04-BOOTSTRAP-DECISIONS.yaml"
+        ],
+        "id": "D-006",
+        "rationale": "Context AI equips existing agents; it should not duplicate orchestration/execution runtimes.",
+        "revision": 1,
+        "revisit_when": "Multiple real consumers demonstrate a missing capability that cannot live in an existing runtime.",
+        "rollback": "Undo unchanged owned materialization; retain old pins.",
+        "selection": "no general agent runtime in context-ai",
+        "supersedes": null,
+        "unknowns": [
+          "Comparative benefit is not measured."
+        ],
+        "validation": [
+          "Source review and bounded consumer tests before release."
+        ]
+      },
+      "D-012": {
+        "action": "adopt",
+        "alternatives": [
+          "existing repository guidance"
+        ],
+        "applicability": "Context AI v1 consumers",
+        "concept": "source-selection-policy",
+        "evidence": [
+          "kit:04-BOOTSTRAP-DECISIONS.yaml"
+        ],
+        "id": "D-012",
+        "rationale": "Keep decisions evidence-backed without requiring unrealistic popularity or corroboration thresholds for low-risk trials.",
+        "revision": 1,
+        "revisit_when": "Domain-specific evidence requires a different hierarchy.",
+        "rollback": "Undo unchanged owned materialization; retain old pins.",
+        "selection": "authoritative specs -> first-party docs/repos -> maintained adopted OSS -> strong engineering publications -> project synthesis",
+        "supersedes": null,
+        "unknowns": [
+          "Comparative benefit is not measured."
+        ],
+        "validation": [
+          "Source review and bounded consumer tests before release."
+        ]
+      }
+    },
+    "library_revision": "exported-tree",
+    "loadouts": [
+      "standard",
+      "research-evidence"
+    ],
+    "options": {},
+    "project": "/Users/pradeeptathineni/code/personal/ai-systems/maestro-ai",
+    "provider": "codex",
+    "resources": {
+      ".agents/skills/standard/SKILL.md": "9a859350a5ab2af9de14b8014d00fc66b23e026919a03082bbf044d8fcd0197b",
+      "AGENTS.md": "079c960790a52dd9ad9fe8e98f8d4c8d92022a8dd7333c925f6ed72c187c9aa4",
+      "LICENSE": "69e8bc0e7e498d3dbc421855f3be2857130648cc0ef343e81d95afd2ad168296",
+      "capabilities.yaml": "cf58bb7a425d1bf678c317047e26e813552c2f9d3428894b0a76d7695dc12a7c",
+      "concepts.yaml": "fa7756b1dedee5564f689b148775d9149e541f70db1ad8489b31a337a07fe1f6",
+      "core/benchmarking.md": "70bc2700fb0c5043a333035c93ded5e846ac31ae1d3904e798a06ef355ce18de",
+      "core/compression.md": "f632cf52ae1aaa2b19dc3d0d57d007902b4452c181623a2af41efa36576adbfb",
+      "core/context.md": "e8b7f0a2e707fc6330a49f69f30def12a3879125dca37af8a63af557f7da6e2a",
+      "core/development.md": "1c6f67e58430e5a5ae2181bc79860b88635f24d12755cfb66eb43a64aae5d08f",
+      "core/engineering.md": "fbb7bdf251f1310329eec33f7adaf0ac8911f9e5fc069f08bff36e3d0fa4c657",
+      "core/research.md": "c28861cf5cbbd7bce10614e0f3c44931fddfbe6362252f11cc6007e01b02e189",
+      "core/review.md": "8e247f385e1258f82e6f34087c51aa2b93d9da81241ccd75634e7b0659e99082",
+      "core/testing.md": "9d423038a8000331a536995c84825368f90062de01ded9cebdb7c488974b764f",
+      "core/versioning.md": "69fa36d327c9193dbc5aa38af80b51943b39477d4a4d15b829cad95d2e609ee7",
+      "custom/README.md": "b1cd1f8a8511f69d045822104dce159989382e46d46132cd3edf0b812ac99e18",
+      "custom/ai-implementation.md": "36db2df73541e3dfdc675eaa4639889c75aa5564399ea495b887ce7869ada315",
+      "custom/code-comments.md": "de4045aaa7b9e360d79a7b339a5a1d3ba8135d98b8df8ad4ec4cf0f0fb01885a",
+      "custom/context-efficiency.md": "49c754cefc8006ad1428ccd7d2a4b5f18255dfa0c2f16a094cc0609149787b3a",
+      "custom/delivery.md": "8c5b613ac70ae0a1316088e32524377ce25f46b80be691b01a31140c9fb61e90",
+      "custom/evidence-claims.md": "842911a933db6ae2b3cbd84e786cfff6c9f95993b7369de44d6619207a6975be",
+      "custom/model-deliberation.md": "ee4980b07519a1319fe4af0739665ce79c47d2d0898749d01d459febff63389c",
+      "custom/orchestration.md": "3368af30d805e364dde687b1ea486c145294d27e621c8996d894a440a295eafb",
+      "custom/patterns.md": "00c60304c999e447e2511ebcdebfc7ed7b85870bc05a5f5a4db33f41304a708c",
+      "custom/prior-art.md": "36911c2ad1ad2c24745aab947fea4f2989bc6465265315b8fc57f9eedbef3487",
+      "custom/project-intent.md": "203889e90c91921675c5edb688bc2184f099e03f690b39eefe60250924a8e0e5",
+      "custom/technical-design.md": "be417aa1335bf4aeda22f02327c789cd928dd2c00990791510f641fc7cd460bb",
+      "custom/writing.md": "e8cbd29927fc49a207f6632a0e2eda2c3bde55491d4ba438cbdec2b3b46b8a68",
+      "decisions/bootstrap.yaml": "cbe609e4c3a521ca27a5512c67e25d6e7050c65336aa78a04f0b06f72ecce8a6",
+      "docs/adoption.md": "1949cfc58af1bff9eb6ad81957c2f6f1827ae3ebe892792b2648c9c569cd42e9",
+      "docs/loadouts.md": "a50af6a4aa14dccb3400180422deb1dbb5754517836c2dd1c0350b1829d358d4",
+      "evals/README.md": "52a69179ac22d7a0799001de032b0112d768d57ca17c14ffd636c516290318f5",
+      "evals/usage-cases.md": "b98e8ac119ca437f9b6340e61ccb2aeb17c937607d31e0af918cf4989803841e",
+      "loadouts/research-evidence.yaml": "b1718fe87fc7c1b5599224e0313eff195cd7153c75999e521084d11ff6999c37",
+      "loadouts/standard.yaml": "d7a79333a321b39aaf8d4f4529c8374f9829502310e0cdcf18804b1e7b4d9132",
+      "models/routing.yaml": "8f1996f30dcebacd8f2910c6035e147c3ed50d555886e1958d9b2c85cc87bd7e",
+      "procedures/research-evidence.md": "598c0a10a320a23f3d684a8997f4423c0783dfea270055580955686ea618bc74",
+      "providers/openai/codex.md": "1129561d2be3318f4901630d1f2cdb7fa33e4795aa639136b3a38fba8017dad6",
+      "providers/openai/signals.yaml": "52ab96055affd6c57731256c9d3fdfa8c6671722cce5c7993a8363c815520d49",
+      "requirements.txt": "f226f05863d6bad01a959923eae90c99e2ab7abcb12fd44b214ba90ecf8d60bb",
+      "scripts/lookup.rb": "687e42c32883b5c36f33f9cfa0766e2072883fe50a4645b5b21f5886f83196bf",
+      "signals/common.yaml": "c210be332c6830a4e7004cb248c1c07fc1a8cb56ece0d01283399da87024e8f5",
+      "skills/context-loadout/SKILL.md": "c28a7924235f3260882ec11cba1d94d1a191f34943cd0a5c471ca18721f662d3",
+      "sources.yaml": "41c66f3b911d1d8f9ed82cf9ee003f45a094c43287ae327f28d466a82e6b2d1f"
+    },
+    "schema_version": 1,
+    "skills": [
+      "context-loadout"
+    ],
+    "source_tree_sha256": "0c3394b447f1303731c1b7b8228dc684d854b72c0b6278cd09523ba0b0886da0",
+    "stages": {
+      "deliver": [
+        "core/versioning.md",
+        "custom/delivery.md"
+      ],
+      "implement": [
+        "core/development.md",
+        "custom/patterns.md",
+        "custom/code-comments.md"
+      ],
+      "inspect": [
+        "core/engineering.md",
+        "core/context.md",
+        "custom/prior-art.md"
+      ],
+      "research": [
+        "core/research.md",
+        "procedures/research-evidence.md",
+        "custom/prior-art.md",
+        "custom/evidence-claims.md"
+      ],
+      "review": [
+        "core/review.md",
+        "custom/evidence-claims.md"
+      ],
+      "test": [
+        "core/testing.md"
+      ]
+    }
+  },
+  "routing_block": "<!-- context-ai:begin -->\n## Context AI project loadout\nProject instructions and explicit task authority take precedence. Use the pinned `.context-ai/lock.json`.\nRead `.context-ai/resources/skills/context-loadout/SKILL.md` for selection and use receipts.\nLoad only the modules for the current stage:\n- inspect: `.context-ai/resources/core/engineering.md`, `.context-ai/resources/core/context.md`, `.context-ai/resources/custom/prior-art.md`\n- implement: `.context-ai/resources/core/development.md`, `.context-ai/resources/custom/patterns.md`, `.context-ai/resources/custom/code-comments.md`\n- test: `.context-ai/resources/core/testing.md`\n- review: `.context-ai/resources/core/review.md`, `.context-ai/resources/custom/evidence-claims.md`\n- deliver: `.context-ai/resources/core/versioning.md`, `.context-ai/resources/custom/delivery.md`\n- research: `.context-ai/resources/core/research.md`, `.context-ai/resources/procedures/research-evidence.md`, `.context-ai/resources/custom/prior-art.md`, `.context-ai/resources/custom/evidence-claims.md`\nA selected recipe is not execution or deployment permission.\n<!-- context-ai:end -->\n",
+  "schema_version": 1
+}

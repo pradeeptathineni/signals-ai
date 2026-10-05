@@ -440,6 +440,12 @@ async function loadCorpus(
            OR kd.aliases && $4::text[]
            OR kd.mechanism_keys && $4::text[]
            OR kd.retrieval_search_vector @@ to_tsquery('simple'::regconfig, NULLIF($3, ''))
+           OR EXISTS (
+             SELECT 1 FROM catalog.knowledge_document_revisions revision
+             WHERE revision.document_id=kd.id
+               AND revision.revision=(SELECT max(current_revision.revision) FROM catalog.knowledge_document_revisions current_revision WHERE current_revision.document_id=kd.id)
+               AND to_tsvector('simple', concat_ws(' ', revision.title, revision.summary)) @@ to_tsquery('simple'::regconfig, NULLIF($3, ''))
+           )
          )
        ORDER BY
          CASE WHEN EXISTS (
@@ -548,11 +554,11 @@ async function loadCorpus(
             kd.aliases, kd.mechanism_keys AS capabilities,
             concat_ws(' ', kd.search_text, current_document.summary) AS "searchText",
             ARRAY[s.source_type] AS sources, kd.canonical_uri AS "canonicalUri",
-            current_document.observed_at::text AS "observedAt", kd.value_profile AS "valueProfile",
+            CASE WHEN EXISTS (SELECT 1 FROM catalog.evidence_items evidence WHERE evidence.source_observation_id=current_document.source_observation_id AND 'upstream_observation_date_unknown'=ANY(evidence.quality_flags)) THEN NULL ELSE current_document.observed_at::text END AS "observedAt", kd.value_profile AS "valueProfile",
             NULL::float8 AS "cachedValueConservative",
             NULL::float8 AS "cachedEvidenceCoverage",
             entity.id::text AS "entityId",
-            ARRAY['uri:' || kd.canonical_uri, 'digest:' || kd.content_digest]::text[]
+            ARRAY['uri:' || kd.canonical_uri, 'digest:' || current_document.content_digest]::text[]
               AS "strongIdentityKeys",
             COALESCE(facet_data.concepts, '[]'::jsonb) AS concepts,
             NULL::jsonb AS "sourcePayload"

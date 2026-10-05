@@ -13,7 +13,7 @@ export function redactForLog(value: unknown): unknown {
 }
 
 export const loggerOptions = {
-  level: process.env.MAESTRO_LOG_LEVEL ?? 'info',
+  level: signalsSetting('LOG_LEVEL') ?? 'info',
   redact: {
     paths: [
       'req.headers.authorization',
@@ -28,3 +28,4 @@ export const loggerOptions = {
     censor: '[REDACTED]',
   },
 };
+import { signalsSetting } from '../../../packages/domain/src/configuration.js';

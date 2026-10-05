@@ -93,12 +93,18 @@ export function parseEvidenceBundle(
     ['signals-evidence-v1', 'research-protocol-v2'].includes(bundle.producer.protocol),
     'Unknown producer protocol.',
   );
-  requireEvidence(
-    !/(?:\/Users\/|\/home\/|file:\/\/|-----BEGIN .*PRIVATE KEY|\b(?:gh[pousr]_|github_pat_|sk-proj-)[A-Za-z0-9_-]{10,}|\b(?:password|api[_-]?key|secret|token)\s*[=:]\s*\S+)/i.test(
-      bytes,
-    ),
-    'Evidence contains private paths or credentials.',
-  );
+  const privatePattern =
+    /(?:\/Users\/|\/home\/|file:\/\/|-----BEGIN .*PRIVATE KEY|\b(?:gh[pousr]_|github_pat_|sk-proj-)[A-Za-z0-9_-]{10,}|\b(?:password|api[_-]?key|secret|token)\s*[=:]\s*\S+)/i;
+  function containsPrivate(input: unknown): boolean {
+    if (typeof input === 'string') return privatePattern.test(input);
+    if (Array.isArray(input)) return input.some(containsPrivate);
+    if (input && typeof input === 'object')
+      return Object.entries(input).some(
+        ([key, item]) => privatePattern.test(key) || containsPrivate(item),
+      );
+    return false;
+  }
+  requireEvidence(!containsPrivate(bundle), 'Evidence contains private paths or credentials.');
   for (const collection of [bundle.sources, bundle.claims, bundle.candidates]) {
     requireEvidence(collection.length <= 100, 'Evidence exceeds record budget.');
     requireEvidence(
@@ -109,7 +115,15 @@ export function parseEvidenceBundle(
   const sourceIds = new Set(bundle.sources.map((source) => source.id));
   const claims = new Map(bundle.claims.map((claim) => [claim.id, claim]));
   for (const source of bundle.sources) {
-    normalizeConsiderUrl(source.uri);
+    const url = normalizeConsiderUrl(source.uri);
+    requireEvidence(
+      url.hostname.includes('.') && !/\.(?:lan|internal|test|invalid)$/.test(url.hostname),
+      'Public sources cannot name local or reserved hosts.',
+    );
+    requireEvidence(
+      !['fixture', 'synthetic'].includes(source.source_class),
+      'Synthetic sources cannot enter real evidence.',
+    );
     requireEvidence(
       !source.observed_at || Date.parse(source.observed_at) <= Date.parse(bundle.created_at),
       'Observation postdates bundle.',
@@ -122,7 +136,12 @@ export function parseEvidenceBundle(
     );
   }
   for (const candidate of bundle.candidates) {
-    normalizeConsiderUrl(candidate.canonical_uri);
+    const candidateUrl = normalizeConsiderUrl(candidate.canonical_uri);
+    requireEvidence(
+      candidateUrl.hostname.includes('.') &&
+        !/\.(?:lan|internal|test|invalid)$/.test(candidateUrl.hostname),
+      'Public candidates cannot name local or reserved hosts.',
+    );
     requireEvidence(
       candidate.claim_ids.every((id) => claims.has(id)),
       'Unknown candidate claim.',
@@ -162,6 +181,15 @@ export function parseEvidenceBundle(
   requireEvidence(
     Object.keys(bundle.extensions ?? {}).every((key) => /^[a-z][a-z0-9-]*\.[a-z0-9.-]+$/.test(key)),
     'Extensions require a namespace.',
+  );
+  const acquisition = bundle.extensions?.['signals.acquisition'];
+  requireEvidence(
+    !acquisition ||
+      typeof acquisition !== 'object' ||
+      !('fixture' in acquisition) ||
+      acquisition.fixture !== true ||
+      options.allowFixture,
+    'Fixture acquisition cannot be relabelled as real evidence.',
   );
   return bundle;
 }

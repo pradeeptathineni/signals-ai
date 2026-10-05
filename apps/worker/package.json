@@ -1,5 +1,5 @@
 {
-  "name": "@maestro/worker",
+  "name": "@signals/worker",
   "private": true,
   "type": "module"
 }

@@ -1,4 +1,4 @@
-# Maestro repository guide
+# Signals repository guide
 
 Read `README.md`, root `ARCHITECTURE.md`, `docs/architecture/ADR-001-v0-foundation.md`, the latest numbered ADR, and `docs/architecture/schema.md` before changing cross-cutting behavior. Phase-specific execution evidence lives in the adjacent `../maestro-ai-planning/outputs/` workspace; do not copy private planning text into public code or fixtures.
 
@@ -30,4 +30,17 @@ Read `README.md`, root `ARCHITECTURE.md`, `docs/architecture/ADR-001-v0-foundati
 
 Use `apply_patch` for deliberate source edits. Keep exact dependency versions, update `docs/dependencies.md`, and add negative tests for authority, privacy, evidence-binding and historical-continuity changes.
 
-For broad repository analysis or noisy validation output, use the repository's `maestro-context-engineering` skill. Treat generated packs as disposable maps, retain source files as authority, and recover any compressed command detail from its local `raw_ref` instead of rerunning work.
+For broad repository analysis or noisy validation output, use the repository's `signals-context-engineering` skill. Treat generated packs as disposable maps, retain source files as authority, and recover any compressed command detail from its local `raw_ref` instead of rerunning work.
+<!-- context-ai:begin -->
+## Context AI project loadout
+Project instructions and explicit task authority take precedence. Use the pinned `.context-ai/lock.json`.
+Read `.context-ai/resources/skills/context-loadout/SKILL.md` for selection and use receipts.
+Load only the modules for the current stage:
+- inspect: `.context-ai/resources/core/engineering.md`, `.context-ai/resources/core/context.md`, `.context-ai/resources/custom/prior-art.md`
+- implement: `.context-ai/resources/core/development.md`, `.context-ai/resources/custom/patterns.md`, `.context-ai/resources/custom/code-comments.md`
+- test: `.context-ai/resources/core/testing.md`
+- review: `.context-ai/resources/core/review.md`, `.context-ai/resources/custom/evidence-claims.md`
+- deliver: `.context-ai/resources/core/versioning.md`, `.context-ai/resources/custom/delivery.md`
+- research: `.context-ai/resources/core/research.md`, `.context-ai/resources/procedures/research-evidence.md`, `.context-ai/resources/custom/prior-art.md`, `.context-ai/resources/custom/evidence-claims.md`
+A selected recipe is not execution or deployment permission.
+<!-- context-ai:end -->

@@ -7,7 +7,7 @@ export function createPool(connectionString = databaseUrl()): pg.Pool {
   return new Pool({
     connectionString,
     max: 10,
-    application_name: 'maestro-ai',
+    application_name: 'signals-ai',
     statement_timeout: 15_000,
     // Maestro issues bounded OLTP-style queries. PostgreSQL's default JIT threshold can be
     // crossed by the faceted UNION/lateral plans even when they return only tens of rows, making

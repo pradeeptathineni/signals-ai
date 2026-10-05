@@ -412,7 +412,7 @@ export function WorkspacePage() {
           <p className="eyebrow">Human-authored boundary</p>
           <h2 id="new-project-heading">Create a project context</h2>
           <p className="section-intro">
-            Only information entered here becomes project context. Blank fields stay blank; Maestro
+            Only information entered here becomes project context. Blank fields stay blank; Signals
             does not infer private constraints.
           </p>
           <form onSubmit={submitProject}>
@@ -462,7 +462,7 @@ export function WorkspacePage() {
           <div className="boundary-note">
             <strong>Current scope</strong>
             <p>
-              Maestro owns evidence, selection policy, authority semantics, and receipts. Execution
+              Signals owns evidence, selection policy, authority semantics, and receipts. Execution
               planes remain future replaceable adapters; no execution, install, model-routing,
               sandbox, CI/CD, or orchestration controls exist here.
             </p>

@@ -108,7 +108,7 @@ export function DecidePage() {
           <p className="eyebrow">Guided setup</p>
           <h2 id="new-need-heading">Define a need</h2>
           <p className="section-intro">
-            State the project constraints that actually apply. Maestro does not silently assume an
+            State the project constraints that actually apply. Signals does not silently assume an
             operating system, data boundary, or preferred workflow. Revisions remain immutable.
           </p>
           <form onSubmit={submit}>

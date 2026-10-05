@@ -26,6 +26,18 @@ export const evidenceDrafts = ops.table('evidence_drafts', {
   mode: text().notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const adoptionReadiness = ops.table('adoption_readiness', {
+  id: uuid().primaryKey(),
+  workspaceId: uuid('workspace_id').notNull(),
+  bundleId: uuid('bundle_id').notNull(),
+  candidateId: text('candidate_id').notNull(),
+  actorType: text('actor_type').notNull(),
+  policyVersion: text('policy_version').notNull(),
+  input: jsonb().notNull(),
+  result: jsonb().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
 export const evidenceBundles = catalog.table('evidence_bundles', {
   id: uuid().primaryKey(),
   bundleId: text('bundle_id').notNull(),

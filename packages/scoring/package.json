@@ -1,5 +1,5 @@
 {
-  "name": "@maestro/scoring",
+  "name": "@signals/scoring",
   "private": true,
   "type": "module"
 }

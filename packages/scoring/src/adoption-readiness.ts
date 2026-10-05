@@ -8,6 +8,7 @@ export interface AdoptionReadinessInput {
   authoritySafe: boolean;
   criticalClaimSupported: boolean;
   unknowns: string[];
+  completedTrial?: boolean;
 }
 
 export function assessAdoptionReadiness(input: AdoptionReadinessInput) {
@@ -30,7 +31,9 @@ export function assessAdoptionReadiness(input: AdoptionReadinessInput) {
           input.compatibility === 'compatible'
         ? input.purpose === 'production' || input.purpose === 'comparison'
           ? 'defer'
-          : 'trial'
+          : input.completedTrial && input.unknowns.length === 0
+            ? 'adopt'
+            : 'trial'
         : 'defer';
   return {
     policyVersion: 'adoption-readiness-v1' as const,
@@ -43,8 +46,10 @@ export function assessAdoptionReadiness(input: AdoptionReadinessInput) {
       ? blockers.join(' ')
       : disposition === 'trial'
         ? 'Documented, compatible interface passed a bounded check; broader benefit remains unmeasured.'
-        : disposition === 'reference'
-          ? 'Use as an attributed reference within its supported scope.'
-          : 'Resolve the action-specific evidence gap before recommending adoption.',
+        : disposition === 'adopt'
+          ? 'The scoped interface and a recorded local trial support adoption; reassess on version or outcome changes.'
+          : disposition === 'reference'
+            ? 'Use as an attributed reference within its supported scope.'
+            : 'Resolve the action-specific evidence gap before recommending adoption.',
   };
 }

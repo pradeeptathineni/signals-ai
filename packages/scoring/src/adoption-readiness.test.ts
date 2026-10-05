@@ -14,6 +14,12 @@ const base: AdoptionReadinessInput = {
 it('permits bounded trials without popularity or exhaustive comparisons', () => {
   expect(assessAdoptionReadiness(base).disposition).toBe('trial');
 });
+it('recommends scoped adoption only after a recorded trial and no unresolved action-specific unknown', () => {
+  expect(assessAdoptionReadiness({ ...base, completedTrial: true, unknowns: [] }).disposition).toBe(
+    'adopt',
+  );
+  expect(assessAdoptionReadiness({ ...base, completedTrial: true }).disposition).toBe('trial');
+});
 it('blocks unsafe authority, unsupported critical claims and disallowed copying', () => {
   for (const change of [
     { authoritySafe: false },

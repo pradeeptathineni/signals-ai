@@ -1,5 +1,44 @@
 import { Type } from 'typebox';
 
+export const AdoptionReadinessBodySchema = Type.Object(
+  {
+    candidateId: Type.String({ minLength: 1, maxLength: 120 }),
+    actor: Type.Union([Type.Literal('human'), Type.Literal('agent-reviewed')]),
+    purpose: Type.Union([
+      Type.Literal('reference'),
+      Type.Literal('use'),
+      Type.Literal('copy'),
+      Type.Literal('production'),
+      Type.Literal('comparison'),
+    ]),
+    supportedClaimIds: Type.Array(Type.String({ minLength: 1, maxLength: 120 }), {
+      maxItems: 100,
+      uniqueItems: true,
+    }),
+    documentedInterface: Type.Boolean(),
+    boundedCheck: Type.Union([
+      Type.Literal('passed'),
+      Type.Literal('failed'),
+      Type.Literal('unknown'),
+    ]),
+    compatibility: Type.Union([
+      Type.Literal('compatible'),
+      Type.Literal('incompatible'),
+      Type.Literal('unknown'),
+    ]),
+    redistribution: Type.Union([
+      Type.Literal('allowed'),
+      Type.Literal('prohibited'),
+      Type.Literal('unknown'),
+    ]),
+    authoritySafe: Type.Boolean(),
+    criticalClaimSupported: Type.Boolean(),
+    unknowns: Type.Array(Type.String({ minLength: 1, maxLength: 500 }), { maxItems: 20 }),
+    feedbackId: Type.Optional(Type.String({ format: 'uuid' })),
+  },
+  { additionalProperties: false },
+);
+
 export const EvidenceDraftBodySchema = Type.Object(
   {
     bytes: Type.String({ minLength: 1, maxLength: 262144 }),

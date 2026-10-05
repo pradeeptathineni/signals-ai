@@ -5,6 +5,7 @@ import { ApiError, label } from './api.js';
 const navigation = [
   ['/explore', 'Search'],
   ['/corpus', 'Corpus'],
+  ['/exchange', 'Exchange'],
   ['/decide', 'Decisions'],
   ['/workspace', 'Workspace'],
 ] as const;
@@ -16,12 +17,12 @@ export function Shell(): ReactNode {
         Skip to content
       </a>
       <header className="app-header">
-        <NavLink className="brand" to="/explore" aria-label="Maestro home">
+        <NavLink className="brand" to="/explore" aria-label="Signals home">
           <span className="brand-mark" aria-hidden="true">
-            M
+            S
           </span>
           <span>
-            <strong>Maestro</strong>
+            <strong>Signals</strong>
             <small>Evidence research</small>
           </span>
         </NavLink>
@@ -38,7 +39,7 @@ export function Shell(): ReactNode {
         <Outlet />
       </main>
       <footer>
-        Maestro researches existing options, distinguishes evidence from project fit, and records
+        Signals researches existing options, distinguishes evidence from project fit, and records
         decisions. It does not install or execute results.
       </footer>
     </>

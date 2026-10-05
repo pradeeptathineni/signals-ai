@@ -16,7 +16,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
     headers: {
-      ...(mutation ? { 'content-type': 'application/json', 'x-maestro-request': '1' } : {}),
+      ...(mutation ? { 'content-type': 'application/json', 'x-signals-request': '1' } : {}),
       ...init?.headers,
     },
   });

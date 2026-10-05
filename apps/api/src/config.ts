@@ -29,9 +29,9 @@ function loopbackOrigin(value: string): string {
 }
 
 export function apiConfig(): ApiConfig {
-  const host = process.env.MAESTRO_HOST ?? '127.0.0.1';
-  const port = Number(process.env.MAESTRO_PORT ?? '4310');
-  const rateLimitMax = Number(process.env.MAESTRO_RATE_LIMIT_MAX ?? '120');
+  const host = signalsSetting('HOST') ?? '127.0.0.1';
+  const port = Number(signalsSetting('PORT') ?? '4310');
+  const rateLimitMax = Number(signalsSetting('RATE_LIMIT_MAX') ?? '120');
   if (!['127.0.0.1', '::1', 'localhost'].includes(host)) {
     throw new Error('MAESTRO_HOST must be a loopback host in v0.');
   }
@@ -46,7 +46,7 @@ export function apiConfig(): ApiConfig {
     `http://localhost:${port}`,
     `http://[::1]:${port}`,
   ];
-  const webOrigin = loopbackOrigin(process.env.MAESTRO_WEB_ORIGIN ?? 'http://127.0.0.1:5173');
+  const webOrigin = loopbackOrigin(signalsSetting('WEB_ORIGIN') ?? 'http://127.0.0.1:5173');
   const hosts = apiOrigins.map((origin) => new URL(origin).host.toLowerCase());
   return {
     host,
@@ -56,3 +56,4 @@ export function apiConfig(): ApiConfig {
     allowedOrigins: new Set([...apiOrigins, webOrigin]),
   };
 }
+import { signalsSetting } from '../../../packages/domain/src/configuration.js';

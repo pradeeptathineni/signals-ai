@@ -5,6 +5,7 @@ import {
   reviewEvidenceDraft,
   exportEvidence,
   recordEvidenceFeedback,
+  projectResearchEvidence,
 } from '../packages/db/src/evidence-repository.js';
 import { localWorkspaceId } from '../packages/seed/src/import.js';
 import { parseEvidenceBundle } from '../packages/domain/src/evidence-exchange.js';
@@ -12,7 +13,7 @@ import { parseEvidenceBundle } from '../packages/domain/src/evidence-exchange.js
 const [operation, target, argument, predecessorId] = process.argv.slice(2);
 if (!target || !operation)
   throw new Error(
-    'Usage: evidence validate/import FILE | review DRAFT_ID RATIONALE [PREDECESSOR_ID] | export BUNDLE_ID FILE | feedback BUNDLE_ID INPUT.json',
+    'Usage: evidence validate/import FILE | project RUN_ID | review DRAFT_ID RATIONALE [PREDECESSOR_ID] | export BUNDLE_ID FILE | feedback BUNDLE_ID INPUT.json',
   );
 if (operation === 'validate') {
   const bytes = await readFile(target, 'utf8');
@@ -25,7 +26,9 @@ if (operation === 'validate') {
   const pool = createPool();
   try {
     let result: unknown;
-    if (operation === 'import') {
+    if (operation === 'project') {
+      result = await projectResearchEvidence(pool, localWorkspaceId, target);
+    } else if (operation === 'import') {
       result = await importEvidenceDraft(
         pool,
         localWorkspaceId,

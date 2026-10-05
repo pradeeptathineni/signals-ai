@@ -9,6 +9,7 @@ import { ExplorePage } from './pages/ExplorePage.js';
 import { NeedPage } from './pages/NeedPage.js';
 import { ProviderPage } from './pages/ProviderPage.js';
 import { WorkspacePage } from './pages/WorkspacePage.js';
+import { ExchangePage } from './pages/ExchangePage.js';
 
 export function App() {
   return (
@@ -23,6 +24,7 @@ export function App() {
         <Route path="providers/:id" element={<ProviderPage />} />
         <Route path="consider" element={<ConsiderPage />} />
         <Route path="evidence" element={<EvidencePage />} />
+        <Route path="exchange" element={<ExchangePage />} />
         <Route path="workspace" element={<WorkspacePage />} />
         <Route path="*" element={<Navigate replace to="/explore" />} />
       </Route>

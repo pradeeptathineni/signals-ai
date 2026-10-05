@@ -71,4 +71,22 @@ describe('evidence exchange v1', () => {
     bundle.extensions = { policy: 'pretend' };
     expect(() => parse(bundle)).toThrow();
   });
+  it('rejects acquisition fixture laundering and reserved host metadata', () => {
+    const bundle = evidenceExample('agent-assisted');
+    bundle.extensions = { 'signals.acquisition': { fixture: true } };
+    expect(() => parse(bundle, false)).toThrow('Fixture');
+    delete bundle.extensions;
+    bundle.sources[0]!.uri = 'https://machine.lan/source';
+    expect(() => parse(bundle, false)).toThrow('reserved');
+  });
+  it('checks decoded strings, future observations and UTF-8 byte budgets', () => {
+    const bundle = evidenceExample('agent-assisted');
+    bundle.limitations = ['/Users/private/project'];
+    const bytes = JSON.stringify(bundle).replace('/Users', '\\u002fUsers');
+    expect(() => parseEvidenceBundle(bytes, evidenceDigest(bytes))).toThrow('private');
+    bundle.limitations = ['bounded'];
+    bundle.sources[0]!.observed_at = '2027-01-01T00:00:00Z';
+    expect(() => parse(bundle)).toThrow('postdates');
+    expect(() => parseEvidenceBundle('é'.repeat(140000), 'a'.repeat(64))).toThrow('byte budget');
+  });
 });

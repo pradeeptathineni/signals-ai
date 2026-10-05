@@ -1,5 +1,5 @@
 {
-  "name": "@maestro/db",
+  "name": "@signals/db",
   "private": true,
   "type": "module"
 }

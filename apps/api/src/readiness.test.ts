@@ -2,6 +2,19 @@ import { describe, expect, it } from 'vitest';
 import { assessReadiness, REQUIRED_SCHEMA_MIGRATIONS } from './readiness.js';
 
 describe('Phase 06 readiness', () => {
+  it('rejects a count made up of unrelated migration names', () => {
+    expect(
+      assessReadiness({
+        migrations: REQUIRED_SCHEMA_MIGRATIONS,
+        migrationFilenames: ['unrelated.sql'],
+        providers: 1,
+        workerSchemaReady: true,
+        workerActive: true,
+        enabledAdapters: 0,
+        unhealthyAdapters: 0,
+      }).ready,
+    ).toBe(false);
+  });
   it.each([0, 12, 13, 72])('does not use catalog cardinality (%i) as readiness', (providers) => {
     expect(
       assessReadiness({

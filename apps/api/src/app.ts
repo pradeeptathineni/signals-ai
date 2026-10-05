@@ -42,7 +42,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await app.register(swagger, {
     openapi: {
       info: {
-        title: 'Maestro local API',
+        title: 'Signals local API',
         version: '0.1.0',
         description: 'Local, deterministic evidence-to-decision API. No execution routes exist.',
       },
@@ -74,7 +74,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     },
     credentials: false,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['content-type', 'x-maestro-request'],
+    allowedHeaders: ['content-type', 'x-signals-request', 'x-maestro-request'],
   });
   await app.register(rateLimit, { max: config.rateLimitMax, timeWindow: '1 minute' });
 

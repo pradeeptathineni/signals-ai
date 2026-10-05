@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { execFileSync } from 'node:child_process';
 import {
   evidenceChange,
   parseEvidenceBundle,
@@ -8,6 +9,12 @@ import {
 import { furnishKnowledgeDocumentWithClient } from './authoring-repository.js';
 import { ConflictError, DomainValidationError, NotFoundError } from './errors.js';
 import { inTransaction } from './transaction.js';
+import { getResearchRun } from './research-repository.js';
+import {
+  evidenceDigest,
+  type ResearchCandidate,
+  type ResearchSynthesisProposal,
+} from '../../domain/src/index.js';
 
 export function validateEvidence(bytes: string, digest: string): EvidenceBundle {
   try {
@@ -28,6 +35,16 @@ export async function importEvidenceDraft(
     throw new DomainValidationError(
       'Model-led evidence requires the stored-run projection, not an agent draft.',
     );
+  return persistEvidenceDraft(pool, workspaceId, bytes, digest, bundle);
+}
+
+async function persistEvidenceDraft(
+  pool: Pool,
+  workspaceId: string,
+  bytes: string,
+  digest: string,
+  bundle: EvidenceBundle,
+) {
   const id = newOpaqueId();
   await pool.query(
     `INSERT INTO ops.evidence_drafts (id, workspace_id, bundle_id, bytes, digest, mode)
@@ -39,6 +56,93 @@ export async function importEvidenceDraft(
     [workspaceId, digest],
   );
   return { id: row.rows[0]!.id, digest, state: 'untrusted-draft', mode: bundle.mode };
+}
+
+/** Projection cannot relabel imported agent work as an application's configured model run. */
+export async function projectResearchEvidence(pool: Pool, workspaceId: string, runId: string) {
+  const run = (await getResearchRun(pool, workspaceId, runId)) as {
+    state: string;
+    modelIdentifier: string | null;
+    protocolVersion: string;
+    candidates: ResearchCandidate[];
+    proposals: Array<{ proposalType: string; output: ResearchSynthesisProposal }>;
+    receipt: unknown;
+    finishedAt: string;
+    operations: Array<{ sourceKey: string; state: string }>;
+  };
+  if (run.state !== 'complete' || run.protocolVersion !== 'research-protocol-v2')
+    throw new DomainValidationError('Only completed current-protocol model runs can be projected.');
+  if (!run.modelIdentifier || /(?:fixture|synthetic)/i.test(run.modelIdentifier))
+    throw new DomainValidationError(
+      'Fixture or unidentified model runs cannot become real evidence.',
+    );
+  const synthesis = run.proposals.findLast((p) => p.proposalType === 'synthesis')?.output;
+  if (!synthesis) throw new DomainValidationError('Completed synthesis missing.');
+  const commit = execFileSync('git', ['rev-parse', 'HEAD'], {
+    encoding: 'utf8',
+    timeout: 2000,
+  }).trim();
+  const sources = run.candidates.map((c) => ({
+    id: c.id,
+    uri: c.canonicalUri,
+    title: c.title,
+    source_class: c.sourceClass ?? 'unknown',
+    observed_at: c.observedAt ?? null,
+    independence_group: new URL(c.canonicalUri).hostname,
+  }));
+  const bundle: EvidenceBundle = {
+    schema_version: 1,
+    bundle_id: `research-${runId}`,
+    mode: 'model-led',
+    created_at: new Date(run.finishedAt).toISOString(),
+    producer: {
+      repository: 'pradeeptathineni/signals-ai',
+      commit,
+      protocol: 'research-protocol-v2',
+    },
+    need: {
+      query: 'Stored model research; the private session query is omitted from public export.',
+    },
+    sources,
+    claims: synthesis.items.map((item) => ({
+      id: `claim-${item.candidateId}`,
+      text: item.reason,
+      source_ids: item.citationCandidateIds,
+      status: 'inferred',
+    })),
+    candidates: synthesis.items.map((item) => {
+      const candidate = run.candidates.find((c) => c.id === item.candidateId)!;
+      return {
+        id: candidate.id,
+        name: candidate.title,
+        canonical_uri: candidate.canonicalUri,
+        claim_ids: [`claim-${candidate.id}`],
+        disposition: 'consider',
+        reason: item.reason,
+        limitations: [
+          ...(item.uncertainty ? [item.uncertainty] : []),
+          'Model interpretation awaits explicit source-support review.',
+        ],
+      };
+    }),
+    limitations: [
+      ...synthesis.limitations,
+      ...(synthesis.abstentionReason ? [synthesis.abstentionReason] : []),
+      'Private query omitted; no admission or installation authority inferred.',
+    ],
+    extensions: {
+      'signals.research-lineage': {
+        run_id: runId,
+        // Public projection retains identity and outcomes, not free-form private receipt detail.
+        model_identifier: run.modelIdentifier,
+        source_outcomes: run.operations.map(({ sourceKey, state }) => ({ sourceKey, state })),
+      },
+    },
+  };
+  const bytes = JSON.stringify(bundle, null, 2) + '\n';
+  const digest = evidenceDigest(bytes);
+  validateEvidence(bytes, digest);
+  return persistEvidenceDraft(pool, workspaceId, bytes, digest, bundle);
 }
 
 export interface EvidenceReviewInput {
@@ -72,11 +176,25 @@ export async function reviewEvidenceDraft(
       [draftId, workspaceId],
     );
     if (!draft.rowCount) throw new NotFoundError('Evidence draft not found.');
-    const oldReview = await client.query<{ bundleId: string }>(
-      'SELECT bundle_id AS "bundleId" FROM ops.evidence_reviews WHERE draft_id=$1',
+    const oldReview = await client.query<{
+      bundleId: string;
+      actor: string;
+      rationale: string;
+      predecessorId: string | null;
+    }>(
+      'SELECT r.bundle_id AS "bundleId",r.actor_type AS actor,r.rationale,b.predecessor_id AS "predecessorId" FROM ops.evidence_reviews r JOIN catalog.evidence_bundles b ON b.id=r.bundle_id WHERE r.draft_id=$1',
       [draftId],
     );
-    if (oldReview.rowCount) return { id: oldReview.rows[0]!.bundleId, replay: true };
+    if (oldReview.rowCount) {
+      const prior = oldReview.rows[0]!;
+      if (
+        prior.actor !== input.actor ||
+        prior.rationale !== input.rationale ||
+        prior.predecessorId !== (input.predecessorId ?? null)
+      )
+        throw new ConflictError('This draft already has a different immutable review.');
+      return { id: prior.bundleId, actor: prior.actor, replay: true };
+    }
     const { bytes, digest } = draft.rows[0]!;
     const bundle = validateEvidence(bytes, digest);
     if (
@@ -196,6 +314,16 @@ export async function listEvidence(pool: Pool, workspaceId: string) {
   return { items: drafts.rows };
 }
 
+export async function getEvidenceDraft(pool: Pool, workspaceId: string, id: string) {
+  const row = await pool.query<{ bytes: string; digest: string }>(
+    'SELECT bytes,digest FROM ops.evidence_drafts WHERE workspace_id=$1 AND id=$2',
+    [workspaceId, id],
+  );
+  if (!row.rowCount) throw new NotFoundError('Evidence draft not found.');
+  validateEvidence(row.rows[0]!.bytes, row.rows[0]!.digest);
+  return row.rows[0]!;
+}
+
 export interface EvidenceFeedbackInput {
   candidateId: string;
   consumerTask: string;
@@ -211,10 +339,13 @@ export async function recordEvidenceFeedback(
 ) {
   if (
     !['useful', 'failed', 'regressed', 'not_used'].includes(input.outcome) ||
+    typeof input.consumerTask !== 'string' ||
     !input.consumerTask.trim() ||
     input.consumerTask.length > 240 ||
+    typeof input.detail !== 'string' ||
     !input.detail.trim() ||
     input.detail.length > 2000 ||
+    typeof input.idempotencyKey !== 'string' ||
     !input.idempotencyKey.trim() ||
     input.idempotencyKey.length > 120
   ) {

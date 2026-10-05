@@ -594,7 +594,12 @@ export async function furnishKnowledgeDocumentWithClient(
         ...(input.provenance ? { provenance: input.provenance } : {}),
       }),
       input.limitations,
-      input.reviewState === 'reviewed' ? [] : ['proposed'],
+      [
+        ...(input.reviewState === 'reviewed' ? [] : ['proposed']),
+        ...(input.provenance && !input.provenance.observedAt
+          ? ['upstream_observation_date_unknown']
+          : []),
+      ],
       observedAt,
     ],
   );

@@ -1,5 +1,12 @@
 # Schema contract
 
+Signals v1 adds `0032_evidence_exchange_v1.sql` and `0033_evidence_readiness_and_integrity.sql`.
+Private/operational drafts, immutable actor-labelled reviews, feedback and scoped readiness live
+in `ops`; shareable exact-byte evidence bundles and successor chains live in `catalog`. No public
+bundle joins private workspace content. SHA constraints and candidate-binding triggers protect
+alternate writers; application admission adds schema/reference/privacy/authority validation.
+Corpus refresh appends document/entity revisions and evidence bindings; old records remain intact.
+
 - `catalog`: public provider identities, versioned capabilities/domains, sources, immutable
   observations/claims/evidence, score runs, and scoped verification assessments.
 - `workspace`: local private workspace, stable projects, immutable context snapshots, needs,
