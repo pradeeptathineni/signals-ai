@@ -19,3 +19,4 @@ export * from './taxonomy-repository.js';
 export * from './transaction.js';
 export * from './workspace-repository.js';
 export * from './watch-repository.js';
+export * from './evidence-repository.js';

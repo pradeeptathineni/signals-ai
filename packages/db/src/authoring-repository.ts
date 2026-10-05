@@ -492,6 +492,12 @@ export interface KnowledgeDocumentInput {
   searchTerms: string[];
   limitations: string[];
   reviewState: 'proposed' | 'reviewed';
+  provenance?: {
+    actor: 'human' | 'agent-reviewed';
+    mode: string;
+    observedAt: string | null;
+    receipt: string;
+  };
 }
 
 export async function furnishKnowledgeDocumentWithClient(
@@ -500,7 +506,7 @@ export async function furnishKnowledgeDocumentWithClient(
   input: KnowledgeDocumentInput,
 ): Promise<{
   id: string;
-  revision: 1;
+  revision: number;
   knowledgeEntityId: string;
   entityRevisionId: string;
   evidenceId: string;
@@ -524,8 +530,10 @@ export async function furnishKnowledgeDocumentWithClient(
   const observationId = newOpaqueId();
   const evidenceId = newOpaqueId();
   const capabilityId = newOpaqueId();
-  const documentId = newOpaqueId();
+  let documentId = newOpaqueId();
   const now = new Date();
+  const observedAt = input.provenance?.observedAt ? new Date(input.provenance.observedAt) : now;
+  const actor = input.provenance?.actor ?? 'human';
   const contentDigest = hashCanonical({
     url: normalizedUrl,
     title: input.title,
@@ -535,25 +543,37 @@ export async function furnishKnowledgeDocumentWithClient(
   await client.query(
     `INSERT INTO catalog.sources
        (id, canonical_uri, title, owner, source_type, authority_scope, redistribution_notes)
-     VALUES ($1, $2, $3, $4, 'human_supplied_documentation',
+     VALUES ($1, $2, $3, $4, $5,
              'Identity and bounded source scope',
-             'Metadata and bounded paraphrase only; no source mirror.')`,
-    [sourceId, normalizedUrl, input.sourceTitle, input.publisher],
+             'Metadata and bounded paraphrase only; no source mirror.')
+     ON CONFLICT (canonical_uri) DO NOTHING`,
+    [
+      sourceId,
+      normalizedUrl,
+      input.sourceTitle,
+      input.publisher,
+      input.provenance ? 'agent_assisted_documentation' : 'human_supplied_documentation',
+    ],
+  );
+  const actualSource = await client.query<{ id: string }>(
+    'SELECT id FROM catalog.sources WHERE canonical_uri=$1',
+    [normalizedUrl],
   );
   await client.query(
     `INSERT INTO catalog.source_observations
        (id, source_id, requested_uri, final_uri, observed_at, retrieval_method,
         adapter_version, content_digest, excerpt, media_type, trust_boundary, handling_status)
-     VALUES ($1, $2, $3, $3, $4, 'human_review_submission', 'authoring-v2', $5, $6,
+     VALUES ($1, $2, $3, $3, $4, $8, 'authoring-v2', $5, $6,
              'text/metadata', 'curated', $7)`,
     [
       observationId,
-      sourceId,
+      actualSource.rows[0]!.id,
       normalizedUrl,
-      now,
+      observedAt,
       contentDigest,
       input.summary,
       input.reviewState === 'reviewed' ? 'reviewed' : 'normalized',
+      input.provenance ? `${input.provenance.mode}:${actor}` : 'human_review_submission',
     ],
   );
   await client.query(
@@ -568,10 +588,14 @@ export async function furnishKnowledgeDocumentWithClient(
       evidenceId,
       observationId,
       input.publisher,
-      json({ title: input.title, summary: input.summary }),
+      json({
+        title: input.title,
+        summary: input.summary,
+        ...(input.provenance ? { provenance: input.provenance } : {}),
+      }),
       input.limitations,
       input.reviewState === 'reviewed' ? [] : ['proposed'],
-      now,
+      observedAt,
     ],
   );
   await client.query(
@@ -603,38 +627,101 @@ export async function furnishKnowledgeDocumentWithClient(
     );
   }
   const valueProfile = initialValueProfile(evidenceId, input.documentKind);
-  await client.query(
-    `INSERT INTO catalog.knowledge_documents
+  await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`document:${normalizedUrl}`]);
+  const existingDocument = input.provenance
+    ? await client.query<{ id: string }>(
+        'SELECT id FROM catalog.knowledge_documents WHERE canonical_uri=$1',
+        [normalizedUrl],
+      )
+    : null;
+  if (existingDocument?.rowCount) documentId = existingDocument.rows[0]!.id;
+  else
+    await client.query(
+      `INSERT INTO catalog.knowledge_documents
        (id, document_kind, title, summary, canonical_uri, publisher, publication_state,
         source_observation_id, search_text, aliases, mechanism_keys, value_profile,
         content_digest, observed_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, '{}', '{}', $10, $11, $12)`,
-    [
-      documentId,
-      input.documentKind,
-      input.title,
-      input.summary,
-      normalizedUrl,
-      input.publisher,
-      input.reviewState,
-      observationId,
-      `${input.title} ${input.summary} ${input.searchTerms.join(' ')}`,
-      json(valueProfile),
-      contentDigest,
-      now,
-    ],
-  );
+      [
+        documentId,
+        input.documentKind,
+        input.title,
+        input.summary,
+        normalizedUrl,
+        input.publisher,
+        input.reviewState,
+        observationId,
+        `${input.title} ${input.summary} ${input.searchTerms.join(' ')}`,
+        json(valueProfile),
+        contentDigest,
+        observedAt,
+      ],
+    );
+  let revision = 1;
+  if (existingDocument?.rowCount) {
+    const previous = await client.query<{ id: string; revision: number }>(
+      'SELECT id,revision FROM catalog.knowledge_document_revisions WHERE document_id=$1 ORDER BY revision DESC LIMIT 1',
+      [documentId],
+    );
+    revision = previous.rows[0]!.revision + 1;
+    await client.query(
+      `INSERT INTO catalog.knowledge_document_revisions
+      (id,document_id,revision,predecessor_id,title,summary,canonical_uri,publication_state,content_digest,source_observation_id,observed_at,change_kind)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'content_update')`,
+      [
+        newOpaqueId(),
+        documentId,
+        revision,
+        previous.rows[0]!.id,
+        input.title,
+        input.summary,
+        normalizedUrl,
+        input.reviewState,
+        contentDigest,
+        observationId,
+        observedAt,
+      ],
+    );
+    const previousEntity = await client.query<{
+      id: string;
+      revision: number;
+      entityId: string;
+      classId: string;
+    }>(
+      `SELECT r.id,r.revision,r.entity_id AS "entityId",r.entity_class_concept_id AS "classId" FROM catalog.knowledge_entity_revisions r
+       JOIN catalog.knowledge_entities e ON e.id=r.entity_id WHERE e.document_id=$1 ORDER BY r.revision DESC LIMIT 1`,
+      [documentId],
+    );
+    const prior = previousEntity.rows[0]!;
+    await client.query(
+      `INSERT INTO catalog.knowledge_entity_revisions
+      (id,entity_id,revision,predecessor_id,entity_class_concept_id,preferred_label,summary,lifecycle_state,source_observation_id,content_hash)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [
+        newOpaqueId(),
+        prior.entityId,
+        prior.revision + 1,
+        prior.id,
+        prior.classId,
+        input.title,
+        input.summary,
+        input.reviewState,
+        observationId,
+        contentDigest,
+      ],
+    );
+  }
   await client.query(
     `INSERT INTO catalog.knowledge_document_subjects
        (document_id, capability_definition_id, relation_type, source_observation_id, rationale)
-     VALUES ($1, $2, 'about', $3, 'Human-reviewed discovery admission.')`,
-    [documentId, capability.id, observationId],
+     VALUES ($1, $2, 'about', $3, $4)`,
+    [documentId, capability.id, observationId, `${actor} discovery admission.`],
   );
   const entityRevision = await client.query<{ entityId: string; revisionId: string }>(
     `SELECT entity.id AS "entityId", revision.id AS "revisionId"
      FROM catalog.knowledge_entities entity
      JOIN catalog.knowledge_entity_revisions revision ON revision.entity_id = entity.id
-     WHERE entity.document_id = $1 AND revision.revision = 1`,
+     WHERE entity.document_id = $1 ORDER BY revision.revision DESC LIMIT 1`,
     [documentId],
   );
   await client.query(
@@ -655,7 +742,7 @@ export async function furnishKnowledgeDocumentWithClient(
     `INSERT INTO ops.audit_events
        (id, workspace_id, actor_type, action, object_type, object_id, object_revision,
         correlation_id, after_hash, safe_metadata)
-     VALUES ($1, $2, 'human', 'knowledge_document.furnish', 'knowledge_document', $3, 1,
+     VALUES ($1, $2, $7, 'knowledge_document.furnish', 'knowledge_document', $3, 1,
              $4, $5, $6)`,
     [
       newOpaqueId(),
@@ -664,11 +751,12 @@ export async function furnishKnowledgeDocumentWithClient(
       newOpaqueId(),
       contentDigest,
       json({ reviewState: input.reviewState, sourceHost: url.hostname }),
+      actor,
     ],
   );
   return {
     id: documentId,
-    revision: 1,
+    revision,
     knowledgeEntityId: entityRevision.rows[0]!.entityId,
     entityRevisionId: entityRevision.rows[0]!.revisionId,
     evidenceId,

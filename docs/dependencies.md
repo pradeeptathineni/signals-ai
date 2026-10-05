@@ -1,5 +1,10 @@
 # Dependency baseline
 
+Evidence interchange v1 adds `ajv@8.20.0` and `ajv-formats@3.0.1` (MIT), reviewed
+2026-10-05. A separate Ajv draft-2020 instance validates the frozen peer schema without
+coercion or default insertion; semantic reference/privacy checks remain in the domain.
+The exact schema bytes are excluded from formatting to preserve the interchange digest.
+
 The runtime and verification packages are exact-pinned in `package.json` and `package-lock.json`.
 Core versions were checked on 2026-09-25. Phase 06 additions were checked against current npm
 metadata and upstream version-matched documentation on 2026-09-29:

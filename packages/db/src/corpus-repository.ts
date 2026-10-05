@@ -543,12 +543,12 @@ async function loadCorpus(
      UNION ALL
      SELECT kd.id::text AS id, 'knowledge_document'::text AS layer,
             'document'::text AS "entityClass",
-            NULL::text AS "providerId", kd.id::text AS "documentId", kd.title AS name,
-            kd.summary, kd.document_kind AS kind, kd.publication_state AS state,
+            NULL::text AS "providerId", kd.id::text AS "documentId", current_document.title AS name,
+            current_document.summary, kd.document_kind AS kind, current_document.publication_state AS state,
             kd.aliases, kd.mechanism_keys AS capabilities,
-            concat_ws(' ', kd.search_text, kd.summary) AS "searchText",
+            concat_ws(' ', kd.search_text, current_document.summary) AS "searchText",
             ARRAY[s.source_type] AS sources, kd.canonical_uri AS "canonicalUri",
-            kd.observed_at::text AS "observedAt", kd.value_profile AS "valueProfile",
+            current_document.observed_at::text AS "observedAt", kd.value_profile AS "valueProfile",
             NULL::float8 AS "cachedValueConservative",
             NULL::float8 AS "cachedEvidenceCoverage",
             entity.id::text AS "entityId",
@@ -557,9 +557,13 @@ async function loadCorpus(
             COALESCE(facet_data.concepts, '[]'::jsonb) AS concepts,
             NULL::jsonb AS "sourcePayload"
      FROM catalog.knowledge_documents kd
+     JOIN LATERAL (
+       SELECT revision.* FROM catalog.knowledge_document_revisions revision
+       WHERE revision.document_id=kd.id ORDER BY revision.revision DESC LIMIT 1
+     ) current_document ON true
      JOIN selected_documents selected ON selected.id = kd.id
      JOIN catalog.knowledge_entities entity ON entity.document_id = kd.id
-     JOIN catalog.source_observations so ON so.id = kd.source_observation_id
+     JOIN catalog.source_observations so ON so.id = current_document.source_observation_id
      JOIN catalog.sources s ON s.id = so.source_id
      LEFT JOIN LATERAL (
        SELECT jsonb_agg(jsonb_build_object(
@@ -572,7 +576,7 @@ async function loadCorpus(
        JOIN catalog.concepts concept ON concept.id = assignment.concept_id
        WHERE assignment.entity_id = entity.id
      ) facet_data ON true
-     WHERE kd.publication_state <> 'withdrawn'
+     WHERE current_document.publication_state <> 'withdrawn'
      UNION ALL
      SELECT lead.id::text AS id, 'source_lead'::text AS layer,
             'lead'::text AS "entityClass", NULL::text AS "providerId",

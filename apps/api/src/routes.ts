@@ -114,6 +114,7 @@ import {
 } from '../../../packages/db/src/index.js';
 import { localWorkspaceId } from '../../../packages/seed/src/import.js';
 import { assessReadiness } from './readiness.js';
+import { registerEvidenceRoutes } from './evidence-routes.js';
 
 interface IdParams {
   id: string;
@@ -133,6 +134,7 @@ interface ResultItemParams {
 }
 
 export function registerRoutes(app: FastifyInstance, pool: Pool): void {
+  registerEvidenceRoutes(app, pool);
   const routes = app.withTypeProvider<TypeBoxTypeProvider>();
   routes.get('/api/v1/health/live', { schema: { tags: ['health'] } }, () => ({
     status: 'ok',

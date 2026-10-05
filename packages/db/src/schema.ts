@@ -17,6 +17,47 @@ export const catalog = pgSchema('catalog');
 export const workspace = pgSchema('workspace');
 export const ops = pgSchema('ops');
 
+export const evidenceDrafts = ops.table('evidence_drafts', {
+  id: uuid().primaryKey(),
+  workspaceId: uuid('workspace_id').notNull(),
+  bundleId: text('bundle_id').notNull(),
+  bytes: text().notNull(),
+  digest: text().notNull(),
+  mode: text().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+export const evidenceBundles = catalog.table('evidence_bundles', {
+  id: uuid().primaryKey(),
+  bundleId: text('bundle_id').notNull(),
+  bytes: text().notNull(),
+  digest: text().notNull(),
+  predecessorId: uuid('predecessor_id'),
+  changeReasons: jsonb('change_reasons').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+export const evidenceReviews = ops.table('evidence_reviews', {
+  id: uuid().primaryKey(),
+  draftId: uuid('draft_id').notNull(),
+  bundleId: uuid('bundle_id').notNull(),
+  actorType: text('actor_type').notNull(),
+  policyVersion: text('policy_version').notNull(),
+  rationale: text().notNull(),
+  checks: jsonb().notNull(),
+  corpusLinks: jsonb('corpus_links').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+export const evidenceFeedback = ops.table('evidence_feedback', {
+  id: uuid().primaryKey(),
+  workspaceId: uuid('workspace_id').notNull(),
+  bundleId: uuid('bundle_id').notNull(),
+  candidateId: text('candidate_id').notNull(),
+  consumerTask: text('consumer_task').notNull(),
+  outcome: text().notNull(),
+  detail: text().notNull(),
+  idempotencyKey: text('idempotency_key').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 const tsvector = customType<{ data: string }>({
   dataType() {
     return 'tsvector';
