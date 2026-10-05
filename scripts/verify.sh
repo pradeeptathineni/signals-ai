@@ -3,9 +3,6 @@ set -euo pipefail
 
 npm run release:check
 npm run corpus -- check
-npm run db:init
-npm run db:seed
-npm run db:schema-check
 npm run format:check
 npm run lint
 npm run typecheck
@@ -14,13 +11,10 @@ npm run context:pack:test
 npm run quality:structure
 npm run test:anti-overfit
 npm test
-npm run test:integration
 npm run build
-npm run corpus:build
 npm run test:provenance
 npm run security:dependencies
 npm run security:secrets
 npm run security:audit:test
 npm run security:audit
-npm run test:e2e
 npm run test:corpus

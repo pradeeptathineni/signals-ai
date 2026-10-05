@@ -18,7 +18,8 @@
     "corpus": "node --import tsx scripts/corpus.ts",
     "release:check": "node scripts/check-release.mjs",
     "evidence": "node --env-file-if-exists=.env --import tsx scripts/evidence.ts",
-    "build": "npm run typecheck && vite build --config apps/web/vite.config.ts && tsc -p tsconfig.build.json",
+    "build": "npm run typecheck && npm run corpus:build",
+    "build:local-app": "npm run typecheck && vite build --config apps/web/vite.config.ts && tsc -p tsconfig.build.json",
     "benchmark:indexed-search": "node --import tsx scripts/benchmark-phase06.ts",
     "benchmark:retrieval": "node --import tsx scripts/benchmark-phase08.ts",
     "bundle:verify": "node --import tsx scripts/verify-bundle.ts",
@@ -30,8 +31,9 @@
     "db:seed": "node --env-file-if-exists=.env --import tsx packages/seed/src/import.ts",
     "db:schema-check": "node --env-file-if-exists=.env --import tsx packages/db/src/schema-check.ts",
     "db:init": "npm run db:migrate && npm run worker:init && npm run db:seed",
-    "dev": "concurrently --kill-others --names api,worker,web --prefix-colors cyan,magenta,green \"npm:dev:api\" \"npm:dev:worker\" \"npm:dev:web\"",
-    "dev:setup": "npm run db:init && npm run dev",
+    "dev": "npm run corpus -- build && vite --config apps/corpus/vite.config.ts --host 127.0.0.1",
+    "dev:local-app": "concurrently --kill-others --names api,worker,web --prefix-colors cyan,magenta,green \"npm:dev:api\" \"npm:dev:worker\" \"npm:dev:web\"",
+    "dev:setup": "npm run db:init && npm run dev:local-app",
     "dev:api": "node --env-file-if-exists=.env --import tsx --watch apps/api/src/server.ts",
     "dev:web": "vite --config apps/web/vite.config.ts --host 127.0.0.1",
     "dev:worker": "node --env-file-if-exists=.env --import tsx --watch apps/worker/src/server.ts",
@@ -60,7 +62,9 @@
     "test:provenance": "node --import tsx packages/seed/src/audit.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "worker:init": "node --env-file-if-exists=.env --import tsx apps/worker/src/initialize.ts",
-    "verify": "bash scripts/verify.sh"
+    "verify": "bash scripts/verify.sh",
+    "verify:local-app": "bash scripts/verify-local-app.sh",
+    "verify:all": "npm run verify && npm run verify:local-app"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "3.0.59",

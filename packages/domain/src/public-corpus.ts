@@ -14,10 +14,12 @@ export interface PublicAdmission {
   reviewer: 'human' | 'agent-reviewed';
   rationale: string;
   claimReviews: ClaimReview[];
+  state?: 'admitted' | 'withdrawn';
 }
 
 export interface PublicOption {
   id: string;
+  type: string;
   bundleId: string;
   bundleDigest: string;
   name: string;
@@ -71,6 +73,7 @@ export function projectPublicOptions(
     );
     return {
       id: candidate.id,
+      type: admission.file.includes('/') ? admission.file.split('/')[0]! : 'legacy',
       bundleId: bundle.bundle_id,
       bundleDigest: admission.digest,
       name: candidate.name,
@@ -112,6 +115,7 @@ export function refreshPublicFreshness(options: PublicOption[], asOf: string): P
 
 export interface PublicFilters {
   query?: string;
+  type?: string;
   category?: string;
   concept?: string;
   sourceClass?: string;
@@ -128,6 +132,7 @@ export function filterPublicOptions(options: readonly PublicOption[], filters: P
     .split(/\s+/)
     .filter(Boolean);
   return options.filter((option) => {
+    if (filters.type && option.type !== filters.type) return false;
     if (filters.category && option.category !== filters.category) return false;
     if (filters.concept && !option.concepts.includes(filters.concept)) return false;
     if (filters.sourceClass && !option.sources.some((s) => s.source_class === filters.sourceClass))

@@ -2,6 +2,15 @@
 
 ## 0.3.0
 
+- Git-backed JSON records in signal-type folders are the primary Corpus. Indexes and Pages are generated
+  views; the default development, build and verification commands require no database service.
+  Conversion preserves every previously published evidence byte and digest.
+
+- New readiness assessments distinguish documented practice from runtime trials and bind useful
+  feedback to the exact task and action. Claim-specific freshness replaces the universal review
+  window for new assessments; immutable v1 records keep their recorded meaning.
+- Context instructions use a narrower explicit resource closure and a portable checked selection.
+
 Reviewed public Corpus files now drive a searchable static preview and structured CLI results.
 Shared exact filters, source-bound claims, claim-sensitive freshness, two-option comparison and
 optional evidence downloads make the collection useful without a model or database.

@@ -430,9 +430,38 @@
         "A real owned subprocess was killed mid-application; recovery restores the original user instructions.",
         "Independent imported-metadata findings corrected and covered by negative tests."
       ]
+    },
+    "D-020": {
+      "action": "adapt",
+      "alternatives": [
+        "One heavy procedure for every web edit",
+        "Load both primary procedures",
+        "Select one procedure and keep browser acceptance constant"
+      ],
+      "applicability": "Web selections only; guided default, lightweight explicit at a checkpoint; brand text remains subordinate to user/project authority.",
+      "concept": "web.design",
+      "evidence": [
+        "sources.lock.json:impeccable",
+        "sources.lock.json:anthropic",
+        "tests/test_loadouts.py"
+      ],
+      "id": "D-020",
+      "rationale": "Keep the already pinned instruction-only references. Guided critique suits new surfaces; a concise reference suits bounded changes within an established system. Two palette labels cannot represent project intent.",
+      "revision": 1,
+      "revisit_when": "A real task shows insufficient guidance or conflicting project visual intent.",
+      "rollback": "Propose and review guided on refresh; apply only at a checkpoint; undo retains user edits.",
+      "selection": "Project brand intent and one selected primary design procedure",
+      "supersedes": null,
+      "unknowns": [
+        "No human evaluation or model-input measurement establishes superior design outcomes."
+      ],
+      "validation": [
+        "Both closures retain selected source notices and browser checks; lightweight excludes guided resources.",
+        "Existing web fixture passes four widths, interactions and axe; screenshots inspected as builder judgment."
+      ]
     }
   },
-  "library_revision": "efad6ab8e7981ba3d2dda3f8840150eb81ffe333",
+  "library_revision": "3f5acec9e4297fe34c645b1ca37ecbd70221a1c3",
   "loadouts": [
     "standard",
     "research-evidence",
@@ -441,7 +470,8 @@
     "react-web"
   ],
   "options": {
-    "brand": "expressive"
+    "brand": "quiet",
+    "design_procedure": "guided"
   },
   "project": ".",
   "provider": "codex",
@@ -457,11 +487,11 @@
     "core/testing.md": "9d423038a8000331a536995c84825368f90062de01ded9cebdb7c488974b764f",
     "core/version-control.md": "d68a29078a81ffa15051d05cb250965d0c1bf841b241659d35d3096345db89ad",
     "core/versioning.md": "69fa36d327c9193dbc5aa38af80b51943b39477d4a4d15b829cad95d2e609ee7",
-    "docs/loadouts.md": "2f28434023999d8733a81b7aae13b0c2fbbd63f54e3d9f3e3a7efbbae8f08b9e",
+    "docs/loadouts.md": "3fea6452d9d20147c02d068024657d5b6105c9b37a0311b0f4ac098e7d5ef539",
     "domains/service/api.md": "ac907fc43d2c117efccad3be212e35d5b2a2fd86d6ceed91affa315e7204a029",
     "domains/web/accessibility.md": "45d5f62917aadd426c04ad02a70cdcb8667d39210f7eb02c3d26ae8530ef08b7",
     "domains/web/browser-verification.md": "8e1998572ea35d4fe6f813db18f6f322d2bb4171743a1b49801f2cc9ab2fc529",
-    "domains/web/design.md": "7d62cd8727d7c13c1c4c90a51c57690b88f910685a502f7f5a297260ec03951e",
+    "domains/web/design.md": "d1865b6e2ddb287a696f55c93e6dae7d1b32e82cfbe9ff6c6c1bd85a2ebc4e7c",
     "domains/web/performance.md": "da3f20a54b7a0d2c2eb066d413fb895f3dac4e52fdc87540b96deb4bf19f27c5",
     "domains/web/product-ux.md": "604d067c64bc765fe63f7a7fb37461e34bdc41bb3eef71b6c9b87b47785a31ca",
     "domains/web/react.md": "598e805ebd3239806aedb21f3c0fe08d6248299158e188c3977f4c40751c567b",
@@ -469,7 +499,7 @@
     "loadouts/research-evidence.yaml": "0c8fdf6f46f24d725b75c35bccb09bae725c08e57853fe0fa57358c5471b2799",
     "loadouts/service-api.yaml": "7690e82f5b0e72fc394d5504ec635b7a2ada98cbefbbc553cffee5daf3b765f6",
     "loadouts/standard.yaml": "f15c4560b94bd567d42fc183422ab071380e616bd44fe515c8f4d9822eda72ef",
-    "loadouts/web-experience.yaml": "1603b0f50f0fb6eefa76799f0175e62b3a5edfadeb2c961ac4da132782eadbce",
+    "loadouts/web-experience.yaml": "f52b6beabd4eb948e0de33c569b049e1b22cf75540b6e69f342605df4a27082c",
     "overlays/code-comments.md": "de4045aaa7b9e360d79a7b339a5a1d3ba8135d98b8df8ad4ec4cf0f0fb01885a",
     "overlays/delivery.md": "8c5b613ac70ae0a1316088e32524377ce25f46b80be691b01a31140c9fb61e90",
     "overlays/evidence-claims.md": "842911a933db6ae2b3cbd84e786cfff6c9f95993b7369de44d6619207a6975be",
@@ -477,6 +507,7 @@
     "overlays/prior-art.md": "36911c2ad1ad2c24745aab947fea4f2989bc6465265315b8fc57f9eedbef3487",
     "overlays/project-intent.md": "203889e90c91921675c5edb688bc2184f099e03f690b39eefe60250924a8e0e5",
     "overlays/writing.md": "e8cbd29927fc49a207f6632a0e2eda2c3bde55491d4ba438cbdec2b3b46b8a68",
+    "procedures/design-selection.md": "28d8e3210521d1ac422fd39762b54979b51b21e10102c273d9d4921aaa2b06f1",
     "procedures/react-review.md": "c575c782dbc63f282165a445b0c4b78aeef6dc6abe0166a80218d5ebfc7ad610",
     "procedures/research-evidence.md": "598c0a10a320a23f3d684a8997f4423c0783dfea270055580955686ea618bc74",
     "procedures/web-design.md": "0dc095883b28d0c50ddb8abf3105b5932a452199518b61f2f51af29ac613c829",
@@ -505,7 +536,7 @@
     "context-web-audit",
     "context-react-review"
   ],
-  "source_tree_sha256": "0ec328c586ff0ee1f3b1f25c4deb2f6bb82b7bfa3e30965a047f1419b20277a4",
+  "source_tree_sha256": "ce90bcd1b28c9e21b36fda35ee11c7576f5ddc9c1ee349cc1265a6f606410322",
   "stages": {
     "deliver": [
       "core/versioning.md",

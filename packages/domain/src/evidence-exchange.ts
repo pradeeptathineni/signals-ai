@@ -59,6 +59,28 @@ function requireEvidence(condition: unknown, message: string): asserts condition
   if (!condition) throw new EvidenceValidationError(message);
 }
 
+/** Reject ambiguous structured records before assigning validation or publication authority. */
+export function requireUniqueJsonKeys(bytes: string) {
+  const objects: Array<{ keys: Set<string>; expectsKey: boolean } | null> = [];
+  for (const token of bytes.matchAll(/"(?:[^"\\]|\\.)*"|[{}[\],:]/g)) {
+    const part = token[0];
+    if (part === '{' || part === '[') {
+      requireEvidence(objects.length < 32, 'Evidence nesting budget exceeded.');
+      objects.push(part === '{' ? { keys: new Set(), expectsKey: true } : null);
+    } else if (part === '}' || part === ']') objects.pop();
+    else {
+      const object = objects.at(-1);
+      if (part === ',' && object) object.expectsKey = true;
+      else if (part.startsWith('"') && object?.expectsKey) {
+        const key = JSON.parse(part) as string;
+        requireEvidence(!object.keys.has(key), 'Duplicate JSON key.');
+        object.keys.add(key);
+        object.expectsKey = false;
+      }
+    }
+  }
+}
+
 /** Validate exact bytes before parsing. Extensions are inert, never policy authority. */
 export function parseEvidenceBundle(
   bytes: string,
@@ -83,24 +105,7 @@ export function parseEvidenceBundle(
   const bundle = value;
   // JSON.parse owns syntax. This bounded token pass rejects ambiguous duplicate names,
   // including escaped spellings, before exact bytes can be admitted or exported.
-  const objects: Array<{ keys: Set<string>; expectsKey: boolean } | null> = [];
-  for (const token of bytes.matchAll(/"(?:[^"\\]|\\.)*"|[{}[\],:]/g)) {
-    const part = token[0];
-    if (part === '{' || part === '[') {
-      requireEvidence(objects.length < 32, 'Evidence nesting budget exceeded.');
-      objects.push(part === '{' ? { keys: new Set(), expectsKey: true } : null);
-    } else if (part === '}' || part === ']') objects.pop();
-    else {
-      const object = objects.at(-1);
-      if (part === ',' && object) object.expectsKey = true;
-      else if (part.startsWith('"') && object?.expectsKey) {
-        const key = JSON.parse(part) as string;
-        requireEvidence(!object.keys.has(key), 'Duplicate JSON key.');
-        object.keys.add(key);
-        object.expectsKey = false;
-      }
-    }
-  }
+  requireUniqueJsonKeys(bytes);
   requireEvidence(Date.parse(bundle.created_at) <= Date.now(), 'Future evidence creation date.');
   requireEvidence(
     options.allowFixture || bundle.mode !== 'fixture',

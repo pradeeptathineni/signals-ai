@@ -22,6 +22,7 @@ const publicIndex = Type.Array(
       name: text,
       uri: text,
       category: text,
+      type: text,
       concepts: texts,
       need: text,
       reason: text,

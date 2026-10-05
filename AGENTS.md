@@ -14,10 +14,13 @@ Read `README.md`, root `ARCHITECTURE.md`, `docs/architecture/ADR-001-v0-foundati
 
 - Inspect `package.json`, `scripts/verify.sh`, `packages/test-fixtures/src/database.ts`, `.env`, and the exact database URL before any DB command.
 - Defaults use loopback port `54329` and may point at retained development data. For tests, provide explicit `DATABASE_URL` and `TEST_DATABASE_URL` for a named disposable database/container on a non-default port.
-- `test:integration` and `test:e2e` drop the target test schemas. `verify` runs `db:init` against `DATABASE_URL` before rebuilding the test database. Never aim them at retained data.
+- `test:integration` and `test:e2e` drop the target test schemas. `verify` is the database-free public gate. `verify:local-app` runs `db:init` against `DATABASE_URL` before rebuilding the test database. Never aim that compatibility gate at retained data.
 - Prefer `npm test`, `npm run typecheck`, `npm run lint`, and `npm run format:check` for non-database checks. Run the complete gate only after destination isolation is proven.
 
 ## Code map
+
+- `signals/<type>/*.json`: canonical public findings, reviews and domain/tag metadata.
+- `apps/corpus`: database-free human view, using the shared machine filtering path.
 
 - `apps/web`: React UI and accessible list/map/detail/compare flows.
 - `apps/api`: loopback Fastify/OpenAPI boundary; schemas come from `packages/contracts`.
@@ -36,12 +39,12 @@ For broad repository analysis or noisy validation output, use the repository's `
 Project instructions and explicit task authority take precedence. Use the pinned `.context-ai/lock.json`.
 Read `.context-ai/resources/skills/context-loadout/SKILL.md` for selection and use receipts.
 Load only the modules for the current stage:
-- inspect: `.context-ai/resources/core/engineering.md`, `.context-ai/resources/core/context.md`, `.context-ai/resources/overlays/prior-art.md`, `.context-ai/resources/core/version-control.md`, `.context-ai/resources/domains/service/api.md`, `.context-ai/resources/domains/web/react.md`
-- implement: `.context-ai/resources/core/development.md`, `.context-ai/resources/overlays/patterns.md`, `.context-ai/resources/overlays/code-comments.md`, `.context-ai/resources/core/code-comments.md`, `.context-ai/resources/core/prior-art.md`, `.context-ai/resources/overlays/writing.md`, `.context-ai/resources/domains/service/api.md`, `.context-ai/resources/domains/web/accessibility.md`, `.context-ai/resources/domains/web/performance.md`, `.context-ai/resources/domains/web/react.md`
-- test: `.context-ai/resources/core/testing.md`, `.context-ai/resources/domains/web/browser-verification.md`
-- review: `.context-ai/resources/core/review.md`, `.context-ai/resources/overlays/evidence-claims.md`, `.context-ai/resources/domains/web/design.md`
 - deliver: `.context-ai/resources/core/versioning.md`, `.context-ai/resources/overlays/delivery.md`, `.context-ai/resources/core/version-control.md`
-- research: `.context-ai/resources/core/prior-art.md`, `.context-ai/resources/core/research.md`, `.context-ai/resources/procedures/research-evidence.md`, `.context-ai/resources/overlays/prior-art.md`, `.context-ai/resources/overlays/evidence-claims.md`
 - design: `.context-ai/resources/domains/web/design.md`, `.context-ai/resources/domains/web/product-ux.md`
+- implement: `.context-ai/resources/core/development.md`, `.context-ai/resources/overlays/patterns.md`, `.context-ai/resources/overlays/code-comments.md`, `.context-ai/resources/core/code-comments.md`, `.context-ai/resources/core/prior-art.md`, `.context-ai/resources/overlays/writing.md`, `.context-ai/resources/domains/service/api.md`, `.context-ai/resources/domains/web/accessibility.md`, `.context-ai/resources/domains/web/performance.md`, `.context-ai/resources/domains/web/react.md`
+- inspect: `.context-ai/resources/core/engineering.md`, `.context-ai/resources/core/context.md`, `.context-ai/resources/overlays/prior-art.md`, `.context-ai/resources/core/version-control.md`, `.context-ai/resources/domains/service/api.md`, `.context-ai/resources/domains/web/react.md`
+- research: `.context-ai/resources/core/prior-art.md`, `.context-ai/resources/core/research.md`, `.context-ai/resources/procedures/research-evidence.md`, `.context-ai/resources/overlays/prior-art.md`, `.context-ai/resources/overlays/evidence-claims.md`
+- review: `.context-ai/resources/core/review.md`, `.context-ai/resources/overlays/evidence-claims.md`, `.context-ai/resources/domains/web/design.md`
+- test: `.context-ai/resources/core/testing.md`, `.context-ai/resources/domains/web/browser-verification.md`
 A selected recipe is not execution or deployment permission.
 <!-- context-ai:end -->

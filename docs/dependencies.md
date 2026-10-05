@@ -1,5 +1,10 @@
 # Dependency baseline
 
+Record export reuses the existing exact-pinned Prettier 3.9.9 to preserve previously published
+interchange bytes. Native JSON parsing plus duplicate-key rejection and the existing schema
+validators enforce the closed record format. No database or new parser dependency is needed
+for the public product. Combined indexes and interchange downloads are build output only.
+
 The public Corpus preview reuses exact-pinned React/Vite, TypeBox's interpreted value checker,
 Ajv, Playwright and axe. It adds no search dependency. MiniSearch and Pagefind remain documented
 alternatives in ADR-006. GitHub Pages actions are pinned to reviewed upstream commits in

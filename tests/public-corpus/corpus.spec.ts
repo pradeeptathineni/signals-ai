@@ -12,8 +12,9 @@ test('human and machine find the same real public options with combined filters'
   const { options } = await loadPublicCorpus();
   await page.goto('');
   await expect(page.locator('.finding')).toHaveCount(options.length);
-  await page.getByLabel('Search knowledge').fill('water meter');
-  await page.getByRole('combobox', { name: 'Category', exact: true }).selectOption('Household');
+  await page.getByLabel('Search keywords').fill('water meter');
+  await page.getByRole('combobox', { name: 'Domain', exact: true }).selectOption('Household');
+  await page.getByLabel('Signal type').selectOption('practices');
   await page.getByLabel('Source kind').selectOption('guidance');
   const ids = await page
     .locator('.finding')
@@ -21,6 +22,7 @@ test('human and machine find the same real public options with combined filters'
   expect(ids).toEqual(
     filterPublicOptions(options, {
       query: 'water meter',
+      type: 'practices',
       category: 'Household',
       sourceClass: 'guidance',
     }).map((o) => o.id),
@@ -51,9 +53,8 @@ test('compares supported scope and limits, with keyboard access and responsive r
   await expect(page.getByRole('link', { name: 'Skip to findings' })).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(page.locator('#results')).toBeFocused();
-  await page
-    .getByRole('combobox', { name: 'Category', exact: true })
-    .selectOption('Development practice');
+  await page.getByRole('combobox', { name: 'Domain', exact: true }).selectOption('Development');
+  await page.getByLabel('Signal type').selectOption('practices');
   const checks = page.locator('.compare-control input');
   await checks.nth(0).check();
   await checks.nth(1).check();

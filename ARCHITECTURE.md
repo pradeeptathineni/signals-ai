@@ -6,16 +6,20 @@ Private project choices remain local. Cataloged software is data, never executio
 
 ## Public and local ownership
 
-The curated public collection is held in Git. Its admission manifest selects reviewed frozen
-evidence-bundle-v1 files and records each claim's review basis. The loader validates public fields,
+The curated public collection is held in `signals/<type>/<finding>.json`. Each record owns its research
+need, tags, sources, claims, options and review basis. The loader validates public fields,
 exact bytes, sources, IDs, paths and reviews. Browser and CLI use one pure literal-filter function.
 Generated indexes are disposable; complete snapshots are selected atomically before the Pages
 build copies them. The public site contains no private service configuration or workspace data.
 
-PostgreSQL owns the larger independently acquired local Corpus, private projects/queries/decisions
-and operational research. Imported curated bundles are local projections of their exact source
+The primary product runs from Git without a database service. Public queries, tags, claims and
+sources are canonical JSON in type folders; domains and tags are metadata. Derived indexes drive
+the Pages human interface and structured machine search/export.
+
+The optional PostgreSQL compatibility application preserves previously acquired local knowledge,
+private projects/queries/decisions and operational research. Imported curated bundles are local projections of their exact source
 pin. There are no independently editable Git and database masters for the same curated record.
-[ADR-006](docs/architecture/ADR-006-public-corpus.md) defines promotion, retraction and alternatives.
+[ADR-008](docs/architecture/ADR-008-git-signals.md) defines canonical ownership and alternatives.
 
 The local database keeps three boundaries:
 
@@ -77,7 +81,9 @@ without requiring a human to interpret them before finding sources.
 
 Evidence-bundle schema v1 remains frozen independently of software maturity. Explicit review
 creates public source bindings atomically. Export preserves exact bytes, refresh creates successors,
-and feedback binds an exact candidate/bundle/task. Advice does not grant installation, runtime or
+and feedback binds an exact candidate/bundle/task/action. New action-specific readiness uses
+claim review inputs and source observation dates; old assessments retain their recorded meaning.
+Advice does not grant installation, runtime or
 deployment permission. [The product contract](docs/signals-contract.md) owns current operations;
 [the schema map](docs/architecture/schema.md) owns persisted compatibility details.
 

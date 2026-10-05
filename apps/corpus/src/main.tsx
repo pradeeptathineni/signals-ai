@@ -11,6 +11,8 @@ import { parsePublicIndex } from '../../../packages/domain/src/public-index.js';
 
 const base = import.meta.env.BASE_URL;
 function display(value: string) {
+  if (value === 'category') return 'domain';
+  if (value === 'concept') return 'tag';
   return value.replaceAll('_', ' ');
 }
 function date(value: string | null | undefined) {
@@ -108,7 +110,7 @@ function Corpus() {
           <>
             <section className="controls" aria-label="Search and filters">
               <label className="search">
-                Search knowledge
+                Search keywords
                 <input
                   type="search"
                   maxLength={1000}
@@ -119,24 +121,36 @@ function Corpus() {
               </label>
               <div className="filters">
                 <label>
-                  Category
+                  Signal type
+                  <select
+                    value={filters.type ?? ''}
+                    onChange={(e) => change('type', e.target.value)}
+                  >
+                    <option value="">All types</option>
+                    {values((o) => [o.type]).map((v) => (
+                      <option key={v}>{v}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Domain
                   <select
                     value={filters.category ?? ''}
                     onChange={(e) => change('category', e.target.value)}
                   >
-                    <option value="">All categories</option>
+                    <option value="">All domains</option>
                     {values((o) => [o.category]).map((v) => (
                       <option key={v}>{v}</option>
                     ))}
                   </select>
                 </label>
                 <label>
-                  Concept
+                  Tag
                   <select
                     value={filters.concept ?? ''}
                     onChange={(e) => change('concept', e.target.value)}
                   >
-                    <option value="">All concepts</option>
+                    <option value="">All tags</option>
                     {values((o) => o.concepts).map((v) => (
                       <option key={v}>{v}</option>
                     ))}
@@ -235,8 +249,9 @@ function Corpus() {
                 <div className="empty">
                   <h3>No matching options</h3>
                   <p>
-                    Try fewer terms or clear a filter. Absence here means this small collection has
-                    no match.
+                    Try a few keywords such as “water meter” or “source lineage”, or clear a filter.
+                    Every word must match this small reviewed collection. A whole question may miss
+                    useful options; no match is not evidence that no useful answer exists.
                   </p>
                   <button onClick={() => setFilters({})}>Show all options</button>
                 </div>

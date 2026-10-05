@@ -1,6 +1,7 @@
 # ADR-006: curated public files with derived views
 
-Status: accepted. Date: 2026-10-05. Software remains pre-1; evidence schema v1 remains unchanged.
+Status: canonical format superseded by [ADR-008](ADR-008-git-signals.md), 2026-10-05.
+The shared filter, privacy and atomic derived-export boundaries remain applicable.
 
 People need to find, inspect and compare supported options without configuring a model, authoring
 JSON or navigating receipt graphs. Machines need the same option IDs, sources and filter behavior.

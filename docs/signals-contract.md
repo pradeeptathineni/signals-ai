@@ -75,6 +75,10 @@ Old bytes and historical replay remain intact. Refresh is manual; no always-on a
 
 ## Configuration, storage and upgrade compatibility
 
+The primary Git-backed product requires only Node/npm to develop, validate and render. Its signal
+records and tags are described in `signals/README.md`. `dev`, `build` and `verify` operate
+without database services. The following configuration applies to the optional private application.
+
 New configuration uses `SIGNALS_*`; legacy `MAESTRO_*` aliases remain accepted. Equal values
 under both names are accepted; conflicting values fail startup. `DATABASE_URL` and
 `TEST_DATABASE_URL` retain their names. New mutation clients send `x-signals-request: 1`; legacy
@@ -82,8 +86,8 @@ under both names are accepted; conflicting values fail startup. `DATABASE_URL` a
 remain enforced. Storage defaults and applied historical migrations retain their original names.
 
 Back up retained data before upgrading. Use `npm ci`, inspect the exact destination, run
-`npm run db:migrate` and `npm run build`. Forward migrations preserve old records and receipt hashes.
-Do not rename retained volumes or aim integration/e2e/verify at them. The complete gate initializes
+`npm run db:migrate` and `npm run build:local-app`. Forward migrations preserve old records and receipt hashes.
+Do not rename retained volumes or aim integration/e2e/verify:local-app at them. The compatibility gate initializes
 the development URL and drops/rebuilds test schemas; use explicitly named disposable databases on
 a non-default port. See README for the safe verification invocation.
 
@@ -96,8 +100,6 @@ Versioned data contracts do not imply infallible inference, calibrated confidenc
 superiority, configured-live model proof, independent evaluation or field performance measurements.
 
 The checked-in Context instructions record repository development guidance, separately from the
-Signals application runtime. The native `.context-ai/lock.json` belongs to the original active
-checkout path; Context management correctly rejects it in a different clone. Copied instructions
-remain readable, and the application installs/builds/starts without running the Context composer.
-For a separate Context-managed project, use Context's native installer on an unmanaged target;
-do not rewrite ownership fields or claim that copying a lock creates a verified installation.
+Signals application runtime. The portable `.context-ai/selection.json` pins reviewed resources.
+Bound installation state stays local; checked rebind preserves unchanged ownership on another clone.
+Copied instructions remain readable, and the application builds without running the Context composer.
