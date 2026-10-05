@@ -6,6 +6,8 @@ test-results
 package-lock.json
 packages/contracts/src/evidence-bundle-v1.schema.json
 docs/evidence/*.json
+docs/evidence/study/*.json
 .context-ai/
 .agents/skills/context-loadout/
+.agents/skills/context-*/
 AGENTS.md

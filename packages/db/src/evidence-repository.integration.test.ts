@@ -43,6 +43,20 @@ it('admits exact evidence, labels agent review, retains Corpus provenance and pr
     draft.id,
   ]);
   expect(audit.rows[0].actor_type).toBe('agent-reviewed');
+  expect(
+    await reviewEvidenceDraft(pool, localWorkspaceId, draft.id, {
+      actor: 'agent-reviewed',
+      rationale: 'Bounded regression review.',
+      blockers: [],
+    }),
+  ).toMatchObject({ id: admitted.id, replay: true });
+  await expect(
+    reviewEvidenceDraft(pool, localWorkspaceId, draft.id, {
+      actor: 'agent-reviewed',
+      rationale: 'Bounded regression review.',
+      blockers: ['A newly reported critical blocker.'],
+    }),
+  ).rejects.toThrow('immutable review');
   await expect(
     reviewEvidenceDraft(pool, localWorkspaceId, draft.id, {
       actor: 'human',
@@ -102,7 +116,30 @@ it('admits exact evidence, labels agent review, retains Corpus provenance and pr
   expect((await exportEvidence(pool, revised.id)).changes).toContain(
     'claims changed; reconsider affected decisions.',
   );
+  const revisionAudit = await pool.query(
+    `SELECT max(a.object_revision) AS revision FROM ops.audit_events a
+    JOIN catalog.knowledge_documents d ON d.id::text=a.object_id
+    WHERE a.action='knowledge_document.furnish' AND d.canonical_uri=$1`,
+    [bundle.candidates[0]!.canonical_uri],
+  );
+  expect(revisionAudit.rows[0].revision).toBe(revised.corpusLinks?.[0]?.revision);
   expect((await exportEvidence(pool, admitted.id)).bytes).toBe(bytes);
+  bundle.bundle_id = 'competing-successor';
+  const competingBytes = JSON.stringify(bundle);
+  const competing = await importEvidenceDraft(
+    pool,
+    localWorkspaceId,
+    competingBytes,
+    evidenceDigest(competingBytes),
+  );
+  await expect(
+    reviewEvidenceDraft(pool, localWorkspaceId, competing.id, {
+      actor: 'agent-reviewed',
+      rationale: 'Concurrent or competing correction.',
+      blockers: [],
+      predecessorId: admitted.id,
+    }),
+  ).rejects.toThrow('immutable successor');
 });
 it('rejects fixture promotion and a model-led label without a stored run', async () => {
   for (const mode of ['fixture', 'model-led'] as const) {
@@ -164,6 +201,21 @@ it('binds readiness and feedback to exact candidates and enforces bytes for alte
       feedbackId: feedback.id,
     }),
   ).toMatchObject({ disposition: 'adopt' });
+  for (const outcome of ['failed', 'regressed'] as const) {
+    const failure = await recordEvidenceFeedback(pool, localWorkspaceId, admitted.id, {
+      candidateId: 'candidate',
+      consumerTask: 'failed-trial-regression',
+      outcome,
+      detail: 'A recorded trial failure overrides a declared successful check.',
+      idempotencyKey: randomUUID(),
+    });
+    expect(
+      await recordAdoptionReadiness(pool, localWorkspaceId, admitted.id, {
+        ...input,
+        feedbackId: failure.id,
+      }),
+    ).toMatchObject({ disposition: 'reject', blockers: ['Required bounded check failed.'] });
+  }
   await expect(
     pool.query(
       'INSERT INTO ops.evidence_drafts (id,workspace_id,bundle_id,bytes,digest,mode) VALUES ($1,$2,$3,$4,$5,$6)',

@@ -32,3 +32,31 @@ React/WCAG/Playwright references. Actual browser critique and regression checks 
 [web use](web-use.md). Newer completed selections are reconciled at the final integration boundary.
 
 No Context checkout was modified. The local project path remains `maestro-ai` throughout this session.
+
+## Final integration reconciliation
+
+After the frozen implementation and actual study, the final boundary read the newest completed
+checkpoint once: `release-v1.0.0-a0b6a3b`, commit
+`a0b6a3bbd2e1dc2c58629f6ea462e180bd12ce93`. All 11 advertised artifact hashes matched. Archive
+SHA-256: `9c8f523fcd878dd42ae6355cc8222abc082e124ef948651f836d7f0704d04725`.
+The exported `REVISION` identifies that exact commit.
+
+The native plan was inspected and applied to Signals with `standard research-evidence web-experience
+react-web service-api release-review`. It preserves repository-owned instructions and copies only
+the selected pinned dependency closure. Application reported 195 resources; verification checked
+199 owned files. Project lock SHA-256:
+`eead34b064137a74f8499f0e4ac15634de60c9d3a4839177fa1b74077972aa9d`.
+Its `library_revision` now pins the actual release commit, replacing the bootstrap's exported-tree label.
+
+The installed design/audit/React routers, web-design adapter, React/service/browser-verification and
+review/evidence/VCS guidance were explicitly read. Impeccable remains the same instruction-only
+trial; no competing design manifesto, framework migration or hook activation was introduced.
+Vercel's Next-specific dynamic example was checked against official React `lazy`; its dependency-free
+parallel-operations rule remains applicable to the existing independent query calls. Browser
+acceptance continues through the project's existing Playwright/axe facilities.
+
+The real exported Context `scripts/evidence.py` accepted the original exact Signals bundle under
+its pinned producer identity/commit and frozen schema. It returned ten recommendations as
+`pinned-peer-evidence`, with `activation: false`. This was run from the extracted archive in a
+disposable directory. Context's completed own receipt corroborates the exact same bundle digest;
+neither result is configured model research or independent evidence of design benefit.

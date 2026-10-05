@@ -81,6 +81,27 @@ export function parseEvidenceBundle(
   }
   requireEvidence(check(value), 'Evidence schema v1 mismatch.');
   const bundle = value;
+  // JSON.parse owns syntax. This bounded token pass rejects ambiguous duplicate names,
+  // including escaped spellings, before exact bytes can be admitted or exported.
+  const objects: Array<{ keys: Set<string>; expectsKey: boolean } | null> = [];
+  for (const token of bytes.matchAll(/"(?:[^"\\]|\\.)*"|[{}[\],:]/g)) {
+    const part = token[0];
+    if (part === '{' || part === '[') {
+      requireEvidence(objects.length < 32, 'Evidence nesting budget exceeded.');
+      objects.push(part === '{' ? { keys: new Set(), expectsKey: true } : null);
+    } else if (part === '}' || part === ']') objects.pop();
+    else {
+      const object = objects.at(-1);
+      if (part === ',' && object) object.expectsKey = true;
+      else if (part.startsWith('"') && object?.expectsKey) {
+        const key = JSON.parse(part) as string;
+        requireEvidence(!object.keys.has(key), 'Duplicate JSON key.');
+        object.keys.add(key);
+        object.expectsKey = false;
+      }
+    }
+  }
+  requireEvidence(Date.parse(bundle.created_at) <= Date.now(), 'Future evidence creation date.');
   requireEvidence(
     options.allowFixture || bundle.mode !== 'fixture',
     'Fixtures cannot enter real evidence admission.',
@@ -179,9 +200,23 @@ export function parseEvidenceBundle(
     'Empty evidence requires a limitation.',
   );
   requireEvidence(
-    Object.keys(bundle.extensions ?? {}).every((key) => /^[a-z][a-z0-9-]*\.[a-z0-9.-]+$/.test(key)),
+    Object.keys(bundle.extensions ?? {}).every((key) =>
+      /^[a-z][a-z0-9-]*\.[a-z0-9._-]+$/.test(key),
+    ),
     'Extensions require a namespace.',
   );
+  for (const [key, extension] of Object.entries(bundle.extensions ?? {})) {
+    requireEvidence(
+      !/\.(?:policy_id|policy_ids)$/.test(key),
+      'Unknown extension policy cannot gain authority.',
+    );
+    if (/\.(?:privacy|privacy_scope)$/.test(key))
+      requireEvidence(
+        typeof extension === 'string' &&
+          ['public', 'public-only', 'public_sources_only'].includes(extension),
+        'Inadmissible evidence privacy scope.',
+      );
+  }
   const acquisition = bundle.extensions?.['signals.acquisition'];
   requireEvidence(
     !acquisition ||

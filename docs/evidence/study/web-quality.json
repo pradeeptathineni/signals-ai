@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "bundle_id": "study-web-quality-22183f4",
+  "mode": "agent-assisted",
+  "created_at": "2026-10-05T16:44:13.432Z",
+  "producer": {
+    "repository": "pradeeptathineni/signals-ai",
+    "commit": "22183f4875c8838b33670afa1866e104b971adbc",
+    "protocol": "signals-evidence-v1"
+  },
+  "need": {
+    "query": "Choose accessibility and performance checks for a React web product without treating axe or Lighthouse as universal quality proof.",
+    "concept_ids": [
+      "study-web-quality"
+    ]
+  },
+  "sources": [
+    {
+      "id": "wcag",
+      "uri": "https://www.w3.org/TR/WCAG22/",
+      "title": "WCAG 2.2",
+      "source_class": "first-party",
+      "observed_at": "2026-10-05T15:47:15Z",
+      "revision": null,
+      "independence_group": "w3c"
+    },
+    {
+      "id": "axe",
+      "uri": "https://playwright.dev/docs/accessibility-testing",
+      "title": "Playwright accessibility testing",
+      "source_class": "first-party",
+      "observed_at": "2026-10-05T15:47:15Z",
+      "revision": null,
+      "independence_group": "playwright-docs"
+    },
+    {
+      "id": "vitals",
+      "uri": "https://web.dev/articles/vitals",
+      "title": "Core Web Vitals",
+      "source_class": "first-party",
+      "observed_at": "2026-10-05T15:47:15Z",
+      "revision": null,
+      "independence_group": "google-webdev"
+    }
+  ],
+  "claims": [
+    {
+      "id": "claim-wcag",
+      "text": "WCAG 2.2 includes keyboard and 320 CSS pixel reflow criteria.",
+      "source_ids": [
+        "wcag"
+      ],
+      "status": "supported"
+    },
+    {
+      "id": "claim-axe",
+      "text": "Playwright with axe checks common accessibility defects; manual and user assessment remain necessary.",
+      "source_ids": [
+        "axe"
+      ],
+      "status": "supported"
+    },
+    {
+      "id": "claim-vitals",
+      "text": "Core Web Vitals are field metrics; lab measurements supplement them and do not replace observed user experience.",
+      "source_ids": [
+        "vitals"
+      ],
+      "status": "supported"
+    }
+  ],
+  "candidates": [
+    {
+      "id": "wcag",
+      "name": "WCAG 2.2",
+      "canonical_uri": "https://www.w3.org/TR/WCAG22/",
+      "claim_ids": [
+        "claim-wcag"
+      ],
+      "disposition": "consider",
+      "reason": "Use this attributed reference for the part of the need it directly supports.",
+      "limitations": [
+        "No human usability study or field performance in this sample."
+      ],
+      "signal": {
+        "evidence_confidence": "medium",
+        "project_fit": "unknown"
+      }
+    },
+    {
+      "id": "axe",
+      "name": "Playwright accessibility testing",
+      "canonical_uri": "https://playwright.dev/docs/accessibility-testing",
+      "claim_ids": [
+        "claim-axe"
+      ],
+      "disposition": "consider",
+      "reason": "Use this attributed reference for the part of the need it directly supports.",
+      "limitations": [
+        "No human usability study or field performance in this sample."
+      ],
+      "signal": {
+        "evidence_confidence": "medium",
+        "project_fit": "unknown"
+      }
+    },
+    {
+      "id": "vitals",
+      "name": "Core Web Vitals",
+      "canonical_uri": "https://web.dev/articles/vitals",
+      "claim_ids": [
+        "claim-vitals"
+      ],
+      "disposition": "consider",
+      "reason": "Use this attributed reference for the part of the need it directly supports.",
+      "limitations": [
+        "No human usability study or field performance in this sample."
+      ],
+      "signal": {
+        "evidence_confidence": "medium",
+        "project_fit": "unknown"
+      }
+    }
+  ],
+  "limitations": [
+    "No human usability study or field performance in this sample.",
+    "Builder-assisted, small selected set; no configured application-model call or independent evaluation."
+  ],
+  "extensions": {
+    "signals.study": {
+      "implementation_frozen": true,
+      "claims_are": "Primary-source summaries; candidate usefulness is builder judgment."
+    }
+  }
+}

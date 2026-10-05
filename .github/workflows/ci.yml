@@ -14,19 +14,20 @@ jobs:
       postgres:
         image: postgres:18-alpine
         env:
-          POSTGRES_DB: maestro
-          POSTGRES_USER: maestro
-          POSTGRES_PASSWORD: maestro
+          POSTGRES_DB: signals_ci
+          POSTGRES_USER: signals_test
+          POSTGRES_PASSWORD: signals_ci
         ports:
-          - 54329:5432
+          - 55491:5432
         options: >-
-          --health-cmd "pg_isready -U maestro -d maestro"
+          --health-cmd "pg_isready -U signals_test -d signals_ci"
           --health-interval 2s
           --health-timeout 3s
           --health-retries 30
     env:
-      DATABASE_URL: postgres://maestro:maestro@127.0.0.1:54329/maestro
-      MAESTRO_ALLOW_NETWORK_FETCH: 'false'
+      DATABASE_URL: postgres://signals_test:signals_ci@127.0.0.1:55491/signals_ci
+      TEST_DATABASE_URL: postgres://signals_test:signals_ci@127.0.0.1:55491/signals_ci_test
+      SIGNALS_ALLOW_NETWORK_FETCH: 'false'
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

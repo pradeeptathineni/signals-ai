@@ -36,11 +36,12 @@ For broad repository analysis or noisy validation output, use the repository's `
 Project instructions and explicit task authority take precedence. Use the pinned `.context-ai/lock.json`.
 Read `.context-ai/resources/skills/context-loadout/SKILL.md` for selection and use receipts.
 Load only the modules for the current stage:
-- inspect: `.context-ai/resources/core/engineering.md`, `.context-ai/resources/core/context.md`, `.context-ai/resources/custom/prior-art.md`
-- implement: `.context-ai/resources/core/development.md`, `.context-ai/resources/custom/patterns.md`, `.context-ai/resources/custom/code-comments.md`
-- test: `.context-ai/resources/core/testing.md`
-- review: `.context-ai/resources/core/review.md`, `.context-ai/resources/custom/evidence-claims.md`
-- deliver: `.context-ai/resources/core/versioning.md`, `.context-ai/resources/custom/delivery.md`
-- research: `.context-ai/resources/core/research.md`, `.context-ai/resources/procedures/research-evidence.md`, `.context-ai/resources/custom/prior-art.md`, `.context-ai/resources/custom/evidence-claims.md`
+- inspect: `.context-ai/resources/core/engineering.md`, `.context-ai/resources/core/context.md`, `.context-ai/resources/overlays/prior-art.md`, `.context-ai/resources/domains/web/react.md`, `.context-ai/resources/domains/service/api.md`
+- implement: `.context-ai/resources/core/development.md`, `.context-ai/resources/overlays/patterns.md`, `.context-ai/resources/overlays/code-comments.md`, `.context-ai/resources/core/code-comments.md`, `.context-ai/resources/domains/web/accessibility.md`, `.context-ai/resources/domains/web/performance.md`, `.context-ai/resources/domains/web/react.md`, `.context-ai/resources/domains/service/api.md`
+- test: `.context-ai/resources/core/testing.md`, `.context-ai/resources/domains/web/browser-verification.md`
+- review: `.context-ai/resources/core/review.md`, `.context-ai/resources/overlays/evidence-claims.md`, `.context-ai/resources/domains/web/design.md`, `.context-ai/resources/core/version-control.md`
+- deliver: `.context-ai/resources/core/versioning.md`, `.context-ai/resources/overlays/delivery.md`, `.context-ai/resources/core/version-control.md`
+- research: `.context-ai/resources/core/prior-art.md`, `.context-ai/resources/core/research.md`, `.context-ai/resources/procedures/research-evidence.md`, `.context-ai/resources/overlays/prior-art.md`, `.context-ai/resources/overlays/evidence-claims.md`
+- design: `.context-ai/resources/domains/web/design.md`, `.context-ai/resources/domains/web/product-ux.md`
 A selected recipe is not execution or deployment permission.
 <!-- context-ai:end -->

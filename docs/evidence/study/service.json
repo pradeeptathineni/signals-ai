@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "bundle_id": "study-service-22183f4",
+  "mode": "agent-assisted",
+  "created_at": "2026-10-05T16:44:14.313Z",
+  "producer": {
+    "repository": "pradeeptathineni/signals-ai",
+    "commit": "22183f4875c8838b33670afa1866e104b971adbc",
+    "protocol": "signals-evidence-v1"
+  },
+  "need": {
+    "query": "Use the existing Fastify API and Graphile Worker for typed local requests and bounded retries rather than inventing a new runtime.",
+    "concept_ids": [
+      "study-service"
+    ]
+  },
+  "sources": [
+    {
+      "id": "fastify",
+      "uri": "https://fastify.dev/docs/latest/Reference/Validation-and-Serialization/",
+      "title": "Fastify validation and serialization",
+      "source_class": "primary-guidance",
+      "observed_at": "2026-10-05T16:44:12.646Z",
+      "revision": null,
+      "independence_group": "fastify-maintainers"
+    },
+    {
+      "id": "worker",
+      "uri": "https://worker.graphile.org/docs/tasks",
+      "title": "Graphile task executors",
+      "source_class": "primary-guidance",
+      "observed_at": "2026-10-05T16:44:12.646Z",
+      "revision": null,
+      "independence_group": "graphile-maintainers"
+    }
+  ],
+  "claims": [
+    {
+      "id": "claim-fastify",
+      "text": "Fastify validates route inputs against developer-owned schemas; untrusted schemas are unsafe application code.",
+      "source_ids": [
+        "fastify"
+      ],
+      "status": "supported"
+    },
+    {
+      "id": "claim-worker",
+      "text": "Graphile tasks expose attempt/max-attempt metadata and abort helpers for bounded processing.",
+      "source_ids": [
+        "worker"
+      ],
+      "status": "supported"
+    }
+  ],
+  "candidates": [
+    {
+      "id": "fastify",
+      "name": "Fastify validation and serialization",
+      "canonical_uri": "https://fastify.dev/docs/latest/Reference/Validation-and-Serialization/",
+      "claim_ids": [
+        "claim-fastify"
+      ],
+      "disposition": "consider",
+      "reason": "Use this attributed reference for the part of the need it directly supports.",
+      "limitations": [
+        "Detailed backoff pages were inaccessible at two attempted URLs; no invented success.",
+        "Documented task helpers do not authorize arbitrary executable tasks in Signals."
+      ],
+      "signal": {
+        "evidence_confidence": "medium",
+        "project_fit": "unknown"
+      }
+    },
+    {
+      "id": "worker",
+      "name": "Graphile task executors",
+      "canonical_uri": "https://worker.graphile.org/docs/tasks",
+      "claim_ids": [
+        "claim-worker"
+      ],
+      "disposition": "consider",
+      "reason": "Use this attributed reference for the part of the need it directly supports.",
+      "limitations": [
+        "Detailed backoff pages were inaccessible at two attempted URLs; no invented success.",
+        "Documented task helpers do not authorize arbitrary executable tasks in Signals."
+      ],
+      "signal": {
+        "evidence_confidence": "medium",
+        "project_fit": "unknown"
+      }
+    }
+  ],
+  "limitations": [
+    "Detailed backoff pages were inaccessible at two attempted URLs; no invented success.",
+    "Documented task helpers do not authorize arbitrary executable tasks in Signals.",
+    "Builder-assisted, small selected set; no configured application-model call or independent evaluation."
+  ],
+  "extensions": {
+    "signals.study": {
+      "implementation_frozen": true,
+      "claims_are": "Primary-source summaries; candidate usefulness is builder judgment."
+    }
+  }
+}

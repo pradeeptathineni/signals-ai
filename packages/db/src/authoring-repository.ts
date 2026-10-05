@@ -747,7 +747,7 @@ export async function furnishKnowledgeDocumentWithClient(
     `INSERT INTO ops.audit_events
        (id, workspace_id, actor_type, action, object_type, object_id, object_revision,
         correlation_id, after_hash, safe_metadata)
-     VALUES ($1, $2, $7, 'knowledge_document.furnish', 'knowledge_document', $3, 1,
+     VALUES ($1, $2, $7, 'knowledge_document.furnish', 'knowledge_document', $3, $8,
              $4, $5, $6)`,
     [
       newOpaqueId(),
@@ -757,6 +757,7 @@ export async function furnishKnowledgeDocumentWithClient(
       contentDigest,
       json({ reviewState: input.reviewState, sourceHost: url.hostname }),
       actor,
+      revision,
     ],
   );
   return {

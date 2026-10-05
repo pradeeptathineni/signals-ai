@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "bundle_id": "study-bird-journal-22183f4",
+  "mode": "agent-assisted",
+  "created_at": "2026-10-05T16:44:14.572Z",
+  "producer": {
+    "repository": "pradeeptathineni/signals-ai",
+    "commit": "22183f4875c8838b33670afa1866e104b971adbc",
+    "protocol": "signals-evidence-v1"
+  },
+  "need": {
+    "query": "Organize a beginner backyard bird observation journal using reliable starter references and observation rather than feeding wildlife.",
+    "concept_ids": [
+      "study-bird-journal"
+    ]
+  },
+  "sources": [
+    {
+      "id": "notebook",
+      "uri": "https://www.allaboutbirds.org/news/take-note-tips-for-keeping-a-field-notebook/",
+      "title": "Cornell field notebook guidance",
+      "source_class": "primary-guidance",
+      "observed_at": "2026-10-05T16:44:12.646Z",
+      "revision": "2010-04-15",
+      "independence_group": "cornell-lab"
+    },
+    {
+      "id": "checklist",
+      "uri": "https://support.ebird.org/en/support/solutions/articles/48000957911",
+      "title": "eBird checklist fields",
+      "source_class": "primary-guidance",
+      "observed_at": "2026-10-05T16:44:12.646Z",
+      "revision": "2025-03-28",
+      "independence_group": "cornell-lab"
+    }
+  ],
+  "claims": [
+    {
+      "id": "claim-notebook",
+      "text": "Cornell recommends dated field notes with location, weather, sketches and retained originals.",
+      "source_ids": [
+        "notebook"
+      ],
+      "status": "supported"
+    },
+    {
+      "id": "claim-checklist",
+      "text": "eBird records location, date, time, duration, distance and species counts; incomplete effort remains explicit.",
+      "source_ids": [
+        "checklist"
+      ],
+      "status": "supported"
+    }
+  ],
+  "candidates": [
+    {
+      "id": "notebook",
+      "name": "Cornell field notebook guidance",
+      "canonical_uri": "https://www.allaboutbirds.org/news/take-note-tips-for-keeping-a-field-notebook/",
+      "claim_ids": [
+        "claim-notebook"
+      ],
+      "disposition": "consider",
+      "reason": "Use this attributed reference for the part of the need it directly supports.",
+      "limitations": [
+        "Both references share Cornell lineage; not independent confirmations.",
+        "No regional species or identification guarantee; eBird account/privacy rules require separate review if submitting."
+      ],
+      "signal": {
+        "evidence_confidence": "medium",
+        "project_fit": "unknown"
+      }
+    },
+    {
+      "id": "checklist",
+      "name": "eBird checklist fields",
+      "canonical_uri": "https://support.ebird.org/en/support/solutions/articles/48000957911",
+      "claim_ids": [
+        "claim-checklist"
+      ],
+      "disposition": "consider",
+      "reason": "Use this attributed reference for the part of the need it directly supports.",
+      "limitations": [
+        "Both references share Cornell lineage; not independent confirmations.",
+        "No regional species or identification guarantee; eBird account/privacy rules require separate review if submitting."
+      ],
+      "signal": {
+        "evidence_confidence": "medium",
+        "project_fit": "unknown"
+      }
+    }
+  ],
+  "limitations": [
+    "Both references share Cornell lineage; not independent confirmations.",
+    "No regional species or identification guarantee; eBird account/privacy rules require separate review if submitting.",
+    "Builder-assisted, small selected set; no configured application-model call or independent evaluation."
+  ],
+  "extensions": {
+    "signals.study": {
+      "implementation_frozen": true,
+      "claims_are": "Primary-source summaries; candidate usefulness is builder judgment."
+    }
+  }
+}

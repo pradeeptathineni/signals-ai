@@ -89,4 +89,23 @@ describe('evidence exchange v1', () => {
     expect(() => parse(bundle)).toThrow('postdates');
     expect(() => parseEvidenceBundle('é'.repeat(140000), 'a'.repeat(64))).toThrow('byte budget');
   });
+  it('rejects duplicate JSON names, future creation and extension authority or private scope', () => {
+    const bundle = evidenceExample('agent-assisted');
+    const bytes = JSON.stringify(bundle).replace(
+      '"mode":"agent-assisted"',
+      '"mode":"fixture","\\u006dode":"agent-assisted"',
+    );
+    expect(() => parseEvidenceBundle(bytes, evidenceDigest(bytes))).toThrow('Duplicate JSON');
+    bundle.created_at = '2100-01-01T00:00:00Z';
+    expect(() => parse(bundle)).toThrow('Future');
+    bundle.created_at = '2026-10-05T12:00:00Z';
+    bundle.extensions = { 'context.policy_id': 'invented' };
+    expect(() => parse(bundle)).toThrow();
+    bundle.extensions = { 'context.privacy_scope': 'private' };
+    expect(() => parse(bundle)).toThrow();
+    let deep: unknown = 'bounded';
+    for (let depth = 0; depth < 40; depth++) deep = [deep];
+    bundle.extensions = { 'example.nested': deep };
+    expect(() => parse(bundle)).toThrow('nesting budget');
+  });
 });

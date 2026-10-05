@@ -181,8 +181,11 @@ export async function reviewEvidenceDraft(
       actor: string;
       rationale: string;
       predecessorId: string | null;
+      blockers: string[];
     }>(
-      'SELECT r.bundle_id AS "bundleId",r.actor_type AS actor,r.rationale,b.predecessor_id AS "predecessorId" FROM ops.evidence_reviews r JOIN catalog.evidence_bundles b ON b.id=r.bundle_id WHERE r.draft_id=$1',
+      `SELECT r.bundle_id AS "bundleId",r.actor_type AS actor,r.rationale,
+      b.predecessor_id AS "predecessorId",r.checks->'blockers' AS blockers
+      FROM ops.evidence_reviews r JOIN catalog.evidence_bundles b ON b.id=r.bundle_id WHERE r.draft_id=$1`,
       [draftId],
     );
     if (oldReview.rowCount) {
@@ -190,7 +193,8 @@ export async function reviewEvidenceDraft(
       if (
         prior.actor !== input.actor ||
         prior.rationale !== input.rationale ||
-        prior.predecessorId !== (input.predecessorId ?? null)
+        prior.predecessorId !== (input.predecessorId ?? null) ||
+        JSON.stringify(prior.blockers) !== JSON.stringify(input.blockers)
       )
         throw new ConflictError('This draft already has a different immutable review.');
       return { id: prior.bundleId, actor: prior.actor, replay: true };
@@ -210,6 +214,12 @@ export async function reviewEvidenceDraft(
         [input.predecessorId],
       );
       if (!prior.rowCount) throw new NotFoundError('Predecessor evidence not found.');
+      const existingSuccessor = await client.query(
+        'SELECT id FROM catalog.evidence_bundles WHERE predecessor_id=$1',
+        [input.predecessorId],
+      );
+      if (existingSuccessor.rowCount)
+        throw new ConflictError('This predecessor already has an immutable successor.');
       changes = evidenceChange(
         validateEvidence(prior.rows[0]!.bytes, prior.rows[0]!.digest),
         bundle,

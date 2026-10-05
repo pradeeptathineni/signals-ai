@@ -59,6 +59,9 @@ export async function recordAdoptionReadiness(
   if (contradictory) freshnessUnknowns.push('Conflicting claims require scoped review.');
   const result = assessAdoptionReadiness({
     ...input,
+    boundedCheck: ['failed', 'regressed'].includes(feedback?.rows[0]?.outcome ?? '')
+      ? 'failed'
+      : input.boundedCheck,
     criticalClaimSupported: input.criticalClaimSupported && !contradictory,
     unknowns: [...input.unknowns, ...freshnessUnknowns],
     completedTrial: feedback?.rows[0]?.outcome === 'useful',
