@@ -64,6 +64,7 @@ export const evidenceFeedback = ops.table('evidence_feedback', {
   bundleId: uuid('bundle_id').notNull(),
   candidateId: text('candidate_id').notNull(),
   consumerTask: text('consumer_task').notNull(),
+  actionScope: text('action_scope'),
   outcome: text().notNull(),
   detail: text().notNull(),
   idempotencyKey: text('idempotency_key').notNull(),

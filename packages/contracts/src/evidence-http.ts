@@ -3,9 +3,11 @@ import { Type } from 'typebox';
 export const AdoptionReadinessBodySchema = Type.Object(
   {
     candidateId: Type.String({ minLength: 1, maxLength: 120 }),
+    consumerTask: Type.String({ minLength: 1, maxLength: 240 }),
     actor: Type.Union([Type.Literal('human'), Type.Literal('agent-reviewed')]),
     purpose: Type.Union([
       Type.Literal('reference'),
+      Type.Literal('documented_use'),
       Type.Literal('use'),
       Type.Literal('copy'),
       Type.Literal('production'),
@@ -35,6 +37,33 @@ export const AdoptionReadinessBodySchema = Type.Object(
     criticalClaimSupported: Type.Boolean(),
     unknowns: Type.Array(Type.String({ minLength: 1, maxLength: 500 }), { maxItems: 20 }),
     feedbackId: Type.Optional(Type.String({ format: 'uuid' })),
+    claimReviews: Type.Optional(
+      Type.Array(
+        Type.Union([
+          Type.Object(
+            { claimId: Type.String(), basis: Type.Literal('stable'), reviewAfterDays: Type.Null() },
+            { additionalProperties: false },
+          ),
+          Type.Object(
+            {
+              claimId: Type.String(),
+              basis: Type.Literal('volatile'),
+              reviewAfterDays: Type.Integer({ minimum: 1, maximum: 3650 }),
+            },
+            { additionalProperties: false },
+          ),
+          Type.Object(
+            {
+              claimId: Type.String(),
+              basis: Type.Literal('unknown'),
+              reviewAfterDays: Type.Null(),
+            },
+            { additionalProperties: false },
+          ),
+        ]),
+        { maxItems: 100 },
+      ),
+    ),
   },
   { additionalProperties: false },
 );
@@ -59,6 +88,16 @@ export const EvidenceFeedbackBodySchema = Type.Object(
   {
     candidateId: Type.String({ minLength: 1, maxLength: 120 }),
     consumerTask: Type.String({ minLength: 1, maxLength: 240 }),
+    actionScope: Type.Optional(
+      Type.Union([
+        Type.Literal('reference'),
+        Type.Literal('documented_use'),
+        Type.Literal('use'),
+        Type.Literal('copy'),
+        Type.Literal('production'),
+        Type.Literal('comparison'),
+      ]),
+    ),
     outcome: Type.Union([
       Type.Literal('useful'),
       Type.Literal('failed'),

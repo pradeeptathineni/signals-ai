@@ -35,4 +35,5 @@ export const requiredMigrationFilenames = [
   '0031_corroboration_entity_binding.sql',
   '0032_evidence_exchange_v1.sql',
   '0033_evidence_readiness_and_integrity.sql',
+  '0034_action_specific_readiness.sql',
 ] as const;

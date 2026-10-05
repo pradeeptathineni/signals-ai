@@ -337,6 +337,7 @@ export async function getEvidenceDraft(pool: Pool, workspaceId: string, id: stri
 export interface EvidenceFeedbackInput {
   candidateId: string;
   consumerTask: string;
+  actionScope?: 'reference' | 'documented_use' | 'use' | 'copy' | 'production' | 'comparison';
   outcome: 'useful' | 'failed' | 'regressed' | 'not_used';
   detail: string;
   idempotencyKey: string;
@@ -348,6 +349,10 @@ export async function recordEvidenceFeedback(
   input: EvidenceFeedbackInput,
 ) {
   if (
+    (input.actionScope !== undefined &&
+      !['reference', 'documented_use', 'use', 'copy', 'production', 'comparison'].includes(
+        input.actionScope,
+      )) ||
     !['useful', 'failed', 'regressed', 'not_used'].includes(input.outcome) ||
     typeof input.consumerTask !== 'string' ||
     !input.consumerTask.trim() ||
@@ -374,10 +379,11 @@ export async function recordEvidenceFeedback(
       bundleId: string;
       candidateId: string;
       consumerTask: string;
+      actionScope: string | null;
       outcome: string;
       detail: string;
     }>(
-      `SELECT id,bundle_id AS "bundleId",candidate_id AS "candidateId",consumer_task AS "consumerTask",outcome,detail
+      `SELECT id,bundle_id AS "bundleId",candidate_id AS "candidateId",consumer_task AS "consumerTask",action_scope AS "actionScope",outcome,detail
        FROM ops.evidence_feedback WHERE workspace_id=$1 AND idempotency_key=$2`,
       [workspaceId, input.idempotencyKey],
     );
@@ -387,6 +393,7 @@ export async function recordEvidenceFeedback(
         prior.bundleId !== id ||
         prior.candidateId !== input.candidateId ||
         prior.consumerTask !== input.consumerTask ||
+        prior.actionScope !== (input.actionScope ?? null) ||
         prior.outcome !== input.outcome ||
         prior.detail !== input.detail
       )
@@ -395,8 +402,8 @@ export async function recordEvidenceFeedback(
     }
     const feedbackId = newOpaqueId();
     await client.query(
-      `INSERT INTO ops.evidence_feedback (id,workspace_id,bundle_id,candidate_id,consumer_task,outcome,detail,idempotency_key)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      `INSERT INTO ops.evidence_feedback (id,workspace_id,bundle_id,candidate_id,consumer_task,outcome,detail,idempotency_key,action_scope)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
       [
         feedbackId,
         workspaceId,
@@ -406,6 +413,7 @@ export async function recordEvidenceFeedback(
         input.outcome,
         input.detail,
         input.idempotencyKey,
+        input.actionScope ?? null,
       ],
     );
     return {

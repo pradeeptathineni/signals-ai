@@ -163,6 +163,7 @@ it('binds readiness and feedback to exact candidates and enforces bytes for alte
     candidateId: 'candidate',
     actor: 'agent-reviewed' as const,
     purpose: 'use' as const,
+    consumerTask: 'regression-only',
     supportedClaimIds: ['c1'],
     documentedInterface: true,
     boundedCheck: 'passed' as const,
@@ -171,6 +172,7 @@ it('binds readiness and feedback to exact candidates and enforces bytes for alte
     authoritySafe: true,
     criticalClaimSupported: true,
     unknowns: [],
+    claimReviews: [{ claimId: 'c1', basis: 'stable' as const, reviewAfterDays: null }],
   };
   expect(await recordAdoptionReadiness(pool, localWorkspaceId, admitted.id, input)).toMatchObject({
     disposition: 'trial',
@@ -192,6 +194,7 @@ it('binds readiness and feedback to exact candidates and enforces bytes for alte
     candidateId: 'candidate',
     consumerTask: 'regression-only',
     outcome: 'useful',
+    actionScope: 'use',
     detail: 'Synthetic trial outcome for contract testing.',
     idempotencyKey: randomUUID(),
   });
@@ -201,10 +204,58 @@ it('binds readiness and feedback to exact candidates and enforces bytes for alte
       feedbackId: feedback.id,
     }),
   ).toMatchObject({ disposition: 'adopt' });
+  const unscoped = await recordEvidenceFeedback(pool, localWorkspaceId, admitted.id, {
+    candidateId: 'candidate',
+    consumerTask: input.consumerTask,
+    outcome: 'useful',
+    detail: 'Legacy observation with no action scope.',
+    idempotencyKey: randomUUID(),
+  });
+  expect(
+    await recordAdoptionReadiness(pool, localWorkspaceId, admitted.id, {
+      ...input,
+      feedbackId: unscoped.id,
+    }),
+  ).toMatchObject({ disposition: 'trial' });
+  await expect(
+    recordAdoptionReadiness(pool, localWorkspaceId, admitted.id, {
+      ...input,
+      feedbackId: feedback.id,
+      consumerTask: 'unrelated-task',
+    }),
+  ).rejects.toThrow('consumer task');
+  await expect(
+    recordAdoptionReadiness(pool, localWorkspaceId, admitted.id, {
+      ...input,
+      feedbackId: feedback.id,
+      purpose: 'copy',
+      redistribution: 'allowed',
+    }),
+  ).rejects.toThrow('action');
+  await expect(
+    recordAdoptionReadiness(pool, localWorkspaceId, admitted.id, {
+      ...input,
+      claimReviews: [{ claimId: 'not-selected', basis: 'stable', reviewAfterDays: null }],
+    }),
+  ).rejects.toThrow('selected claims');
+  await expect(
+    recordAdoptionReadiness(pool, localWorkspaceId, admitted.id, {
+      ...input,
+      claimReviews: [...input.claimReviews, ...input.claimReviews],
+    }),
+  ).rejects.toThrow('uniquely');
+  expect(
+    await recordAdoptionReadiness(pool, localWorkspaceId, admitted.id, {
+      ...input,
+      feedbackId: feedback.id,
+      claimReviews: [],
+    }),
+  ).toMatchObject({ disposition: 'trial', freshness: [{ claimId: 'c1', state: 'unknown' }] });
   for (const outcome of ['failed', 'regressed'] as const) {
     const failure = await recordEvidenceFeedback(pool, localWorkspaceId, admitted.id, {
       candidateId: 'candidate',
-      consumerTask: 'failed-trial-regression',
+      consumerTask: 'regression-only',
+      actionScope: 'use',
       outcome,
       detail: 'A recorded trial failure overrides a declared successful check.',
       idempotencyKey: randomUUID(),
@@ -254,5 +305,87 @@ it('binds readiness and feedback to exact candidates and enforces bytes for alte
   ).rejects.toThrow('exact evidence bundle');
   await expect(
     pool.query('DELETE FROM ops.adoption_readiness WHERE bundle_id=$1', [admitted.id]),
+  ).rejects.toThrow();
+});
+
+it('dates selected claims by their observations and preserves immutable old assessments', async () => {
+  const bundle = evidenceExample('agent-assisted');
+  bundle.bundle_id = `freshness-${randomUUID()}`;
+  bundle.sources[0]!.observed_at = '2001-01-01T00:00:00Z';
+  const bytes = JSON.stringify(bundle);
+  const draft = await importEvidenceDraft(pool, localWorkspaceId, bytes, evidenceDigest(bytes));
+  const admitted = await reviewEvidenceDraft(pool, localWorkspaceId, draft.id, {
+    actor: 'agent-reviewed',
+    rationale: 'Synthetic claim-age regression.',
+    blockers: [],
+  });
+  const input = {
+    candidateId: 'candidate',
+    actor: 'agent-reviewed' as const,
+    purpose: 'documented_use' as const,
+    consumerTask: 'Use a pinned documented practice',
+    supportedClaimIds: ['c1'],
+    documentedInterface: true,
+    boundedCheck: 'unknown' as const,
+    compatibility: 'compatible' as const,
+    redistribution: 'unknown' as const,
+    authoritySafe: true,
+    criticalClaimSupported: true,
+    unknowns: [],
+  };
+  const stable = await recordAdoptionReadiness(pool, localWorkspaceId, admitted.id, {
+    ...input,
+    claimReviews: [{ claimId: 'c1', basis: 'stable', reviewAfterDays: null }],
+  });
+  expect(stable).toMatchObject({
+    disposition: 'adopt',
+    policyVersion: 'adoption-readiness-v2',
+    freshness: [{ claimId: 'c1', state: 'current' }],
+  });
+  expect(
+    await recordAdoptionReadiness(pool, localWorkspaceId, admitted.id, {
+      ...input,
+      claimReviews: [{ claimId: 'c1', basis: 'volatile', reviewAfterDays: 30 }],
+    }),
+  ).toMatchObject({ disposition: 'defer', freshness: [{ claimId: 'c1', state: 'due' }] });
+  expect(await recordAdoptionReadiness(pool, localWorkspaceId, admitted.id, input)).toMatchObject({
+    disposition: 'defer',
+    freshness: [{ claimId: 'c1', state: 'unknown' }],
+  });
+  const saved = await pool.query('SELECT input,result FROM ops.adoption_readiness WHERE id=$1', [
+    stable.id,
+  ]);
+  expect(saved.rows[0].result.assessedAt).toBe(stable.assessedAt);
+  expect(saved.rows[0].input.claimReviews).toEqual([
+    { claimId: 'c1', basis: 'stable', reviewAfterDays: null },
+  ]);
+  const historical = {
+    policyVersion: 'adoption-readiness-v1',
+    disposition: 'trial',
+    unknowns: ['Historical 90-day window.'],
+  };
+  const oldId = randomUUID();
+  await pool.query(
+    'INSERT INTO ops.adoption_readiness (id,workspace_id,bundle_id,candidate_id,actor_type,policy_version,input,result) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+    [
+      oldId,
+      localWorkspaceId,
+      admitted.id,
+      'candidate',
+      'agent-reviewed',
+      'adoption-readiness-v1',
+      input,
+      historical,
+    ],
+  );
+  expect(
+    (await pool.query('SELECT result FROM ops.adoption_readiness WHERE id=$1', [oldId])).rows[0]
+      .result,
+  ).toEqual(historical);
+  await expect(
+    pool.query('UPDATE ops.adoption_readiness SET result=$1 WHERE id=$2', [
+      { ...historical, disposition: 'adopt' },
+      oldId,
+    ]),
   ).rejects.toThrow();
 });

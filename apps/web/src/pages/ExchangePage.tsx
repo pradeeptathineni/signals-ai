@@ -107,6 +107,7 @@ export function ExchangePage() {
     mutationFn: (input: {
       candidateId: string;
       consumerTask: string;
+      actionScope: string;
       outcome: string;
       detail: string;
     }) =>
@@ -389,6 +390,7 @@ export function ExchangePage() {
                         feedback.mutate({
                           candidateId: formString(data, 'candidateId'),
                           consumerTask: formString(data, 'consumerTask'),
+                          actionScope: formString(data, 'actionScope'),
                           outcome: formString(data, 'outcome'),
                           detail: formString(data, 'detail'),
                         });
@@ -407,6 +409,17 @@ export function ExchangePage() {
                       <label>
                         Consumer task
                         <input name="consumerTask" required maxLength={240} />
+                      </label>
+                      <label>
+                        Action observed
+                        <select name="actionScope">
+                          <option value="reference">Attributed reference</option>
+                          <option value="documented_use">Documented practice</option>
+                          <option value="use">Use the interface</option>
+                          <option value="copy">Copy source</option>
+                          <option value="production">Production deployment</option>
+                          <option value="comparison">Comparative assessment</option>
+                        </select>
                       </label>
                       <label>
                         Outcome

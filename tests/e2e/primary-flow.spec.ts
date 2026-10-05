@@ -35,6 +35,7 @@ test('evidence import, review, exact export, readiness, feedback and refresh wor
   const download = await downloadPromise;
   expect(await readFile(await download.path(), 'utf8')).toBe(bytes);
   await page.getByText('Assess readiness for a particular use', { exact: true }).click();
+  await page.getByLabel('Consumer task (must match linked feedback)').fill('browser-regression');
   await page.getByLabel('Purpose', { exact: true }).selectOption('use');
   await page.getByLabel('Bounded check', { exact: true }).selectOption('passed');
   await page.getByLabel('Compatibility', { exact: true }).selectOption('compatible');
@@ -42,9 +43,10 @@ test('evidence import, review, exact export, readiness, feedback and refresh wor
   await page.getByLabel('Authority is safe for this purpose').check();
   await page.getByLabel('Critical claims are supported').check();
   await page.getByRole('button', { name: 'Assess scoped readiness' }).click();
-  await expect(page.getByRole('status').filter({ hasText: 'broader benefit' })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'record an outcome' })).toBeVisible();
   await page.getByText('Record consumer feedback', { exact: true }).click();
   await page.getByLabel('Consumer task', { exact: true }).fill('browser-regression');
+  await page.getByRole('combobox', { name: 'Action observed', exact: true }).selectOption('use');
   await page
     .getByLabel('Observed result', { exact: true })
     .fill('Synthetic feedback contract check.');

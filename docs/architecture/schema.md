@@ -1,6 +1,7 @@
 # Schema contract
 
-Signals v1 adds `0032_evidence_exchange_v1.sql` and `0033_evidence_readiness_and_integrity.sql`.
+Evidence interchange schema v1 uses `0032_evidence_exchange_v1.sql` and
+`0033_evidence_readiness_and_integrity.sql`; this protocol identity is independent of product releases.
 Private/operational drafts, immutable actor-labelled reviews, feedback and scoped readiness live
 in `ops`; shareable exact-byte evidence bundles and successor chains live in `catalog`. No public
 bundle joins private workspace content. SHA constraints and candidate-binding triggers protect
@@ -63,7 +64,14 @@ candidate ranking does not re-tokenize every matching row. `0031_corroboration_e
 requires every corroboration item to support the exact applicable entity revision, predicate, and
 scope at the database boundary.
 
-The readiness gate requires all 34 repository migration files by exact filename; catalog
+`0034_action_specific_readiness.sql` permits new immutable `adoption-readiness-v2` assessments
+and adds optional feedback action scope. Existing v1 inputs/results and unscoped feedback remain
+unchanged. New runtime adoption requires feedback bound to the exact workspace, bundle, candidate,
+consumer task and action. Claim review inputs and the assessment date are saved with the result;
+source observation dates determine age. Missing reviews are unknown. A documented practice can
+be supported without a runtime trial; production or comparative benefit requires stronger evidence.
+
+The readiness gate requires all 37 repository migration files by exact filename; catalog
 cardinality is diagnostic data, not readiness.
 
 Drizzle declarations mirror queryable concepts but do not replace reviewed SQL. Startup never uses

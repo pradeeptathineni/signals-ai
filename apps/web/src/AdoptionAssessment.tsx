@@ -1,4 +1,5 @@
 import { useMutation } from '@tanstack/react-query';
+import { useState } from 'react';
 import type { EvidenceBundle } from '../../../packages/domain/src/evidence-exchange.js';
 import { api, formString } from './api.js';
 import { ErrorPanel, StateBadge } from './ui.js';
@@ -12,6 +13,8 @@ interface Assessment {
 }
 
 export function AdoptionAssessment({ id, bundle }: { id: string; bundle: EvidenceBundle }) {
+  const [selectedId, setSelectedId] = useState(bundle.candidates[0]?.id ?? '');
+  const selected = bundle.candidates.find((candidate) => candidate.id === selectedId);
   const assessment = useMutation({
     mutationFn: (data: FormData) => {
       const candidateId = formString(data, 'candidateId');
@@ -25,6 +28,7 @@ export function AdoptionAssessment({ id, bundle }: { id: string; bundle: Evidenc
         method: 'POST',
         body: JSON.stringify({
           candidateId,
+          consumerTask: formString(data, 'consumerTask'),
           actor: 'human',
           purpose: formString(data, 'purpose'),
           supportedClaimIds,
@@ -38,6 +42,15 @@ export function AdoptionAssessment({ id, bundle }: { id: string; bundle: Evidenc
             .split('\n')
             .map((line) => line.trim())
             .filter(Boolean),
+          claimReviews: supportedClaimIds.map((claimId) => {
+            const basis = formString(data, `freshness-${claimId}`) || 'unknown';
+            return {
+              claimId,
+              basis,
+              reviewAfterDays:
+                basis === 'volatile' ? Number(formString(data, `window-${claimId}`)) : null,
+            };
+          }),
           ...(formString(data, 'feedbackId') ? { feedbackId: formString(data, 'feedbackId') } : {}),
         }),
       });
@@ -58,7 +71,12 @@ export function AdoptionAssessment({ id, bundle }: { id: string; bundle: Evidenc
       >
         <label>
           Assessment option
-          <select name="candidateId" aria-label="Assessment option">
+          <select
+            name="candidateId"
+            aria-label="Assessment option"
+            value={selectedId}
+            onChange={(event) => setSelectedId(event.target.value)}
+          >
             {bundle.candidates.map((candidate) => (
               <option key={candidate.id} value={candidate.id}>
                 {candidate.name}
@@ -67,15 +85,55 @@ export function AdoptionAssessment({ id, bundle }: { id: string; bundle: Evidenc
           </select>
         </label>
         <label>
+          Consumer task (must match linked feedback)
+          <input name="consumerTask" required maxLength={240} />
+        </label>
+        <label>
           Purpose
           <select name="purpose" aria-label="Purpose">
             <option value="reference">Attributed reference</option>
+            <option value="documented_use">Use a documented practice</option>
             <option value="use">Use the interface</option>
             <option value="copy">Copy source</option>
             <option value="production">Production deployment</option>
             <option value="comparison">Comparative superiority</option>
           </select>
         </label>
+        <fieldset>
+          <legend>Freshness of supported claims</legend>
+          <p>
+            Assess each claim's stability. Source observation dates determine its age; this review
+            does not refresh them.
+          </p>
+          {bundle.claims
+            .filter(
+              (claim) =>
+                selected?.claim_ids.includes(claim.id) &&
+                ['supported', 'observed'].includes(claim.status),
+            )
+            .map((claim) => (
+              <div key={`${selectedId}-${claim.id}`}>
+                <label>
+                  {claim.text}
+                  <select name={`freshness-${claim.id}`} defaultValue="unknown">
+                    <option value="unknown">Freshness unknown</option>
+                    <option value="stable">Stable documented or historical claim</option>
+                    <option value="volatile">Changing claim; requires periodic review</option>
+                  </select>
+                </label>
+                <label>
+                  Review interval in days (for changing claims)
+                  <input
+                    name={`window-${claim.id}`}
+                    type="number"
+                    min={1}
+                    max={3650}
+                    defaultValue={90}
+                  />
+                </label>
+              </div>
+            ))}
+        </fieldset>
         <label>
           Bounded check
           <select name="boundedCheck" aria-label="Bounded check">
