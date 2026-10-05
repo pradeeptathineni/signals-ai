@@ -1,0 +1,556 @@
+{
+  "capabilities": {
+    "browser": {
+      "available": false,
+      "definition": {
+        "boundary": "Optional CLI discovery only. Full Playwright/axe/browser availability must be established by the recipe in the consumer project; local Node dependencies may provide it without a global command.",
+        "command": "playwright",
+        "kind": "command"
+      },
+      "requirement": "optional"
+    },
+    "context-react-review": {
+      "available": true,
+      "definition": {
+        "boundary": "Match framework/version; no forced Next or Vercel hosting.",
+        "description": "Read targeted Vercel React rules when the actual project uses React.",
+        "files": [
+          "sourced/vercel/react/compiled-guide.md",
+          "sourced/vercel/react/upstream-README.md"
+        ],
+        "kind": "resource",
+        "path": "procedures/react-review.md"
+      },
+      "requirement": "required"
+    },
+    "context-web-audit": {
+      "available": true,
+      "definition": {
+        "boundary": "Advisory audit; no silent fetch or pin changes.",
+        "description": "Audit web interaction with Vercel guidance and WCAG.",
+        "files": [
+          "sourced/vercel/web/upstream-README.md"
+        ],
+        "kind": "resource",
+        "path": "sourced/vercel/web/instruction.md"
+      },
+      "requirement": "required"
+    },
+    "context-web-design": {
+      "available": true,
+      "definition": {
+        "boundary": "No binaries/hooks; one primary procedure; brand and project authority override tastes.",
+        "description": "Use Impeccable instruction-only design procedure for frontend work.",
+        "files": [
+          "sourced/impeccable/design/LICENSE",
+          "sourced/impeccable/design/instruction.md",
+          "sourced/impeccable/design/NOTICE.md"
+        ],
+        "kind": "resource",
+        "path": "procedures/web-design.md"
+      },
+      "requirement": "required"
+    },
+    "git": {
+      "available": true,
+      "definition": {
+        "boundary": "Read-only discovery; mutation needs task authority.",
+        "command": "git",
+        "kind": "command"
+      },
+      "requirement": "required"
+    },
+    "node": {
+      "available": true,
+      "definition": {
+        "boundary": "Project runtime version must be checked at use.",
+        "command": "node",
+        "kind": "command"
+      },
+      "requirement": "required"
+    },
+    "python-runtime": {
+      "available": true,
+      "definition": {
+        "boundary": "Python 3.10+ and requirements.txt; no installer side effects.",
+        "command": "python3",
+        "kind": "command"
+      },
+      "requirement": "required"
+    }
+  },
+  "checks": [
+    {
+      "loadout": "standard",
+      "recipe": "Use the repository validation commands; inspect the actual diff; preserve unrelated work."
+    },
+    {
+      "loadout": "research-evidence",
+      "recipe": "Verify claim/source references, freshness, producer mode and exact-byte interchange integrity."
+    },
+    {
+      "loadout": "service-api",
+      "recipe": "Run actual project type/schema/route tests; isolate database migrations; test failure and scope invariants."
+    },
+    {
+      "loadout": "web-experience",
+      "recipe": "Build/serve distributed output; inspect desktop/mobile screenshots and interactions; run Playwright and axe; review asset budget and reduced motion."
+    },
+    {
+      "loadout": "react-web",
+      "recipe": "Detect React/framework versions; use relevant pinned rules; build and verify browser/hydration behavior."
+    }
+  ],
+  "decisions": {
+    "D-001": {
+      "action": "adopt",
+      "alternatives": [
+        "existing repository guidance"
+      ],
+      "applicability": "Context AI v1 consumers",
+      "concept": "agent-instruction-entrypoint",
+      "evidence": [
+        "kit:04-BOOTSTRAP-DECISIONS.yaml"
+      ],
+      "id": "D-001",
+      "rationale": "Use the cross-agent repository instruction convention as the small routing entry point.",
+      "revision": 1,
+      "revisit_when": "Provider discovery semantics materially change or a better interoperable convention wins.",
+      "rollback": "Undo unchanged owned materialization; retain old pins.",
+      "selection": "AGENTS.md",
+      "supersedes": null,
+      "unknowns": [
+        "Comparative benefit is not measured."
+      ],
+      "validation": [
+        "Source review and bounded consumer tests before release."
+      ]
+    },
+    "D-002": {
+      "action": "adopt",
+      "alternatives": [
+        "existing repository guidance"
+      ],
+      "applicability": "Context AI v1 consumers",
+      "concept": "progressive-procedure-packaging",
+      "evidence": [
+        "kit:04-BOOTSTRAP-DECISIONS.yaml"
+      ],
+      "id": "D-002",
+      "rationale": "Use skills for on-demand procedures and references rather than expanding always-loaded instructions.",
+      "revision": 1,
+      "revisit_when": "A target agent cannot consume the format or measured discovery/activation fails.",
+      "rollback": "Undo unchanged owned materialization; retain old pins.",
+      "selection": "Agent Skills / SKILL.md",
+      "supersedes": null,
+      "unknowns": [
+        "Comparative benefit is not measured."
+      ],
+      "validation": [
+        "Source review and bounded consumer tests before release."
+      ]
+    },
+    "D-003": {
+      "action": "adopt",
+      "alternatives": [
+        "existing repository guidance"
+      ],
+      "applicability": "Context AI v1 consumers",
+      "concept": "canonical-behavior-format",
+      "evidence": [
+        "kit:04-BOOTSTRAP-DECISIONS.yaml"
+      ],
+      "id": "D-003",
+      "rationale": "Keep durable human/LLM-readable behavioral guidance diffable and provider-neutral.",
+      "revision": 1,
+      "revisit_when": "A machine-readable contract is needed instead of natural-language guidance.",
+      "rollback": "Undo unchanged owned materialization; retain old pins.",
+      "selection": "Markdown context modules",
+      "supersedes": null,
+      "unknowns": [
+        "Comparative benefit is not measured."
+      ],
+      "validation": [
+        "Source review and bounded consumer tests before release."
+      ]
+    },
+    "D-004": {
+      "action": "adopt",
+      "alternatives": [
+        "existing repository guidance"
+      ],
+      "applicability": "Context AI v1 consumers",
+      "concept": "loadout-definition",
+      "evidence": [
+        "kit:04-BOOTSTRAP-DECISIONS.yaml"
+      ],
+      "id": "D-004",
+      "rationale": "Compose references to context, skills, capabilities and checks without inventing an executable DSL.",
+      "revision": 1,
+      "revisit_when": "Repeated real consumers require semantics YAML cannot express safely and clearly.",
+      "rollback": "Undo unchanged owned materialization; retain old pins.",
+      "selection": "declarative YAML manifests",
+      "supersedes": null,
+      "unknowns": [
+        "Comparative benefit is not measured."
+      ],
+      "validation": [
+        "Source review and bounded consumer tests before release."
+      ]
+    },
+    "D-005": {
+      "action": "adopt",
+      "alternatives": [
+        "Continue fixtures only",
+        "Admit a pinned real peer checkpoint as advisory evidence"
+      ],
+      "applicability": "Context AI v1 consumers",
+      "concept": "evidence-decision-separation",
+      "evidence": [
+        "evals/signals-evidence.bundle.json",
+        "sha256:62e5cb9a6d825a1d5194a28035640b248ee05e344bb41fd816355c1a378cb8da",
+        "evals/signals-roundtrip.json"
+      ],
+      "id": "D-005",
+      "rationale": "The real agent-assisted Signals checkpoint passed exact-byte and semantic admission. Advice maps to Context decisions; source references, adoption, materialization and actual use remain separate.",
+      "revision": 2,
+      "revisit_when": "Producer schema/privacy/provenance changes or claim support fails a targeted review.",
+      "rollback": "Undo unchanged owned materialization; retain old pins.",
+      "selection": "Signals evidence -> Context decision -> project lock -> use receipt",
+      "supersedes": 1,
+      "unknowns": [
+        "No configured model-led runtime or independent comparative tool benefit was established."
+      ],
+      "validation": [
+        "Actual producer 4ab32a1d7ae09ae0ebb6102b4b2d7571291c5c97 -> Context read-only consumer; 10 candidates mapped with activation false."
+      ]
+    },
+    "D-006": {
+      "action": "adopt",
+      "alternatives": [
+        "existing repository guidance"
+      ],
+      "applicability": "Context AI v1 consumers",
+      "concept": "context-runtime-boundary",
+      "evidence": [
+        "kit:04-BOOTSTRAP-DECISIONS.yaml"
+      ],
+      "id": "D-006",
+      "rationale": "Context AI equips existing agents; it should not duplicate orchestration/execution runtimes.",
+      "revision": 1,
+      "revisit_when": "Multiple real consumers demonstrate a missing capability that cannot live in an existing runtime.",
+      "rollback": "Undo unchanged owned materialization; retain old pins.",
+      "selection": "no general agent runtime in context-ai",
+      "supersedes": null,
+      "unknowns": [
+        "Comparative benefit is not measured."
+      ],
+      "validation": [
+        "Source review and bounded consumer tests before release."
+      ]
+    },
+    "D-007": {
+      "action": "trial",
+      "alternatives": [
+        "existing repository guidance"
+      ],
+      "applicability": "Context AI v1 consumers",
+      "concept": "web-design-workflow",
+      "evidence": [
+        "sources.lock.json"
+      ],
+      "id": "D-007",
+      "rationale": "Current upstream launcher includes downloads and hook effects. Keep its web documentation procedure, exclude execution and use direct reads; actual browser trial required before broad endorsement.",
+      "revision": 2,
+      "revisit_when": "Compatibility, hooks, maintenance cost, or real-task output is worse than simpler alternatives.",
+      "rollback": "Undo unchanged owned materialization; retain old pins.",
+      "selection": "Impeccable 4.5.0 pinned instruction-only trial",
+      "supersedes": 1,
+      "unknowns": [
+        "Binary/hook behavior is not exercised or endorsed."
+      ],
+      "validation": [
+        "Source/notice review and the v1 representative browser exercise."
+      ]
+    },
+    "D-008": {
+      "action": "adopt",
+      "alternatives": [
+        "existing repository guidance"
+      ],
+      "applicability": "Context AI v1 consumers",
+      "concept": "frontend-design-reference",
+      "evidence": [
+        "kit:04-BOOTSTRAP-DECISIONS.yaml"
+      ],
+      "id": "D-008",
+      "rationale": "Strong concise design guidance and a useful upstream source for visual design behavior.",
+      "revision": 1,
+      "revisit_when": "The upstream skill changes materially or a more suitable general reference is demonstrated.",
+      "rollback": "Undo unchanged owned materialization; retain old pins.",
+      "selection": "Anthropic frontend-design skill as reference/fallback",
+      "supersedes": null,
+      "unknowns": [
+        "Comparative benefit is not measured."
+      ],
+      "validation": [
+        "Source review and bounded consumer tests before release."
+      ]
+    },
+    "D-009": {
+      "action": "adopt",
+      "alternatives": [
+        "existing repository guidance"
+      ],
+      "applicability": "Context AI v1 consumers",
+      "concept": "react-web-guidance",
+      "evidence": [
+        "kit:04-BOOTSTRAP-DECISIONS.yaml"
+      ],
+      "id": "D-009",
+      "rationale": "Use targeted React/web review guidance rather than impose a framework migration.",
+      "revision": 1,
+      "revisit_when": "Consumer stack differs or guidance conflicts with measured project needs.",
+      "rollback": "Undo unchanged owned materialization; retain old pins.",
+      "selection": "Vercel agent skills where stack-relevant",
+      "supersedes": null,
+      "unknowns": [
+        "Comparative benefit is not measured."
+      ],
+      "validation": [
+        "Source review and bounded consumer tests before release."
+      ]
+    },
+    "D-010": {
+      "action": "adopt",
+      "alternatives": [
+        "existing repository guidance"
+      ],
+      "applicability": "Context AI v1 consumers",
+      "concept": "browser-accessibility-validation",
+      "evidence": [
+        "kit:04-BOOTSTRAP-DECISIONS.yaml"
+      ],
+      "id": "D-010",
+      "rationale": "Combine deterministic browser/a11y checks with actual visual inspection; neither alone proves UX quality.",
+      "revision": 1,
+      "revisit_when": "Consumer environment cannot support the tools or a stronger compatible mechanism is measured.",
+      "rollback": "Undo unchanged owned materialization; retain old pins.",
+      "selection": "Playwright + axe + human/agent screenshot critique",
+      "supersedes": null,
+      "unknowns": [
+        "Comparative benefit is not measured."
+      ],
+      "validation": [
+        "Source review and bounded consumer tests before release."
+      ]
+    },
+    "D-012": {
+      "action": "adopt",
+      "alternatives": [
+        "existing repository guidance"
+      ],
+      "applicability": "Context AI v1 consumers",
+      "concept": "source-selection-policy",
+      "evidence": [
+        "kit:04-BOOTSTRAP-DECISIONS.yaml"
+      ],
+      "id": "D-012",
+      "rationale": "Keep decisions evidence-backed without requiring unrealistic popularity or corroboration thresholds for low-risk trials.",
+      "revision": 1,
+      "revisit_when": "Domain-specific evidence requires a different hierarchy.",
+      "rollback": "Undo unchanged owned materialization; retain old pins.",
+      "selection": "authoritative specs -> first-party docs/repos -> maintained adopted OSS -> strong engineering publications -> project synthesis",
+      "supersedes": null,
+      "unknowns": [
+        "Comparative benefit is not measured."
+      ],
+      "validation": [
+        "Source review and bounded consumer tests before release."
+      ]
+    },
+    "D-018": {
+      "action": "adapt",
+      "alternatives": [
+        "Retain implicit recursive links",
+        "Replace distributor with an unproved external installer",
+        "Correct the current narrow adapter and declare prerequisites"
+      ],
+      "applicability": "Codex project-local compositions; informational links never select dependencies.",
+      "concept": "context.loadouts",
+      "evidence": [
+        "https://agentskills.io/specification",
+        "Signals:ee4aea154c461aaa8f9f0cbb770240c28c19dde7:claim-skills",
+        "Signals:ee4aea154c461aaa8f9f0cbb770240c28c19dde7:claim-react",
+        "tests/test_resources.py",
+        "Signals:3badfed8922e896e1c83d20c68654057487541ca:option-selective-context:selective-context-bazel",
+        "sha256:21f90afb4a2e688f45d2e10dc2d06942b12d6b286c3c710ba93b104243d7eb34"
+      ],
+      "id": "D-018",
+      "rationale": "Retain the corrected explicit closure after peer primary-source dependency advice and independent challenge. The Bazel precedent supports declaring dependencies; local tests, rather than the precedent or older model paper, establish Context behavior.",
+      "revision": 2,
+      "revisit_when": "A real selected procedure cannot reach its instructions, or a maintained distributor proves lower total burden with preservation/undo.",
+      "rollback": "Use exact earlier source/pin; undo unchanged files before changing the composition.",
+      "selection": "Explicit resource prerequisites with selected notices and source pins",
+      "supersedes": 1,
+      "unknowns": [
+        "Materialized bytes are measured; model token savings and human benefit are unmeasured."
+      ],
+      "validation": [
+        "Regression reproduced unintended AGENTS inclusion before correction; selected dependencies, notices, casing, cycles and source integrity checked.",
+        "Independent review exposed missing routes; corrected React/design navigation retains applicable guidance.",
+        "Exact bootstrap pin was used for the closure correction and by Signals for public Corpus responsibility tracing."
+      ]
+    },
+    "D-019": {
+      "action": "adapt",
+      "alternatives": [
+        "Preserve absolute-path public locks",
+        "Require manual edits to ownership",
+        "Correct the current adapter with checked rebind/export and recovery"
+      ],
+      "applicability": "Codex project-local schema-2 pins and schema-1 installations.",
+      "concept": "architecture.portability",
+      "evidence": [
+        "tests/test_portability.py",
+        "Signals:3badfed8922e896e1c83d20c68654057487541ca:option-source-lineage:source-lineage-prov"
+      ],
+      "id": "D-019",
+      "rationale": "Retain the narrow distributor; separate source selection from machine ownership, reject metadata drift, and recover interrupted writes with retained backups. No surveyed replacement has proved preservation/undo with lower burden.",
+      "revision": 1,
+      "revisit_when": "A real consumer needs unsupported provider distribution or fails recovery/portability invariants.",
+      "rollback": "Recover pending writes; undo unchanged files; use an earlier exact source snapshot when required.",
+      "selection": "Portable exact declarations and verified local ownership migration",
+      "supersedes": null,
+      "unknowns": [
+        "Concurrent hostile filesystem writers and power-loss durability are not guaranteed."
+      ],
+      "validation": [
+        "Copied legacy edits refuse; portable apply and safe rebind preserve instructions; actual required version probes run.",
+        "A real owned subprocess was killed mid-application; recovery restores the original user instructions.",
+        "Independent imported-metadata findings corrected and covered by negative tests."
+      ]
+    }
+  },
+  "library_revision": "efad6ab8e7981ba3d2dda3f8840150eb81ffe333",
+  "loadouts": [
+    "standard",
+    "research-evidence",
+    "service-api",
+    "web-experience",
+    "react-web"
+  ],
+  "options": {
+    "brand": "expressive"
+  },
+  "project": ".",
+  "provider": "codex",
+  "resources": {
+    "LICENSE": "69e8bc0e7e498d3dbc421855f3be2857130648cc0ef343e81d95afd2ad168296",
+    "core/code-comments.md": "c3c2fd9672b8eed35fcb9751c200a0e50238904e111f943e7ea993b7e79c0ab9",
+    "core/context.md": "e8b7f0a2e707fc6330a49f69f30def12a3879125dca37af8a63af557f7da6e2a",
+    "core/development.md": "1c6f67e58430e5a5ae2181bc79860b88635f24d12755cfb66eb43a64aae5d08f",
+    "core/engineering.md": "fbb7bdf251f1310329eec33f7adaf0ac8911f9e5fc069f08bff36e3d0fa4c657",
+    "core/prior-art.md": "050a97c4e6db62abbbb10c4780de279305c875f61f5bfda32aeb720675a60adc",
+    "core/research.md": "c28861cf5cbbd7bce10614e0f3c44931fddfbe6362252f11cc6007e01b02e189",
+    "core/review.md": "8e247f385e1258f82e6f34087c51aa2b93d9da81241ccd75634e7b0659e99082",
+    "core/testing.md": "9d423038a8000331a536995c84825368f90062de01ded9cebdb7c488974b764f",
+    "core/version-control.md": "d68a29078a81ffa15051d05cb250965d0c1bf841b241659d35d3096345db89ad",
+    "core/versioning.md": "69fa36d327c9193dbc5aa38af80b51943b39477d4a4d15b829cad95d2e609ee7",
+    "docs/loadouts.md": "2f28434023999d8733a81b7aae13b0c2fbbd63f54e3d9f3e3a7efbbae8f08b9e",
+    "domains/service/api.md": "ac907fc43d2c117efccad3be212e35d5b2a2fd86d6ceed91affa315e7204a029",
+    "domains/web/accessibility.md": "45d5f62917aadd426c04ad02a70cdcb8667d39210f7eb02c3d26ae8530ef08b7",
+    "domains/web/browser-verification.md": "8e1998572ea35d4fe6f813db18f6f322d2bb4171743a1b49801f2cc9ab2fc529",
+    "domains/web/design.md": "7d62cd8727d7c13c1c4c90a51c57690b88f910685a502f7f5a297260ec03951e",
+    "domains/web/performance.md": "da3f20a54b7a0d2c2eb066d413fb895f3dac4e52fdc87540b96deb4bf19f27c5",
+    "domains/web/product-ux.md": "604d067c64bc765fe63f7a7fb37461e34bdc41bb3eef71b6c9b87b47785a31ca",
+    "domains/web/react.md": "598e805ebd3239806aedb21f3c0fe08d6248299158e188c3977f4c40751c567b",
+    "loadouts/react-web.yaml": "64a3db8bc9b78910f7854a766355d07bd448b9d852d01a963676dd56d72c0a90",
+    "loadouts/research-evidence.yaml": "0c8fdf6f46f24d725b75c35bccb09bae725c08e57853fe0fa57358c5471b2799",
+    "loadouts/service-api.yaml": "7690e82f5b0e72fc394d5504ec635b7a2ada98cbefbbc553cffee5daf3b765f6",
+    "loadouts/standard.yaml": "f15c4560b94bd567d42fc183422ab071380e616bd44fe515c8f4d9822eda72ef",
+    "loadouts/web-experience.yaml": "1603b0f50f0fb6eefa76799f0175e62b3a5edfadeb2c961ac4da132782eadbce",
+    "overlays/code-comments.md": "de4045aaa7b9e360d79a7b339a5a1d3ba8135d98b8df8ad4ec4cf0f0fb01885a",
+    "overlays/delivery.md": "8c5b613ac70ae0a1316088e32524377ce25f46b80be691b01a31140c9fb61e90",
+    "overlays/evidence-claims.md": "842911a933db6ae2b3cbd84e786cfff6c9f95993b7369de44d6619207a6975be",
+    "overlays/patterns.md": "00c60304c999e447e2511ebcdebfc7ed7b85870bc05a5f5a4db33f41304a708c",
+    "overlays/prior-art.md": "36911c2ad1ad2c24745aab947fea4f2989bc6465265315b8fc57f9eedbef3487",
+    "overlays/project-intent.md": "203889e90c91921675c5edb688bc2184f099e03f690b39eefe60250924a8e0e5",
+    "overlays/writing.md": "e8cbd29927fc49a207f6632a0e2eda2c3bde55491d4ba438cbdec2b3b46b8a68",
+    "procedures/react-review.md": "c575c782dbc63f282165a445b0c4b78aeef6dc6abe0166a80218d5ebfc7ad610",
+    "procedures/research-evidence.md": "598c0a10a320a23f3d684a8997f4423c0783dfea270055580955686ea618bc74",
+    "procedures/web-design.md": "0dc095883b28d0c50ddb8abf3105b5932a452199518b61f2f51af29ac613c829",
+    "providers/openai/codex.md": "296572f57c0945aad387c9ab634a11f4fe30a86ca40642b9348353192d3064c2",
+    "skills/context-loadout/SKILL.md": "c28a7924235f3260882ec11cba1d94d1a191f34943cd0a5c471ca18721f662d3",
+    "sourced/impeccable/design/LICENSE": "02bb8c3b4e70190e3986c0404ad2fd8d639b4f534252d82379cc1b502b6d1812",
+    "sourced/impeccable/design/NOTICE.md": "c60a093c2845fd9fb82f9c6f742ece31f379f8190b535309d32d66c45ccffdcb",
+    "sourced/impeccable/design/instruction.md": "104661e9af51d84dd3e2d620b83d4fb319e69fbaa3d4b10db32e02f85283286b",
+    "sourced/impeccable/design/reference/audit.md": "d9963fd73bf6129fe0c8ec25c5148f50617ec85683b8eeae7e411c9a42e2db33",
+    "sourced/impeccable/design/reference/craft-floor.md": "96e2e6bd4fcf9a2c6da65fb029f96d9176308fae2efd9d8653d3b8d838960e07",
+    "sourced/impeccable/design/reference/critique.md": "8bf1b06547f571d9b8d3875426fff6621fadd3bc08ae9ebb16d749f5c5f44b01",
+    "sourced/impeccable/design/reference/degraded/documenter.md": "bcc05ea92faebb5c74037a9d4263a5ce9a56f5ab07c8ab3c59ee704d8cade745",
+    "sourced/impeccable/design/reference/document.md": "87b3db688c7963898bda8096f7868fed05ec5a0a80d14298e8b906b70cdf9c42",
+    "sourced/impeccable/design/reference/new-work.md": "c522f3e0c0edf0d087c51737977e8f629b40cb264c586795c28c81fc37b8c897",
+    "sourced/impeccable/design/reference/polish.md": "73893e18e874e14beccd7fca92335d9036f5a5e068fd8815fd7daceadf186a43",
+    "sourced/impeccable/design/reference/shape.md": "a55f016c046cb6a27c55bd7f346375aeb506a755c4fbca19a5f92dbd42309c23",
+    "sourced/vercel/react/compiled-guide.md": "b32084138640694d3640b59a27a0ad9456d5ad959397340fe854fac86d52b27a",
+    "sourced/vercel/react/upstream-README.md": "7c02f64b08fc6c4eef03c01d64f3e2ed478193ccfcbd14edba379abe23304651",
+    "sourced/vercel/web/instruction.md": "f4647ca866a3accf763777f83e7682954f0187cd6bea7eea0399796652414e8f",
+    "sourced/vercel/web/upstream-README.md": "7c02f64b08fc6c4eef03c01d64f3e2ed478193ccfcbd14edba379abe23304651"
+  },
+  "schema_version": 2,
+  "skills": [
+    "context-loadout",
+    "context-web-design",
+    "context-web-audit",
+    "context-react-review"
+  ],
+  "source_tree_sha256": "0ec328c586ff0ee1f3b1f25c4deb2f6bb82b7bfa3e30965a047f1419b20277a4",
+  "stages": {
+    "deliver": [
+      "core/versioning.md",
+      "overlays/delivery.md",
+      "core/version-control.md"
+    ],
+    "design": [
+      "domains/web/design.md",
+      "domains/web/product-ux.md"
+    ],
+    "implement": [
+      "core/development.md",
+      "overlays/patterns.md",
+      "overlays/code-comments.md",
+      "core/code-comments.md",
+      "core/prior-art.md",
+      "overlays/writing.md",
+      "domains/service/api.md",
+      "domains/web/accessibility.md",
+      "domains/web/performance.md",
+      "domains/web/react.md"
+    ],
+    "inspect": [
+      "core/engineering.md",
+      "core/context.md",
+      "overlays/prior-art.md",
+      "core/version-control.md",
+      "domains/service/api.md",
+      "domains/web/react.md"
+    ],
+    "research": [
+      "core/prior-art.md",
+      "core/research.md",
+      "procedures/research-evidence.md",
+      "overlays/prior-art.md",
+      "overlays/evidence-claims.md"
+    ],
+    "review": [
+      "core/review.md",
+      "overlays/evidence-claims.md",
+      "domains/web/design.md"
+    ],
+    "test": [
+      "core/testing.md",
+      "domains/web/browser-verification.md"
+    ]
+  }
+}

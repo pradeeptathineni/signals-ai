@@ -97,3 +97,10 @@ Agent research, deterministic tests, independent agent review and browser checks
 evidence classes. Human usefulness, configured-live model quality and broad research superiority
 remain unestablished. Only verified 0.x milestones are authorized; a future stable release needs
 a separate user decision.
+
+The Context selection is pinned in [`.context-ai/selection.json`](.context-ai/selection.json).
+It contains portable resource hashes; materialized instructions stay in Git, while the bound
+installation receipt stays local. On a clean clone, use the matching Context source revision
+and its reviewed `context_ai.py apply --lock /absolute/path/to/selection.json --project
+/absolute/path/to/clone` command. An existing unbound copy must first pass checked `rebind`.
+Read only the selected modules needed for the current task stage.
