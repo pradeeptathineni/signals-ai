@@ -68,3 +68,8 @@ The actual archived importer also consumed `reviewed-successor-ee4aea1` through 
 verifying the status hashes and producer/commit binding. It accepted ten recommendations without
 activation. The [round-trip receipt](consumer-roundtrip.json) records both imports; actual feedback
 and successor lineage are in [refresh receipt](refresh-receipt.json).
+
+An additional native verification against the fresh clone returned `installation belongs to another
+project`, as expected for the original path-bound ownership lock. Native verification at the actual
+active checkout passes all 199 owned files. This is a development-installation ownership boundary;
+the clean Signals application install/build/start and real exchange smoke are independent and pass.

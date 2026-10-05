@@ -94,3 +94,10 @@ crawling, cloud/model gateway, general runtime, sandbox, hosted tenancy or candi
 
 Stable software contracts do not imply infallible inference, calibrated confidence, broad research
 superiority, configured-live model proof, independent evaluation or field performance measurements.
+
+The checked-in Context instructions record repository development guidance, separately from the
+Signals application runtime. The native `.context-ai/lock.json` belongs to the original active
+checkout path; Context management correctly rejects it in a different clone. Copied instructions
+remain readable, and the application installs/builds/starts without running the Context composer.
+For a separate Context-managed project, use Context's native installer on an unmanaged target;
+do not rewrite ownership fields or claim that copying a lock creates a verified installation.
