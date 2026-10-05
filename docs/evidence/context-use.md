@@ -60,3 +60,11 @@ its pinned producer identity/commit and frozen schema. It returned ten recommend
 `pinned-peer-evidence`, with `activation: false`. This was run from the extracted archive in a
 disposable directory. Context's completed own receipt corroborates the exact same bundle digest;
 neither result is configured model research or independent evidence of design benefit.
+
+The reviewed successor at Signals producer `ee4aea154c461aaa8f9f0cbb770240c28c19dde7` retains those
+original source dates and bytes as history, adding scoped browser and consumer-reported observations.
+Its SHA-256 is `6038a8a835afc68e1cc655a6a72751b52fb36365211d0e849b0faa9f753b7a95`.
+The actual archived importer also consumed `reviewed-successor-ee4aea1` through `--checkpoint`,
+verifying the status hashes and producer/commit binding. It accepted ten recommendations without
+activation. The [round-trip receipt](consumer-roundtrip.json) records both imports; actual feedback
+and successor lineage are in [refresh receipt](refresh-receipt.json).
