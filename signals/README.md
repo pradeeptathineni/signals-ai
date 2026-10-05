@@ -15,16 +15,15 @@ when actual records require it. Domain is the review's `category` metadata, and 
 evidence need's `concept_ids`; neither needs a duplicated directory hierarchy or fixed ontology.
 One finding can compare multiple options supported by its shared source set.
 
-To save a new researched public query, use a record as the structure. Give the evidence a new
-bundle/option identity, record its actual question, tags, primary sources, observation dates,
-claims, options and limitations. Review source support, rights and privacy; set actor/date,
-rationale and per-claim freshness. Agent review stays labelled `agent-reviewed`. Merely saving
-a question does not establish useful knowledge.
+Ask an ordinary question through your research agent or local view. The agent acquires primary
+sources and generates the record; humans do not define evidence receipts, hashes or ratings.
+The automatic admission command checks source/identity/privacy boundaries and a separately
+attributed model review. Every relevance, evidence, usefulness and clarity rating must be at least
+3/4; blockers or uncertain material claims hold the draft. A score is review policy, not probability.
 
-Run `npm run corpus -- digest /absolute/path/to/record.json` and save the returned digest in
-`review.digest`. New records use `encoding: pretty-json-v1`. The digest checks interchange
-structure, not claim truth. Run `npm run verify`, inspect the preview and Git diff, then commit
-the reviewed record. No database, container, account or model service is required.
+New records use `encoding: pretty-json-v1`. Evidence digests verify unchanged bytes for consumers;
+they do not prove truth. Agents use the Git research protocol and admission command, then verify
+the preview and diff. Merely saving a private question does not admit knowledge.
 
 `review.state: withdrawn` removes options from default results while preserving their exact
 downloads and history. Correcting frozen evidence requires new identities and review; existing
@@ -33,4 +32,5 @@ sidecars and Pages assets are generated only in `dist/`, not stored as sibling m
 
 Keep drafts, private questions and raw acquisition outside this public collection. Unknown
 files, fields, duplicate keys, ambiguous identities, private extensions and incomplete reviews
-fail validation. PostgreSQL is only an optional compatibility path for existing private data.
+fail validation. There is no database service or compatibility option. Retained private history
+lives in ignored `.signals/retained/` files and preserves historical meanings.

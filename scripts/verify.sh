@@ -18,3 +18,4 @@ npm run security:secrets
 npm run security:audit:test
 npm run security:audit
 npm run test:corpus
+npm run test:local-query

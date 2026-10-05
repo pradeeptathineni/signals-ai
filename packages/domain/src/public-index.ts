@@ -1,6 +1,7 @@
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 import type { PublicOption } from './public-corpus.js';
+import { signalAssessmentSchema, signalDimensions, SIGNAL_THRESHOLD } from './signal-quality.js';
 
 const text = Type.String({ maxLength: 5000 });
 const identity = Type.String({ minLength: 1, maxLength: 160 });
@@ -17,6 +18,7 @@ const publicIndex = Type.Array(
   Type.Object(
     {
       id: identity,
+      quality: Type.Optional(signalAssessmentSchema),
       bundleId: Type.String({ pattern: '^[a-zA-Z0-9-]+$', maxLength: 160 }),
       bundleDigest: Type.String({ pattern: '^[a-f0-9]{64}$' }),
       name: text,
@@ -81,6 +83,16 @@ export function parsePublicIndex(value: unknown): PublicOption[] {
   for (const option of options) {
     if (ids.has(option.id)) throw new Error('Duplicate public option identity.');
     ids.add(option.id);
+    if (option.quality) {
+      const quality = option.quality;
+      const score = Math.min(...signalDimensions.map((key) => quality.ratings[key])) * 25;
+      if (
+        quality.optionId !== option.id ||
+        quality.score !== score ||
+        quality.level !== (!quality.blockers.length && score >= SIGNAL_THRESHOLD ? 'high' : 'held')
+      )
+        throw new Error('Invalid signal assessment binding or calculation.');
+    }
     const uris = [option.uri, ...option.sources.map((s) => s.uri)];
     for (const uri of uris) {
       const url = new URL(uri);

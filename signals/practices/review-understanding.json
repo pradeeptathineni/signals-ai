@@ -4,7 +4,7 @@
   "review": {
     "digest": "9f357f51e3fb7a81537344b0e56de47966b10b6589e89ac2ea7bfbc413a7bdf3",
     "category": "Development",
-    "reviewedAt": "2026-10-05T20:08:28Z",
+    "reviewedAt": "2026-10-05T21:33:40Z",
     "reviewer": "agent-reviewed",
     "rationale": "Primary source supports each paraphrased claim within the stated scope; recommendation and unobserved benefit are explicit. No private fields or reproduced source content admitted.",
     "claimReviews": [
@@ -14,7 +14,33 @@
         "reviewAfterDays": null
       }
     ],
-    "state": "admitted"
+    "state": "admitted",
+    "quality": {
+      "policyVersion": "signal-review-v1",
+      "evidenceDigest": "9f357f51e3fb7a81537344b0e56de47966b10b6589e89ac2ea7bfbc413a7bdf3",
+      "researchRunId": "host-agent-acquisition-20261005",
+      "reviewRunId": "source-research-quality-review-20261005",
+      "reviewer": "agent:source_research",
+      "reviewedAt": "2026-10-05T21:33:40Z",
+      "options": [
+        {
+          "optionId": "option-review-understanding",
+          "ratings": {
+            "relevance": 3,
+            "evidence": 3,
+            "usefulness": 3,
+            "clarity": 3
+          },
+          "reasons": {
+            "relevance": "Trigger, behavior, constraints and evidence address change understanding; the older human study does not prove AI-review effectiveness.",
+            "evidence": "Trigger, behavior, constraints and evidence address change understanding; the older human study does not prove AI-review effectiveness.",
+            "usefulness": "Trigger, behavior, constraints and evidence address change understanding; the older human study does not prove AI-review effectiveness.",
+            "clarity": "Trigger, behavior, constraints and evidence address change understanding; the older human study does not prove AI-review effectiveness."
+          },
+          "blockers": []
+        }
+      ]
+    }
   },
   "evidence": {
     "schema_version": 1,

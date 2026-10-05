@@ -1,8 +1,8 @@
-import { publishPublicData } from '../packages/seed/src/public-export.js';
-import { loadPublicCorpus } from '../packages/seed/src/public-corpus.js';
+import { publishPublicData } from '../packages/corpus/src/public-export.js';
+import { loadPublicCorpus } from '../packages/corpus/src/public-corpus.js';
 import { filterPublicOptions, type PublicFilters } from '../packages/domain/src/public-corpus.js';
 import { readFile } from 'node:fs/promises';
-import { encodePublicEvidence } from '../packages/seed/src/public-record.js';
+import { encodePublicEvidence } from '../packages/corpus/src/public-record.js';
 import {
   evidenceDigest,
   parseEvidenceBundle,
@@ -30,6 +30,7 @@ if (operation === 'check') {
   const filters: PublicFilters = {};
   const allowed = new Set([
     'query',
+    'textMode',
     'type',
     'category',
     'concept',
@@ -55,6 +56,8 @@ if (operation === 'check') {
       throw new Error('Use --query=TEXT or a documented exact filter.');
     Object.assign(filters, { [match[1]!]: match[2]! });
   }
+  if (filters.textMode && !['literal', 'ranked'].includes(filters.textMode))
+    throw new Error('Text mode must be literal or ranked.');
   process.stdout.write(
     `${JSON.stringify({ universe: 'reviewed-public-files', filters, items: filterPublicOptions(corpus.options, filters) }, null, 2)}\n`,
   );

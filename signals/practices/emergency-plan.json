@@ -4,7 +4,7 @@
   "review": {
     "digest": "97fe5e2d70ac2ae81d48db973e4ecb019e6063e2813b0c0ec535b43fbe73d483",
     "category": "Household",
-    "reviewedAt": "2026-10-05T20:08:28Z",
+    "reviewedAt": "2026-10-05T21:33:40Z",
     "reviewer": "agent-reviewed",
     "rationale": "Primary source supports each paraphrased claim within the stated scope; recommendation and unobserved benefit are explicit. No private fields or reproduced source content admitted.",
     "claimReviews": [
@@ -14,7 +14,33 @@
         "reviewAfterDays": null
       }
     ],
-    "state": "admitted"
+    "state": "admitted",
+    "quality": {
+      "policyVersion": "signal-review-v1",
+      "evidenceDigest": "97fe5e2d70ac2ae81d48db973e4ecb019e6063e2813b0c0ec535b43fbe73d483",
+      "researchRunId": "host-agent-acquisition-20261005",
+      "reviewRunId": "source-research-quality-review-20261005",
+      "reviewer": "agent:source_research",
+      "reviewedAt": "2026-10-05T21:33:40Z",
+      "options": [
+        {
+          "optionId": "option-emergency-plan",
+          "ratings": {
+            "relevance": 3,
+            "evidence": 3,
+            "usefulness": 3,
+            "clarity": 3
+          },
+          "reasons": {
+            "relevance": "Contacts, meeting places and a paper plan are concrete actions; jurisdiction-specific evacuation limits remain explicit.",
+            "evidence": "Contacts, meeting places and a paper plan are concrete actions; jurisdiction-specific evacuation limits remain explicit.",
+            "usefulness": "Contacts, meeting places and a paper plan are concrete actions; jurisdiction-specific evacuation limits remain explicit.",
+            "clarity": "Contacts, meeting places and a paper plan are concrete actions; jurisdiction-specific evacuation limits remain explicit."
+          },
+          "blockers": []
+        }
+      ]
+    }
   },
   "evidence": {
     "schema_version": 1,

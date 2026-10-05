@@ -4,7 +4,7 @@
   "review": {
     "digest": "ac4b98e022b0a45fe30ae395f92b83a71f51f3b2b8823c94e4bb14d1a6b9a95a",
     "category": "Household",
-    "reviewedAt": "2026-10-05T20:08:28Z",
+    "reviewedAt": "2026-10-05T21:33:40Z",
     "reviewer": "agent-reviewed",
     "rationale": "Primary source supports each paraphrased claim within the stated scope; recommendation and unobserved benefit are explicit. No private fields or reproduced source content admitted.",
     "claimReviews": [
@@ -14,7 +14,33 @@
         "reviewAfterDays": null
       }
     ],
-    "state": "admitted"
+    "state": "admitted",
+    "quality": {
+      "policyVersion": "signal-review-v1",
+      "evidenceDigest": "ac4b98e022b0a45fe30ae395f92b83a71f51f3b2b8823c94e4bb14d1a6b9a95a",
+      "researchRunId": "host-agent-acquisition-20261005",
+      "reviewRunId": "source-research-quality-review-20261005",
+      "reviewer": "agent:source_research",
+      "reviewedAt": "2026-10-05T21:33:40Z",
+      "options": [
+        {
+          "optionId": "option-water-leaks",
+          "ratings": {
+            "relevance": 3,
+            "evidence": 3,
+            "usefulness": 3,
+            "clarity": 3
+          },
+          "reasons": {
+            "relevance": "The two-hour meter check and fixture inspection are concrete; detection is separated from locating leaks or forecasting savings.",
+            "evidence": "The two-hour meter check and fixture inspection are concrete; detection is separated from locating leaks or forecasting savings.",
+            "usefulness": "The two-hour meter check and fixture inspection are concrete; detection is separated from locating leaks or forecasting savings.",
+            "clarity": "The two-hour meter check and fixture inspection are concrete; detection is separated from locating leaks or forecasting savings."
+          },
+          "blockers": []
+        }
+      ]
+    }
   },
   "evidence": {
     "schema_version": 1,

@@ -4,7 +4,7 @@
   "review": {
     "digest": "0c0a4c4576b478530a535c32e10d74df9c6d2e01bccd8d1113435ea0358ced18",
     "category": "Development",
-    "reviewedAt": "2026-10-05T20:20:38Z",
+    "reviewedAt": "2026-10-05T21:33:40Z",
     "reviewer": "agent-reviewed",
     "rationale": "Checked original API descriptions and the bounded local literal-filter trial. Deferrals have observable triggers; no installed-library or semantic-research claim.",
     "claimReviews": [
@@ -24,7 +24,65 @@
         "reviewAfterDays": 30
       }
     ],
-    "state": "admitted"
+    "state": "admitted",
+    "quality": {
+      "policyVersion": "signal-review-v1",
+      "evidenceDigest": "0c0a4c4576b478530a535c32e10d74df9c6d2e01bccd8d1113435ea0358ced18",
+      "researchRunId": "host-agent-acquisition-20261005",
+      "reviewRunId": "source-research-quality-review-20261005",
+      "reviewer": "agent:source_research",
+      "reviewedAt": "2026-10-05T21:33:40Z",
+      "options": [
+        {
+          "optionId": "option-native-filter",
+          "ratings": {
+            "relevance": 3,
+            "evidence": 3,
+            "usefulness": 3,
+            "clarity": 3
+          },
+          "reasons": {
+            "relevance": "Each option has a capability-specific role, revisit trigger and limits; the Pagefind preference is a design inference, not measured superiority.",
+            "evidence": "Each option has a capability-specific role, revisit trigger and limits; the Pagefind preference is a design inference, not measured superiority.",
+            "usefulness": "Each option has a capability-specific role, revisit trigger and limits; the Pagefind preference is a design inference, not measured superiority.",
+            "clarity": "Each option has a capability-specific role, revisit trigger and limits; the Pagefind preference is a design inference, not measured superiority."
+          },
+          "blockers": []
+        },
+        {
+          "optionId": "option-minisearch",
+          "ratings": {
+            "relevance": 3,
+            "evidence": 3,
+            "usefulness": 3,
+            "clarity": 3
+          },
+          "reasons": {
+            "relevance": "Each option has a capability-specific role, revisit trigger and limits; the Pagefind preference is a design inference, not measured superiority.",
+            "evidence": "Each option has a capability-specific role, revisit trigger and limits; the Pagefind preference is a design inference, not measured superiority.",
+            "usefulness": "Each option has a capability-specific role, revisit trigger and limits; the Pagefind preference is a design inference, not measured superiority.",
+            "clarity": "Each option has a capability-specific role, revisit trigger and limits; the Pagefind preference is a design inference, not measured superiority."
+          },
+          "blockers": []
+        },
+        {
+          "optionId": "option-pagefind",
+          "ratings": {
+            "relevance": 3,
+            "evidence": 3,
+            "usefulness": 3,
+            "clarity": 3
+          },
+          "reasons": {
+            "relevance": "Each option has a capability-specific role, revisit trigger and limits; the Pagefind preference is a design inference, not measured superiority.",
+            "evidence": "Each option has a capability-specific role, revisit trigger and limits; the Pagefind preference is a design inference, not measured superiority.",
+            "usefulness": "Each option has a capability-specific role, revisit trigger and limits; the Pagefind preference is a design inference, not measured superiority.",
+            "clarity": "Each option has a capability-specific role, revisit trigger and limits; the Pagefind preference is a design inference, not measured superiority."
+          },
+          "blockers": []
+        }
+      ]
+    }
   },
   "evidence": {
     "schema_version": 1,

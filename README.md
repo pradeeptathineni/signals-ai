@@ -1,115 +1,82 @@
 # Signals AI
 
-Signals helps people and machines find, understand and compare source-backed knowledge.
-Browse useful options, inspect the claims and sources behind them, and keep private project
-choices local. Recommendations do not install or execute anything.
+Signals helps people and machines find, understand and compare useful knowledge with sources.
+Git is the database. Pages is the human view. A separate model review admits only findings whose
+relevance, evidence, useful next action and scope are strong.
 
-This is pre-1 software. The premature v1.0.0 designation was withdrawn; its commit and evidence
-history remain available. See [the product contract](docs/signals-contract.md) and
-[the changelog](CHANGELOG.md).
+This is pre-1 software. The premature v1.0.0 release/tag was withdrawn; its commit and history
+remain preserved. Development continues through tested 0.x milestones.
 
-## Browse public knowledge
+## Browse and search
 
-The [public preview](https://pradeeptathineni.github.io/signals-ai/) contains the reviewed
-Git-held collection in [signals/](signals/). It needs no account, database, model or key.
-Search text, combine filters, compare two options and follow their original sources.
-Download matching structured results or exact evidence bundles when a machine needs them.
+Open the [public Corpus](https://pradeeptathineni.github.io/signals-ai/). Search keywords, combine
+type/domain/tag/source filters, compare two options and inspect claims and limits. Downloads are
+optional; no account, model configuration or manual evidence artifact is needed to browse.
 
-To build and inspect the same preview locally:
-
-```bash
+```sh
 npm ci
-npm run corpus:build
+npm run dev
+```
+
+Open [the local view](http://127.0.0.1:5178/signals-ai/). It reads the same collection. Save an
+ordinary question locally from the browser; private questions never become public knowledge just
+because they were saved. PostgreSQL, Docker, workers and a separate API are not needed or supported.
+
+Choose every-keyword matching for precise inspection or ranked word matches for broader questions.
+Word ranking suggests candidates; a research agent interprets the need, checks omissions and
+acquires primary sources. Use the included Signals research skill with your existing agent, or
+inspect the same structured Corpus through the CLI:
+
+```sh
+npm run corpus -- search '--query=water meter' --domain=Household
+npm run corpus -- search '--query=How can I recover verbose test output?' --textMode=ranked
+npm run research -- query 'How can I detect a plumbing leak without buying equipment?'
+npm run research -- context 'Which maintained approach ranks repository code for my task?'
+```
+
+The optional configured model path requires an explicitly chosen loopback structured-output
+endpoint and model. Set `SIGNALS_MODEL_ENDPOINT` to its HTTP chat-completions endpoint on
+`127.0.0.1` or `::1`, including a port, and `SIGNALS_MODEL_ID` to its model ID. Then append
+`--model` to a research query. Two bounded calls organize and separately review the answer.
+A failed or invalid model leaves ranked candidates and exact match IDs available and reports the gap. Nothing
+extracts credentials, downloads models or falls back to a hosted provider.
+
+## One record, one authority
+
+[signals/](signals/README.md) contains `signals/<type>/<finding>.json`. A finding owns its need,
+tags, sources, claims, alternatives, limits and review. Domains are metadata. JSON indexes,
+evidence downloads and Pages are derived views, without sibling editable masters.
+
+An agent saves public findings only after source checks and a separate high-signal review.
+The weakest of four ordinal assessments determines admission: all must be strong. A score of
+75 means that policy was satisfied; it is not a 75% chance of correctness or benefit. Relevance
+is assessed against the record's original need, then reconsidered for a consumer's question.
+Unknowns, changing source facts and unsupported comparative claims remain explicit.
+
+Local questions and historical data live privately under ignored `.signals/`. The development
+server denies serving those files. Retained database data was completely migrated and verified
+before the project containers and volumes were removed. Historical snapshots remain accessible
+as files; they do not bypass the current admission gate. See the [retirement decision](docs/architecture/ADR-009-database-retirement-and-signal-admission.md).
+
+## Build and verify
+
+```sh
+npm run verify
+npm run eval:corpus
 npm run corpus:preview
 ```
 
-For development, `npm run dev` opens the same Git-backed product. `npm run build` and
-`npm run verify` also work without PostgreSQL or Docker.
+Verification covers source/privacy/identity bindings, admission thresholds, immutable downloads,
+atomic writes, rejected model answers, browser/CLI parity, responsive keyboard flows, accessibility
+scans and local query saving. Concept queries come from [concepts.json](concepts.json), preserving
+134 actual retained Signals definitions. The evaluation reports gaps rather than treating an
+empty match as a success.
 
-Open [the local preview](http://127.0.0.1:4178/signals-ai/). Text matching is literal:
-each entered term must occur in the public fields. It does not interpret a research question.
-The CLI uses the same IDs and filters:
+[Architecture](ARCHITECTURE.md), [the data map](docs/architecture/schema.md) and
+[the product contract](docs/signals-contract.md) describe current behavior. Configured-live model
+quality, human usefulness and universal research superiority remain unestablished.
 
-```bash
-npm run corpus -- search '--query=water meter' --category=Household --sourceClass=guidance
-npm run corpus -- search --concept=context.retrieval
-npm run corpus -- search --githubOnly=true
-npm run corpus -- check
-```
-
-The collection uses [signal-type folders](signals/README.md) with one JSON record per finding.
-Domains and tags are metadata. [Authoring](signals/README.md) explains how an agent can save a
-researched public query and its options directly in Git.
-Pages renders these same records; there is no separate hosted database.
-
-## Optional private application compatibility
-
-The retained private application uses Node 24.19.x, npm 12.1.x, Docker/Compose and loopback
-ports 4310, 5173 and 54329. Inspect existing containers and the exact database destination first:
-the default volume can contain retained development data.
-
-```bash
-docker compose up -d
-npm run db:init
-npm run build:local-app
-npm run dev:local-app
-```
-
-Open [the local app](http://127.0.0.1:5173). Corpus text search works immediately without a model
-or network calls. Source support, review state and ranking details are separate. Numeric historical
-ranking is optional detail; missing coverage is unknown.
-
-For a new need, use your own research agent through **Exchange**, or explicitly configure a
-loopback structured-output model and permitted sources in **Workspace**. Indexed Corpus search
-does not start a model run. The configured model action is separate; an unavailable model cannot
-erase indexed results. No hosted fallback, automatic model download or subscription credential
-extraction is provided.
-
-Review source-bound drafts before admission. Export returns the stored bytes unchanged.
-Corrections create successors; feedback binds the exact evidence option and consumer task.
-[The product contract](docs/signals-contract.md) documents the API/CLI, modes, privacy and replay.
-
-## Verify safely
-
-`npm test`, `npm run typecheck`, `npm run lint` and `npm run format:check` do not rebuild databases.
-`npm run test:corpus` verifies the built public preview with Chromium and axe.
-
-Only `npm run verify:local-app`, integration tests and private-app browser tests rebuild schemas.
-That compatibility gate also
-initializes `DATABASE_URL`. Provision and inspect a named disposable PostgreSQL container on a
-non-default loopback port. Set explicit, distinct `DATABASE_URL` and `TEST_DATABASE_URL` destinations,
-then run:
-
-```bash
-npm run verify:local-app
-```
-
-Never use retained data for that gate. Migration files are hash-checked and forward-only.
-Back up and test restoration before upgrading retained state.
-
-## Ownership and limits
-
-Git is the database for the public product. Signal records are canonical; indexes and Pages output are views.
-The optional PostgreSQL application preserves existing local knowledge, private queries/projects/
-decisions and operational records. A locally imported copy of a curated bundle does not become a second editable
-master. Public promotion requires review recorded in the closed public record; arbitrary
-extensions, consumer constraints and workspace/ops records are excluded.
-
-[Architecture](ARCHITECTURE.md), [the ownership decision](docs/architecture/ADR-006-public-corpus.md)
-and [the schema map](docs/architecture/schema.md) describe the maintained boundaries.
-Exact source observation, review and publication dates remain distinct. Claim-specific freshness
-is advice; a digest proves byte integrity, and neither is proof of truth or calibrated probability.
-
-Agent research, deterministic tests, independent agent review and browser checks are distinct
-evidence classes. Human usefulness, configured-live model quality and broad research superiority
-remain unestablished. Only verified 0.x milestones are authorized; a future stable release needs
-a separate user decision.
-
-The Context selection is pinned in [`.context-ai/selection.json`](.context-ai/selection.json).
-It contains portable resource hashes; materialized instructions stay in Git, while the bound
-installation receipt stays local. A clean clone can read the checked-in guidance directly.
-The matching Context source can reproduce the selection with `context_ai.py apply --lock`
-in an empty consumer directory. A clone has no local ownership receipt, so applying over its
-already materialized files correctly refuses. To move an existing managed installation, retain
-its local receipt and use checked `rebind` before an upgrade; never invent ownership of edited files.
-Read only the selected modules needed for the current task stage.
+The [Context selection](.context-ai/selection.json) pins development guidance. Checked-in modules
+can be read directly on a clone; its installation receipt stays local. The matching Context source
+can reproduce the pin in an empty consumer. Applying over materialized clone files without a local
+ownership receipt correctly refuses; a moved managed installation requires checked rebind.

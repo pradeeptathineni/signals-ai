@@ -1,4 +1,6 @@
+import MiniSearch from 'minisearch';
 import type { EvidenceBundle } from './evidence-exchange.js';
+import type { SignalReview, assessSignalQuality } from './signal-quality.js';
 
 export interface ClaimReview {
   claimId: string;
@@ -15,9 +17,11 @@ export interface PublicAdmission {
   rationale: string;
   claimReviews: ClaimReview[];
   state?: 'admitted' | 'withdrawn';
+  quality?: SignalReview;
 }
 
 export interface PublicOption {
+  quality?: ReturnType<typeof assessSignalQuality>[number];
   id: string;
   type: string;
   bundleId: string;
@@ -114,6 +118,7 @@ export function refreshPublicFreshness(options: PublicOption[], asOf: string): P
 }
 
 export interface PublicFilters {
+  textMode?: 'literal' | 'ranked';
   query?: string;
   type?: string;
   category?: string;
@@ -131,7 +136,7 @@ export function filterPublicOptions(options: readonly PublicOption[], filters: P
     .trim()
     .split(/\s+/)
     .filter(Boolean);
-  return options.filter((option) => {
+  const constrained = options.filter((option) => {
     if (filters.type && option.type !== filters.type) return false;
     if (filters.category && option.category !== filters.category) return false;
     if (filters.concept && !option.concepts.includes(filters.concept)) return false;
@@ -152,6 +157,30 @@ export function filterPublicOptions(options: readonly PublicOption[], filters: P
     ]
       .join(' ')
       .toLocaleLowerCase('en-US');
-    return words.every((word) => text.includes(word));
+    return filters.textMode === 'ranked' || words.every((word) => text.includes(word));
   });
+  if (filters.textMode !== 'ranked' || !words.length) return constrained;
+  const index = new MiniSearch({ fields: ['name', 'need', 'text'] });
+  index.addAll(
+    constrained.map((option) => ({
+      id: option.id,
+      name: option.name,
+      need: option.need,
+      text: [
+        option.reason,
+        option.category,
+        ...option.concepts,
+        ...option.claims.map((claim) => claim.text),
+        ...option.sources.map((source) => source.title),
+      ].join(' '),
+    })),
+  );
+  return index
+    .search(filters.query ?? '', {
+      combineWith: 'OR',
+      fuzzy: false,
+      prefix: false,
+      boost: { name: 2 },
+    })
+    .map((hit) => constrained.find((option) => option.id === hit.id)!);
 }

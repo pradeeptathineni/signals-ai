@@ -13,7 +13,7 @@ Ground model judgment in acquired evidence and report its practical limits.
 - Use **Corpus** for admitted indexed knowledge. Do not silently substitute live leads for Corpus records.
 - Use both when the user wants current coverage plus a check against durable knowledge. Report which universe produced each item.
 
-If a local Signals API or repository is in scope, read [references/research-protocol.md](references/research-protocol.md) before driving it. Otherwise apply the method with the agent's available public research tools and return the same evidence-bound result shape.
+If the Signals repository is in scope, read [references/git-research-protocol.md](references/git-research-protocol.md) before driving it. Otherwise apply the method with the agent's available public research tools and return the same evidence-bound result shape.
 
 ## Research method
 

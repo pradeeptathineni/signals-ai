@@ -1,10 +1,8 @@
 import { isIP } from 'node:net';
 
-export const MAX_URL_LENGTH = 2048;
-export const MAX_NOTE_LENGTH = 2000;
-export const MAX_FOUND_BY_LENGTH = 100;
+const MAX_URL_LENGTH = 2048;
 
-export class UrlPolicyError extends Error {
+class UrlPolicyError extends Error {
   constructor(
     public readonly code:
       | 'invalid_url'
@@ -65,7 +63,7 @@ function isPrivateIpv6(hostname: string): boolean {
   );
 }
 
-export function isBlockedHostname(hostname: string): boolean {
+function isBlockedHostname(hostname: string): boolean {
   const host = hostname.replace(/^\[|\]$/g, '').toLowerCase();
   if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) {
     return true;

@@ -4,7 +4,7 @@
   "review": {
     "digest": "cf3bb1e32afc5090a9d6d42b0af0a6b5bee9d95a3b882a9fc33247023be93834",
     "category": "Gardening",
-    "reviewedAt": "2026-10-05T21:23:29Z",
+    "reviewedAt": "2026-10-05T21:33:40Z",
     "reviewer": "agent-reviewed",
     "rationale": "Revalidated primary source claims and their applicability; examples are not universal settings or measured outcomes. Attribution and original dates retained; public-only paraphrases, no private context or reproduced content.",
     "claimReviews": [
@@ -19,7 +19,33 @@
         "reviewAfterDays": null
       }
     ],
-    "state": "admitted"
+    "state": "admitted",
+    "quality": {
+      "policyVersion": "signal-review-v1",
+      "evidenceDigest": "cf3bb1e32afc5090a9d6d42b0af0a6b5bee9d95a3b882a9fc33247023be93834",
+      "researchRunId": "host-agent-acquisition-20261005",
+      "reviewRunId": "source-research-quality-review-20261005",
+      "reviewer": "agent:source_research",
+      "reviewedAt": "2026-10-05T21:33:40Z",
+      "options": [
+        {
+          "optionId": "option-pothos-water",
+          "ratings": {
+            "relevance": 3,
+            "evidence": 3,
+            "usefulness": 3,
+            "clarity": 3
+          },
+          "reasons": {
+            "relevance": "Preparation, water changes and root-based transplant timing form a usable procedure; transplant stress is separated from measured success.",
+            "evidence": "Preparation, water changes and root-based transplant timing form a usable procedure; transplant stress is separated from measured success.",
+            "usefulness": "Preparation, water changes and root-based transplant timing form a usable procedure; transplant stress is separated from measured success.",
+            "clarity": "Preparation, water changes and root-based transplant timing form a usable procedure; transplant stress is separated from measured success."
+          },
+          "blockers": []
+        }
+      ]
+    }
   },
   "evidence": {
     "schema_version": 1,
