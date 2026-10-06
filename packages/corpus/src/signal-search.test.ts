@@ -762,6 +762,25 @@ describe('live search contract and evidence policy', () => {
   });
 });
 describe('canonical saving and scheduling', () => {
+  it('does not earn full dated-currentness credit from a future publication while preserving v4 replay', async () => {
+    const input = proposal();
+    input.candidates[0]!.observations.push({
+      ...input.candidates[0]!.observations[0]!,
+      feature: 'currentness',
+      indicator: 'current',
+      statement: 'The source describes supported maintenance.',
+      quote: 'supported maintenance',
+    });
+    const entity = (await acquired(input)).items[0]!.entity;
+    entity.evidence[0]!.publishedAt = '2027-10-05T00:00:00.000Z';
+    entity.assessment = assessEntity(entity, date);
+    expect(entity.assessment.features.currentness!.value).toBe(0.5);
+    expect(assessEntity(entity, date, 'signal-strength-v4').features.currentness!.value).toBe(1);
+    expect(() => validateEntity(entity)).not.toThrow();
+    const historical = structuredClone(entity);
+    historical.assessment = assessEntity(historical, date, 'signal-strength-v4');
+    expect(() => validateEntity(historical)).not.toThrow();
+  });
   it('does not resurrect a withdrawn judgment when an old proposal gains an unrelated excerpt', async () => {
     const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-projection-replay-')));
     try {

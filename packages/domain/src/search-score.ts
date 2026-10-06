@@ -69,13 +69,20 @@ export function activeEvidenceIds(entity: Pick<Entity, 'evidence' | 'currentEvid
 }
 export function activeObservations(
   entity: Pick<Entity, 'evidence' | 'currentEvidence' | 'observations'>,
-  policy: Assessment['policy'] = 'signal-strength-v4',
+  policy: Assessment['policy'] = 'signal-strength-v5',
 ) {
   const evidence =
     policy === 'signal-strength-v0'
       ? new Set(entity.evidence.map((source) => source.id))
       : activeEvidenceIds(entity);
-  if (['signal-strength-v2', 'signal-strength-v3', 'signal-strength-v4'].includes(policy)) {
+  if (
+    [
+      'signal-strength-v2',
+      'signal-strength-v3',
+      'signal-strength-v4',
+      'signal-strength-v5',
+    ].includes(policy)
+  ) {
     const physical = new Set(
       entity.evidence
         .filter((source) => evidence.has(source.id))
@@ -133,7 +140,7 @@ export function assessEntity(
     'observations' | 'evidence' | 'kind' | 'identity' | 'currentEvidence' | 'currentChecks' | 'uri'
   >,
   asOf: string,
-  policy: Assessment['policy'] = 'signal-strength-v4',
+  policy: Assessment['policy'] = 'signal-strength-v5',
 ): Assessment {
   if (!Number.isFinite(Date.parse(asOf))) throw new Error('invalid_assessment_date');
   const active = activeObservations(entity, policy);
@@ -146,7 +153,12 @@ export function assessEntity(
     const age =
       (Date.parse(asOf) -
         Date.parse(
-          (['signal-strength-v2', 'signal-strength-v3', 'signal-strength-v4'].includes(policy)
+          ([
+            'signal-strength-v2',
+            'signal-strength-v3',
+            'signal-strength-v4',
+            'signal-strength-v5',
+          ].includes(policy)
             ? entity.currentChecks?.[source.uri]
             : undefined) ?? source.fetchedAt,
         )) /
@@ -204,7 +216,9 @@ export function assessEntity(
   );
   const independentOrigin = (evidenceId: string) => {
     const source = entity.evidence.find((item) => item.id === evidenceId)!;
-    return (policy === 'signal-strength-v3' || policy === 'signal-strength-v4'
+    return (policy === 'signal-strength-v3' ||
+    policy === 'signal-strength-v4' ||
+    policy === 'signal-strength-v5'
       ? !ownGroups.has(groups.get(source.id))
       : source.family !== 'primary') && source.origin.trim().toLowerCase() !== 'unknown'
       ? groups.get(source.id)
@@ -238,7 +252,7 @@ export function assessEntity(
       value = Math.max(
         0,
         ...observations.map((item) =>
-          policy === 'signal-strength-v4' &&
+          (policy === 'signal-strength-v4' || policy === 'signal-strength-v5') &&
           feature === 'adoption' &&
           item.indicator === 'attention' &&
           item.attention
@@ -282,6 +296,8 @@ export function assessEntity(
         const current = relevant.some(
           (source) =>
             source.publishedAt &&
+            (policy !== 'signal-strength-v5' ||
+              Date.parse(source.publishedAt) <= Date.parse(asOf)) &&
             (Date.parse(asOf) - Date.parse(source.publishedAt)) / 86400000 <= profiles[entity.kind],
         );
         const formallyCurrent =

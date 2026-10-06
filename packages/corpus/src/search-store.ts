@@ -92,6 +92,7 @@ const entitySchema = Type.Object(
           'signal-strength-v2',
           'signal-strength-v3',
           'signal-strength-v4',
+          'signal-strength-v5',
         ]),
         asOf: Type.String(),
         score: Type.Union([Type.Integer({ minimum: 0, maximum: 100 }), Type.Null()]),
