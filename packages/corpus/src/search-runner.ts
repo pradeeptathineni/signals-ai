@@ -10,13 +10,14 @@ import { normalizeConsiderUrl } from '../../domain/src/url.js';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 import {
-  proposalSchema,
+  discoverySchema,
   budgets,
   channels,
   indicators,
   type SearchRequest,
   type Proposal,
   observationSchema,
+  modelObservationSchema,
   candidateSchema,
 } from '../../domain/src/search-contract.js';
 
@@ -176,7 +177,10 @@ export function codexRunner(
           progress(
             `Direct acquisition: ${direct.hits.length} ranked locators, ${direct.searches} calls, ${direct.gaps.length} gaps.`,
           );
-        await writeFile(schema, JSON.stringify(providerSchema(operation.schema ?? proposalSchema)));
+        await writeFile(
+          schema,
+          JSON.stringify(providerSchema(operation.schema ?? discoverySchema)),
+        );
         // Read only model selection, never authentication; ambient hooks/MCP/project instructions stay out.
         const config = await readFile(join(homedir(), '.codex/config.toml'), 'utf8').catch(
           () => '',
@@ -333,7 +337,7 @@ export function codexRunner(
             }
             try {
               resolve({
-                proposal: restoreOptionals(JSON.parse(final), operation.schema ?? proposalSchema),
+                proposal: restoreOptionals(JSON.parse(final), operation.schema ?? discoverySchema),
                 usage: {
                   provider: usage,
                   model: selectedModel ?? 'host-default',
@@ -378,20 +382,11 @@ export function codexRunner(
                       uri: Type.String(),
                       limits: candidateSchema.properties.limits,
                       observations: Type.Array(
-                        Type.Union(
-                          Object.entries(indicators).map(([feature, values]) =>
-                            Type.Object(
-                              {
-                                ...observationSchema.properties,
-                                statement: Type.String({ minLength: 1, maxLength: 240 }),
-                                quote: Type.String({ minLength: 1, maxLength: 160 }),
-                                feature: Type.Literal(feature),
-                                indicator: Type.Enum<string[]>([...values]),
-                              },
-                              { additionalProperties: false },
-                            ),
-                          ),
-                        ) as unknown as typeof observationSchema,
+                        modelObservationSchema({
+                          ...observationSchema.properties,
+                          statement: Type.String({ minLength: 1, maxLength: 240 }),
+                          quote: Type.String({ minLength: 1, maxLength: 160 }),
+                        }) as unknown as typeof observationSchema,
                         { maxItems: 12 },
                       ),
                     },

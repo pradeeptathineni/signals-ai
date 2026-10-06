@@ -1,6 +1,6 @@
 import { parseArgs } from 'node:util';
 import { acceptDiscovery, signalSearch } from '../packages/corpus/src/signal-search.js';
-import { proposalSchema, parseRequest, budgets } from '../packages/domain/src/search-contract.js';
+import { discoverySchema, parseRequest, budgets } from '../packages/domain/src/search-contract.js';
 import { codexRunner } from '../packages/corpus/src/search-runner.js';
 import { execFileSync } from 'node:child_process';
 import { searchEvidenceBundle } from '../packages/corpus/src/search-exchange.js';
@@ -30,7 +30,7 @@ const { values } = parseArgs({
   },
 });
 try {
-  if (values.schema) process.stdout.write(`${JSON.stringify(proposalSchema)}\n`);
+  if (values.schema) process.stdout.write(`${JSON.stringify(discoverySchema)}\n`);
   else if (values.capability)
     process.stdout.write(
       `${JSON.stringify({ ...(await codexRunner().readiness()), limits: budgets, persistence: 'none unless selected', unattended: false })}\n`,

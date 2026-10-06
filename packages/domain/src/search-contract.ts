@@ -42,6 +42,20 @@ export const observationSchema = Type.Object(
   },
   closed,
 );
+export function modelObservationSchema(properties = observationSchema.properties) {
+  return Type.Union(
+    Object.entries(indicators).map(([feature, values]) =>
+      Type.Object(
+        {
+          ...properties,
+          feature: Type.Literal(feature),
+          indicator: Type.Enum<string[]>([...values]),
+        },
+        closed,
+      ),
+    ),
+  );
+}
 export const candidateSchema = Type.Object(
   {
     uri: Type.String({ maxLength: 2048 }),
@@ -115,6 +129,22 @@ export const proposalSchema = Type.Object(
       { maxItems: 12 },
     ),
     gaps: Type.Array(text, { maxItems: 30 }),
+  },
+  closed,
+);
+export const discoverySchema = Type.Object(
+  {
+    ...proposalSchema.properties,
+    candidates: Type.Array(
+      Type.Object(
+        {
+          ...candidateSchema.properties,
+          observations: Type.Array(modelObservationSchema(), { maxItems: 100 }),
+        },
+        closed,
+      ),
+      { maxItems: 60 },
+    ),
   },
   closed,
 );

@@ -2,8 +2,27 @@ import { expect, it } from 'vitest';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { providerSchema, restoreOptionals } from './search-provider-schema.js';
-import { proposalSchema } from '../../domain/src/search-contract.js';
+import { proposalSchema, discoverySchema } from '../../domain/src/search-contract.js';
 import { bindExtractions } from './search-runner.js';
+
+it('constrains discovery feature indicators before accepting a provider response', () => {
+  const schema = discoverySchema.properties.candidates.items.properties.observations.items;
+  const valid = {
+    source: 0,
+    feature: 'maturity',
+    indicator: 'documented',
+    statement: 'Published documentation exists.',
+    quote: 'documentation',
+    independent: false,
+    origin: 'publisher',
+    status: 'supported',
+    attention: null,
+  };
+  const wire = providerSchema(schema);
+  expect(Value.Check(wire as typeof schema, valid)).toBe(true);
+  expect(Value.Check(wire as typeof schema, { ...valid, feature: 'verification' })).toBe(false);
+  expect(Value.Check(schema, restoreOptionals(valid, schema))).toBe(true);
+});
 
 it('accepts mechanically equivalent extraction URIs while rejecting aliases, versions, fragments and duplicate bindings', () => {
   const candidates = [{ uri: 'https://example.org/resource/' }];
@@ -69,4 +88,5 @@ it('encodes every provider object with required keys while preserving domain nul
     Object.values(node).forEach(assertProviderObjects);
   };
   assertProviderObjects(providerSchema(proposalSchema));
+  assertProviderObjects(providerSchema(discoverySchema));
 });
