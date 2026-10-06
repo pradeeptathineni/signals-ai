@@ -136,6 +136,7 @@ export type Source = Proposal['sources'][number] & {
   fetchedAt: string;
   digest: string | null;
   excerptDigest?: string;
+  normalizer?: 'text-v2';
   state: 'fetched' | 'failed' | 'denied';
   reason: string;
   excerpt: string;

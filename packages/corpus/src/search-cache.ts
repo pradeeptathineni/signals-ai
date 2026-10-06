@@ -5,7 +5,11 @@ import { fetchEvidence, digest } from './search-fetch.js';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
 
 /** Explicit private caching retains bounded fetched text; memory/no-save never calls this. */
-export function privateCacheFetch(root: string, progress?: (event: string) => void) {
+export function privateCacheFetch(
+  root: string,
+  progress?: (event: string) => void,
+  fetch = fetchEvidence,
+) {
   return async (uri: string, signal?: AbortSignal) => {
     const normalized = normalizeConsiderUrl(uri).normalizedUrl;
     const path = resolve(root, '.signals/source-cache', `${digest(normalized)}.json`);
@@ -16,6 +20,8 @@ export function privateCacheFetch(root: string, progress?: (event: string) => vo
       if (
         cached &&
         typeof cached === 'object' &&
+        'normalizer' in cached &&
+        cached.normalizer === 'text-v2' &&
         'uri' in cached &&
         cached.uri === normalized &&
         'text' in cached &&
@@ -31,6 +37,7 @@ export function privateCacheFetch(root: string, progress?: (event: string) => vo
           uri: normalized,
           text: cached.text,
           digest: cached.digest,
+          normalizer: 'text-v2' as const,
           cached: true,
           fetchedAt:
             'fetchedAt' in cached && typeof cached.fetchedAt === 'string'
@@ -38,11 +45,17 @@ export function privateCacheFetch(root: string, progress?: (event: string) => vo
               : stat.mtime.toISOString(),
         };
       }
-      throw new Error('invalid_source_cache');
+      if (
+        cached &&
+        typeof cached === 'object' &&
+        'normalizer' in cached &&
+        cached.normalizer === 'text-v2'
+      )
+        throw new Error('invalid_source_cache');
     }
-    const fetched = await fetchEvidence(normalized, signal);
+    const fetched = await fetch(normalized, signal);
     const fetchedAt = new Date().toISOString();
-    await atomicJson(path, { ...fetched, uri: normalized, fetchedAt });
-    return { ...fetched, cached: false, fetchedAt };
+    await atomicJson(path, { ...fetched, normalizer: 'text-v2', uri: normalized, fetchedAt });
+    return { ...fetched, normalizer: 'text-v2' as const, cached: false, fetchedAt };
   };
 }

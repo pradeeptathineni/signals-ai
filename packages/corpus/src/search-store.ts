@@ -73,6 +73,7 @@ const entitySchema = Type.Object(
           fetchedAt: Type.String(),
           digest: Type.Union([Type.String(), Type.Null()]),
           excerptDigest: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$' })),
+          normalizer: Type.Optional(Type.Literal('text-v2')),
           state: Type.Enum(['fetched', 'failed', 'denied']),
           reason: Type.String(),
           excerpt: Type.String({ maxLength: 12000 }),
@@ -145,7 +146,7 @@ export function validateEntity(input: unknown): Entity {
   for (const source of entity.evidence) {
     const canonical = normalizeConsiderUrl(source.uri).normalizedUrl;
     const basis = source.digest
-      ? `${canonical}:${source.digest}${source.excerptDigest ? `:${source.excerptDigest}` : ''}`
+      ? `${canonical}:${source.digest}${source.excerptDigest ? `:${source.excerptDigest}` : ''}${source.normalizer ? `:${source.normalizer}` : ''}`
       : canonical;
     const expected = `evidence-${digest(basis).slice(0, 24)}`;
     if (
@@ -165,11 +166,10 @@ export function validateEntity(input: unknown): Entity {
     )
       throw new Error('invalid_observation_indicator');
     const source = evidence.get(observation.evidenceId)!;
-    const normalize =
-      entity.assessment.policy === 'signal-strength-v3' ? normalizeSpan : normalizeText;
+    const normalize = source.normalizer === 'text-v2' ? normalizeSpan : normalizeText;
     const quote = normalize(observation.quote);
     const rawIdentity = source.excerptDigest
-      ? `evidence-${digest(`${normalizeConsiderUrl(source.uri).normalizedUrl}:${source.digest}`).slice(0, 24)}`
+      ? `evidence-${digest(`${normalizeConsiderUrl(source.uri).normalizedUrl}:${source.digest}${source.normalizer ? `:${source.normalizer}` : ''}`).slice(0, 24)}`
       : source.id;
     const identities = [
       observationIdentity(entity.id, observation.evidenceId, observation),
@@ -360,9 +360,6 @@ function mergeEntity(prior: Entity, incoming: Entity): Entity {
       id,
     ]),
   );
-  for (const id of activeEvidenceIds(incoming))
-    current.set(incoming.evidence.find((source) => source.id === id)!.uri, id);
-  const currentEvidence = [...current.values()].sort();
   const currentChecks = {
     ...Object.fromEntries(
       [...activeEvidenceIds(prior)].map((id) => {
@@ -381,12 +378,18 @@ function mergeEntity(prior: Entity, incoming: Entity): Entity {
   for (const id of activeEvidenceIds(incoming)) {
     const source = incoming.evidence.find((source) => source.id === id)!;
     const checkedAt = incoming.currentChecks?.[source.uri] ?? source.fetchedAt;
+    const selected = priorSelected.get(source.uri);
+    // Retained results remain replayable, but cannot rewind the canonical receipt or decoder.
     if (
-      priorSelected.get(source.uri)?.digest !== source.digest ||
-      Date.parse(checkedAt) > Date.parse(currentChecks[source.uri] ?? '')
+      selected &&
+      ((selected.normalizer === 'text-v2' && source.normalizer !== 'text-v2') ||
+        Date.parse(checkedAt) < Date.parse(currentChecks[source.uri]!))
     )
-      currentChecks[source.uri] = checkedAt;
+      continue;
+    current.set(source.uri, id);
+    currentChecks[source.uri] = checkedAt;
   }
+  const currentEvidence = [...current.values()].sort();
   const sameEvidence = incoming.evidence.every((source) =>
     prior.evidence.some((old) => old.id === source.id),
   );

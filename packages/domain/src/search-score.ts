@@ -72,10 +72,19 @@ export function activeObservations(
     const physical = new Set(
       entity.evidence
         .filter((source) => evidence.has(source.id))
-        .map((source) => `${source.uri}:${source.digest}`),
+        .map(
+          (source) =>
+            `${source.uri}:${source.digest}${policy === 'signal-strength-v3' ? `:${source.normalizer ?? 'legacy'}` : ''}`,
+        ),
     );
     entity.evidence.forEach((source) => {
-      if (source.digest && physical.has(`${source.uri}:${source.digest}`)) evidence.add(source.id);
+      if (
+        source.digest &&
+        physical.has(
+          `${source.uri}:${source.digest}${policy === 'signal-strength-v3' ? `:${source.normalizer ?? 'legacy'}` : ''}`,
+        )
+      )
+        evidence.add(source.id);
     });
   }
   const superseded = new Set(entity.observations.flatMap((item) => item.supersedes));

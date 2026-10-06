@@ -106,6 +106,7 @@ export async function acceptDiscovery(
       documents.set(uri, fetched);
       accepted.state = 'fetched';
       accepted.digest = fetched.digest;
+      if (fetched.normalizer) accepted.normalizer = fetched.normalizer;
       if ('cached' in fetched && fetched.cached) accepted.reason = 'private-cache-hit';
       if ('fetchedAt' in fetched && typeof fetched.fetchedAt === 'string')
         accepted.fetchedAt = fetched.fetchedAt;
@@ -181,7 +182,7 @@ export async function acceptDiscovery(
     source.excerpt = excerpt.slice(0, 12000);
     if (excerpt.length > 12000) gaps.push(`${source.title}: verified excerpt budget exhausted`);
     source.excerptDigest = digest(source.excerpt);
-    source.id = `evidence-${digest(`${source.uri}:${source.digest}:${source.excerptDigest}`).slice(0, 24)}`;
+    source.id = `evidence-${digest(`${source.uri}:${source.digest}:${source.excerptDigest}${source.normalizer ? `:${source.normalizer}` : ''}`).slice(0, 24)}`;
   });
   const entities = new Map<
     string,
@@ -228,7 +229,7 @@ export async function acceptDiscovery(
             source.id,
             observation,
             source.excerptDigest
-              ? `evidence-${digest(`${source.uri}:${source.digest}`).slice(0, 24)}`
+              ? `evidence-${digest(`${source.uri}:${source.digest}${source.normalizer ? `:${source.normalizer}` : ''}`).slice(0, 24)}`
               : source.id,
             true,
           ),

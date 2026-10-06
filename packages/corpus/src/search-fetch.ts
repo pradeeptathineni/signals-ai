@@ -55,7 +55,7 @@ export async function fetchEvidence(
   input: string,
   signal?: AbortSignal,
   redirects = 0,
-): Promise<{ text: string; digest: string; uri: string; json?: unknown }> {
+): Promise<{ text: string; digest: string; uri: string; json?: unknown; normalizer?: 'text-v2' }> {
   const { url, address } = await resolvePublicUrl(input);
   return new Promise((resolve, reject) => {
     const req = request(
@@ -123,6 +123,7 @@ export async function fetchEvidence(
                 : normalizeSpan(raw),
               digest: digest(raw),
               uri: url.toString(),
+              normalizer: 'text-v2',
               ...(/application\/json/i.test(response.headers['content-type'] ?? '')
                 ? { json: JSON.parse(raw) as unknown }
                 : {}),

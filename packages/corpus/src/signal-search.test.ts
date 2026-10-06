@@ -102,6 +102,93 @@ const runner = (value: unknown): SearchRunner => ({
 });
 
 describe('live search contract and evidence policy', () => {
+  it('decodes legacy spans with their original cleanup while requiring literal spans in text-v2', async () => {
+    const item = (await acquired()).items[0]!;
+    const observation = item.entity.observations[0]!;
+    observation.quote = 'portable <legacy> research tool';
+    Object.assign(
+      observation,
+      observationIdentity(item.entity.id, observation.evidenceId, observation),
+    );
+    item.entity.assessment = assessEntity(item.entity, date);
+    expect(() => validateEntity(item.entity)).not.toThrow();
+    const input = proposal();
+    const literal = (
+      await acceptDiscovery(
+        input,
+        { query: 'research' },
+        {
+          asOf: date,
+          fetch: async (uri) => ({ ...(await fetch(uri)), normalizer: 'text-v2' }),
+        },
+      )
+    ).items[0]!.entity;
+    literal.observations[0]!.quote = observation.quote;
+    Object.assign(
+      literal.observations[0]!,
+      observationIdentity(
+        literal.id,
+        literal.observations[0]!.evidenceId,
+        literal.observations[0]!,
+      ),
+    );
+    expect(() => validateEntity(literal)).toThrow('forged_span_verification');
+  });
+  it('does not carry legacy stripped-JSON credit into a corrected literal representation with the same raw digest', async () => {
+    const input = proposal();
+    const defines = { ...input.candidates[0]!.observations[0]!, quote: 'We do recommend this' };
+    input.candidates[0]!.observations = [
+      defines,
+      { ...defines, feature: 'adoption', indicator: 'attention' },
+    ];
+    const old = (
+      await acceptDiscovery(
+        input,
+        { query: 'recommendation' },
+        {
+          fetch: async (uri) => ({
+            uri,
+            digest: 'a'.repeat(64),
+            text: '{"description":"We do recommend this"}',
+          }),
+          asOf: date,
+        },
+      )
+    ).items[0]!;
+    expect(old.entity.assessment.score).toBe(5);
+    input.candidates[0]!.observations = [{ ...defines, quote: 'We do <not> recommend this' }];
+    const current = (
+      await acceptDiscovery(
+        input,
+        { query: 'recommendation' },
+        {
+          fetch: async (uri) => ({
+            uri,
+            digest: 'a'.repeat(64),
+            normalizer: 'text-v2',
+            text: '{"description":"We do <not> recommend this"}',
+          }),
+          asOf: date,
+        },
+      )
+    ).items[0]!;
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-literal-projection-')));
+    try {
+      await saveEntities([old], 'manual', root);
+      await saveEntities([current], 'refresh', root);
+      const entity = (await loadEntities(join(root, 'signals/entities')))[0]!.entity;
+      expect(entity.assessment.score).toBe(0);
+      expect(entity.observations).toHaveLength(3);
+      expect(assessEntity(entity, date, 'signal-strength-v2').score).toBe(5);
+      await saveEntities([old], 'manual', root);
+      const reopened = (await loadEntities(join(root, 'signals/entities')))[0]!.entity;
+      expect(reopened.currentEvidence).toEqual(current.entity.currentEvidence);
+      expect(reopened.assessment.score).toBe(0);
+      expect(reopened.evidence).toEqual(entity.evidence);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
   it('preserves observed acquisition usage on a failed runner without inventing provider token counts', async () => {
     const result = await signalSearch(
       { query: 'Portable research' },
@@ -699,6 +786,10 @@ describe('canonical saving and scheduling', () => {
       const reverted = await snapshot(input, 'a', '2026-10-07T00:00:00.000Z');
       await saveEntities([reverted], 'refresh', root);
       record = (await loadEntities(join(root, 'signals/entities')))[0]!;
+      expect(record.entity.assessment.score).toBe(10);
+      await saveEntities([revised], 'manual', root);
+      record = (await loadEntities(join(root, 'signals/entities')))[0]!;
+      expect(record.entity.currentEvidence).toEqual(reverted.entity.currentEvidence);
       expect(record.entity.assessment.score).toBe(10);
       expect(
         record.entity.evidence.find((source) => source.id === original.entity.evidence[0]!.id),
