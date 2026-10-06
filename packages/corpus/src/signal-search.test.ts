@@ -100,6 +100,39 @@ const runner = (value: unknown): SearchRunner => ({
   }),
   discover: async () => ({ proposal: value, usage: null, searches: 1 }),
 });
+it('replaces reviewed preliminary gaps while retaining actual fetch failures and acquisition evidence', async () => {
+  const input = proposal();
+  input.gaps = ['Current status has not been extracted.'];
+  input.candidates[0]!.limits = ['Current status has not been extracted.'];
+  input.sources.push({
+    ...input.sources[0]!,
+    uri: 'https://example.org/denied',
+    title: 'Denied evidence',
+  });
+  const original = structuredClone(input);
+  const result = await acceptDiscovery(
+    input,
+    { query: 'research', profile: 'quick' },
+    {
+      asOf: date,
+      fetch: async (uri) => {
+        if (uri.includes('example.org')) throw new Error('source_denied');
+        return fetch(uri);
+      },
+      enrich: async (acquisition) => ({
+        ...acquisition,
+        candidates: acquisition.candidates.map((candidate) => ({
+          ...candidate,
+          limits: ['Independent deployment is unverified.'],
+        })),
+        gaps: [],
+      }),
+    },
+  );
+  expect(result.items[0]!.entity.limits).toEqual(['Independent deployment is unverified.']);
+  expect(result.gaps).toEqual(['Denied evidence: source_denied']);
+  expect(input).toEqual(original);
+});
 
 describe('live search contract and evidence policy', () => {
   it('bounds the complete extraction payload and retains beginning/end coverage even with dense source anchors', async () => {
@@ -762,6 +795,66 @@ describe('live search contract and evidence policy', () => {
   });
 });
 describe('canonical saving and scheduling', () => {
+  it('rejects a selection receipt without its discovery kind before writing the ledger', async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-selection-kind-')));
+    try {
+      const malformed = {
+        runId: '11111111-1111-4111-8111-111111111111',
+        query: 'question',
+      } as NonNullable<Parameters<typeof saveNativeEntities>[6]>;
+      await expect(
+        saveNativeEntities([], 'eligible', root, 'public', 75, false, malformed),
+      ).rejects.toThrow('invalid_selection_provenance');
+      await expect(readFile(join(root, '.signals/selections.json'))).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+  it('separates checked issuer-declared currentness from formal authority and preserves older policy', async () => {
+    const input = proposal();
+    input.sources[0]!.publishedAt = null;
+    input.candidates[0]!.kind = 'standard';
+    const base = input.candidates[0]!.observations[0]!;
+    input.candidates[0]!.observations.push(
+      { ...base, feature: 'currentness', indicator: 'current' },
+      { ...base, feature: 'authority', indicator: 'primary' },
+    );
+    const entity = (await acquired(input)).items[0]!.entity;
+    expect(entity.assessment.features.currentness!.value).toBe(1);
+    expect(entity.assessment.features.authority!.value).toBe(0.5);
+    const historical = structuredClone(entity);
+    historical.assessment = assessEntity(historical, date, 'signal-strength-v5');
+    expect(historical.assessment.features.currentness!.value).toBe(0.5);
+    expect(() => validateEntity(historical)).not.toThrow();
+
+    const status = entity.observations.find((item) => item.feature === 'currentness')!;
+    const issuer = entity.observations.find((item) => item.feature === 'authority')!;
+    for (const check of ['2025-10-04T00:00:00.000Z', '2026-10-06T00:00:00.000Z']) {
+      const changed = structuredClone(entity);
+      changed.currentChecks = { [changed.evidence[0]!.uri]: check };
+      expect(assessEntity(changed, date).features.currentness!.value).toBe(0.5);
+    }
+    const secondary = structuredClone(entity);
+    secondary.observations.find((item) => item.id === issuer.id)!.indicator = 'secondary';
+    expect(assessEntity(secondary, date).features.currentness!.value).toBe(0.5);
+    const unrelated = structuredClone(entity);
+    unrelated.observations.find((item) => item.id === issuer.id)!.evidenceId = 'unrelated';
+    expect(assessEntity(unrelated, date).features.currentness!.value).toBe(0.5);
+    const disputed = structuredClone(entity);
+    disputed.observations.find((item) => item.id === issuer.id)!.status = 'contradicted';
+    expect(assessEntity(disputed, date).features.currentness!.value).toBe(0.5);
+    const oldEdition = structuredClone(entity);
+    oldEdition.observations.find((item) => item.id === status.id)!.indicator = 'stale';
+    expect(assessEntity(oldEdition, date).features.currentness!.value).toBe(0.25);
+    const noStatus = structuredClone(entity);
+    noStatus.observations = noStatus.observations.filter((item) => item.id !== status.id);
+    expect(assessEntity(noStatus, date).features.currentness!.value).toBe(0);
+    const inactive = structuredClone(entity);
+    inactive.currentEvidence = [];
+    expect(assessEntity(inactive, date).features.currentness!.value).toBe(0);
+  });
   it('does not earn full dated-currentness credit from a future publication while preserving v4 replay', async () => {
     const input = proposal();
     input.candidates[0]!.observations.push({

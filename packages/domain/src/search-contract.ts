@@ -174,7 +174,8 @@ export interface Assessment {
     | 'signal-strength-v2'
     | 'signal-strength-v3'
     | 'signal-strength-v4'
-    | 'signal-strength-v5';
+    | 'signal-strength-v5'
+    | 'signal-strength-v6';
   asOf: string;
   score: number | null;
   features: Record<

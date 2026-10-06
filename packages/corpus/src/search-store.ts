@@ -93,6 +93,7 @@ const entitySchema = Type.Object(
           'signal-strength-v3',
           'signal-strength-v4',
           'signal-strength-v5',
+          'signal-strength-v6',
         ]),
         asOf: Type.String(),
         score: Type.Union([Type.Integer({ minimum: 0, maximum: 100 }), Type.Null()]),
@@ -496,7 +497,12 @@ export async function saveEntities(
   provenance?: SelectionProvenance,
 ) {
   return withWriter(root, async () => {
-    if (provenance && (!/^[a-f0-9-]{36}$/.test(provenance.runId) || provenance.query.length > 2000))
+    if (
+      provenance &&
+      (!/^[a-f0-9-]{36}$/.test(provenance.runId) ||
+        provenance.query.length > 2000 ||
+        !['one-off', 'query-discovery', 'corpus-refresh'].includes(provenance.kind))
+    )
       throw new Error('invalid_selection_provenance');
     const directory = resolve(
       root,

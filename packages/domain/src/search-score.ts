@@ -69,7 +69,7 @@ export function activeEvidenceIds(entity: Pick<Entity, 'evidence' | 'currentEvid
 }
 export function activeObservations(
   entity: Pick<Entity, 'evidence' | 'currentEvidence' | 'observations'>,
-  policy: Assessment['policy'] = 'signal-strength-v5',
+  policy: Assessment['policy'] = 'signal-strength-v6',
 ) {
   const evidence =
     policy === 'signal-strength-v0'
@@ -81,6 +81,7 @@ export function activeObservations(
       'signal-strength-v3',
       'signal-strength-v4',
       'signal-strength-v5',
+      'signal-strength-v6',
     ].includes(policy)
   ) {
     const physical = new Set(
@@ -140,14 +141,14 @@ export function assessEntity(
     'observations' | 'evidence' | 'kind' | 'identity' | 'currentEvidence' | 'currentChecks' | 'uri'
   >,
   asOf: string,
-  policy: Assessment['policy'] = 'signal-strength-v5',
+  policy: Assessment['policy'] = 'signal-strength-v6',
 ): Assessment {
   if (!Number.isFinite(Date.parse(asOf))) throw new Error('invalid_assessment_date');
   const active = activeObservations(entity, policy);
   const usable = active.filter(
     (observation) => observation.verified && observation.status === 'supported',
   );
-  const freshFormalStatus = (evidenceId: string) => {
+  const freshStatusCheck = (evidenceId: string, maxAge = 365) => {
     if (policy === 'signal-strength-v0') return true;
     const source = entity.evidence.find((source) => source.id === evidenceId)!;
     const age =
@@ -158,12 +159,13 @@ export function assessEntity(
             'signal-strength-v3',
             'signal-strength-v4',
             'signal-strength-v5',
+            'signal-strength-v6',
           ].includes(policy)
             ? entity.currentChecks?.[source.uri]
             : undefined) ?? source.fetchedAt,
         )) /
       86400000;
-    return age >= 0 && age <= 365;
+    return age >= 0 && age <= maxAge;
   };
   const groups = originGroups(entity);
   const sharedHosts = new Set([
@@ -218,7 +220,8 @@ export function assessEntity(
     const source = entity.evidence.find((item) => item.id === evidenceId)!;
     return (policy === 'signal-strength-v3' ||
     policy === 'signal-strength-v4' ||
-    policy === 'signal-strength-v5'
+    policy === 'signal-strength-v5' ||
+    policy === 'signal-strength-v6'
       ? !ownGroups.has(groups.get(source.id))
       : source.family !== 'primary') && source.origin.trim().toLowerCase() !== 'unknown'
       ? groups.get(source.id)
@@ -252,7 +255,9 @@ export function assessEntity(
       value = Math.max(
         0,
         ...observations.map((item) =>
-          (policy === 'signal-strength-v4' || policy === 'signal-strength-v5') &&
+          (policy === 'signal-strength-v4' ||
+            policy === 'signal-strength-v5' ||
+            policy === 'signal-strength-v6') &&
           feature === 'adoption' &&
           item.indicator === 'attention' &&
           item.attention
@@ -273,7 +278,7 @@ export function assessEntity(
         value = Math.max(
           0,
           ...observations.map((item) =>
-            item.indicator === 'formal-current' && !freshFormalStatus(item.evidenceId)
+            item.indicator === 'formal-current' && !freshStatusCheck(item.evidenceId)
               ? 0.75
               : (bands.authority?.[item.indicator] ?? 0),
           ),
@@ -296,7 +301,7 @@ export function assessEntity(
         const current = relevant.some(
           (source) =>
             source.publishedAt &&
-            (policy !== 'signal-strength-v5' ||
+            ((policy !== 'signal-strength-v5' && policy !== 'signal-strength-v6') ||
               Date.parse(source.publishedAt) <= Date.parse(asOf)) &&
             (Date.parse(asOf) - Date.parse(source.publishedAt)) / 86400000 <= profiles[entity.kind],
         );
@@ -305,9 +310,22 @@ export function assessEntity(
           usable.some((item) => {
             if (item.feature !== 'authority' || item.indicator !== 'formal-current') return false;
             // Normative publication dates do not expire; mutable catalogue status checks do.
-            return freshFormalStatus(item.evidenceId);
+            return freshStatusCheck(item.evidenceId);
           });
-        if (!current && !formallyCurrent) value = Math.min(value, 0.5);
+        const issuerCurrent =
+          policy === 'signal-strength-v6' &&
+          observations.some(
+            (item) =>
+              item.indicator === 'current' &&
+              freshStatusCheck(item.evidenceId, Math.min(365, profiles[entity.kind])) &&
+              usable.some(
+                (issuer) =>
+                  issuer.evidenceId === item.evidenceId &&
+                  issuer.feature === 'authority' &&
+                  (bands.authority?.[issuer.indicator] ?? 0) >= 0.5,
+              ),
+          );
+        if (!current && !formallyCurrent && !issuerCurrent) value = Math.min(value, 0.5);
       }
     }
     features[feature] = {

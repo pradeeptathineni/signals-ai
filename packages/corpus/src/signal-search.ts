@@ -71,6 +71,7 @@ export async function acceptDiscovery(
   )
     throw new Error('budget_exhausted');
   const gaps = [...proposal.gaps];
+  const acquisitionGapCount = gaps.length;
   const sources: Source[] = [];
   const documents = new Map<string, Awaited<ReturnType<typeof fetchEvidence>>>();
   for (const source of proposal.sources) {
@@ -160,7 +161,8 @@ export async function acceptDiscovery(
     });
     try {
       proposal = parseProposal(await dependencies.enrich(proposal, material));
-      gaps.push(...proposal.gaps.filter((gap) => !gaps.includes(gap)));
+      // Review can resolve preliminary uncertainty, but cannot erase actual fetch failures.
+      gaps.splice(0, acquisitionGapCount, ...proposal.gaps);
     } catch (failure) {
       gaps.push(
         `Grounded extraction unavailable: ${failure instanceof Error ? failure.message : 'failed'}`,
