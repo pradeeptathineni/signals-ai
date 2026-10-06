@@ -1,4 +1,4 @@
-import { fetchEvidence } from './search-fetch.js';
+import { fetchEvidence, normalizeText } from './search-fetch.js';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
 import { parseRequest, type SearchRequest } from '../../domain/src/search-contract.js';
 
@@ -170,7 +170,7 @@ export async function directSearch(
             uri,
             evidenceUri: uri,
             title: text(row.title),
-            summary: text(row.snippet),
+            summary: normalizeText(text(row.snippet)),
             popularity: {},
           });
         }
@@ -191,3 +191,5 @@ export async function directSearch(
     modelCalls: 0,
   };
 }
+
+export type DirectSearchResult = Awaited<ReturnType<typeof directSearch>>;

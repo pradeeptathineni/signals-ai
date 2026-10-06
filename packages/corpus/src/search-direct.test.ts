@@ -62,7 +62,11 @@ it('retrieves general concepts through ranked Wikipedia locators without grantin
         json: {
           query: {
             search: [
-              { title: 'Web accessibility', pageid: 42, snippet: '<span>Accessibility</span>' },
+              {
+                title: 'Web accessibility',
+                pageid: 42,
+                snippet: '<span>Accessibility</span> &quot;guide&quot;',
+              },
               { title: 'Unsafe missing identity' },
             ],
           },
@@ -78,6 +82,7 @@ it('retrieves general concepts through ranked Wikipedia locators without grantin
       provider: 'wikipedia',
       rank: 1,
       uri: 'https://en.wikipedia.org/wiki/Web_accessibility',
+      summary: 'Accessibility "guide"',
       popularity: {},
     }),
   ]);

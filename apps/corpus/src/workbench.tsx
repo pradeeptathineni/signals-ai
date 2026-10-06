@@ -11,6 +11,7 @@ import type { SearchItem, SearchResult } from '../../../packages/domain/src/sear
 import type { SearchSettings } from '../../../packages/corpus/src/search-settings.js';
 import type { StoredEntity } from '../../../packages/corpus/src/search-store.js';
 import type { QueryBatch } from '../../../packages/corpus/src/search-query-list.js';
+import type { DirectSearchResult } from '../../../packages/corpus/src/search-direct.js';
 
 const local = (window as Window & { __SIGNALS_LOCAL__?: boolean }).__SIGNALS_LOCAL__ === true;
 const base = import.meta.env.BASE_URL;
@@ -26,6 +27,8 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
     [busy, setBusy] = useState(false);
   const [batch, setBatch] = useState<QueryBatch | null>(null);
   const [interestFilter, setInterestFilter] = useState('');
+  const [sourceBusy, setSourceBusy] = useState(false);
+  const [sourceResult, setSourceResult] = useState<DirectSearchResult | null>(null);
   const [batchHistory, setBatchHistory] = useState<
     { id: string; createdAt: string; total: number; pending: number; uncertain: number }[]
   >([]);
@@ -193,6 +196,7 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
     supplementalSites?: string[],
     context?: string,
   ) {
+    setSourceResult(null);
     const started = await api<{ id: string }>(
       refreshId ? 'refresh' : 'search',
       refreshId
@@ -825,17 +829,34 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                   results retained privately.
                 </p>
                 <div className="actions">
-                  <button disabled={busy || !token || !query.trim()} type="submit">
+                  <button disabled={busy || sourceBusy || !token || !query.trim()} type="submit">
                     Start search
                   </button>
                   <button
-                    disabled={busy || !result}
+                    disabled={busy || sourceBusy || !result}
                     type="button"
                     onClick={() => {
                       void action(() => start());
                     }}
                   >
                     Search further
+                  </button>
+                  <button
+                    disabled={busy || sourceBusy || !token || !query.trim()}
+                    type="button"
+                    onClick={() => {
+                      void action(async () => {
+                        setSourceBusy(true);
+                        setSourceResult(null);
+                        try {
+                          setSourceResult(await api<DirectSearchResult>('sources', { query }));
+                        } finally {
+                          setSourceBusy(false);
+                        }
+                      });
+                    }}
+                  >
+                    {sourceBusy ? 'Finding sources…' : 'Find sources without AI'}
                   </button>
                   <button
                     disabled={!busy}
@@ -851,6 +872,38 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                   </button>
                 </div>
               </form>
+            )}
+            {tab === 'Search' && sourceResult && (
+              <section aria-label="Source links">
+                <h2>Source links for {sourceResult.query}</h2>
+                <p>
+                  Ranked links from GitHub, Hacker News and Wikipedia. No AI calls or saved
+                  assessments. Start search to review and score candidates.
+                </p>
+                <ol>
+                  {sourceResult.hits.map((hit) => (
+                    <li key={`${hit.provider}:${hit.uri}`}>
+                      <a href={hit.uri} target="_blank" rel="noreferrer">
+                        {hit.title}
+                      </a>
+                      <p>
+                        {hit.provider} · rank {hit.rank}
+                      </p>
+                      <p>{hit.summary}</p>
+                    </li>
+                  ))}
+                </ol>
+                {sourceResult.gaps.length > 0 && (
+                  <details>
+                    <summary>Source access gaps</summary>
+                    <ul>
+                      {sourceResult.gaps.map((gap) => (
+                        <li key={gap}>{gap}</li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+              </section>
             )}
             {tab === 'Search' && events.length > 0 && (
               <details open={busy}>

@@ -127,6 +127,89 @@ it('rejects remote origins, missing mutation tokens, oversized and arbitrary exe
   }
 });
 
+it('locates unassessed sources without invoking AI and enforces mutation guards', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-source-api-')));
+  let aiCalls = 0,
+    sourceCalls = 0;
+  const api = searchApi(
+    root,
+    async () => {
+      aiCalls++;
+      throw new Error('AI must not run');
+    },
+    async (request) => {
+      sourceCalls++;
+      expect(
+        request.supplementalSites?.some((site) => new URL(site).hostname === 'github.com'),
+      ).toBe(true);
+      return {
+        schemaVersion: 1,
+        query: request.query,
+        kind: 'unassessed-source-hits',
+        hits: [],
+        gaps: [],
+        searches: 3,
+        modelCalls: 0,
+      };
+    },
+  );
+  const server = createServer((request, response) => {
+    void api(request, response);
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('no_port');
+  const base = `http://127.0.0.1:${address.port}/signals-ai/__signals/api/`;
+  try {
+    const { token } = (await (await fetch(`${base}session`)).json()) as { token: string };
+    const body = JSON.stringify({ query: 'portable observability' });
+    expect(
+      (
+        await fetch(`${base}sources`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body,
+        })
+      ).status,
+    ).toBe(403);
+    const headers = { 'content-type': 'application/json', 'x-signals-token': token };
+    expect(
+      (
+        await fetch(`${base}sources`, {
+          method: 'POST',
+          headers: { ...headers, origin: 'https://example.com' },
+          body,
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await fetch(`${base}sources`, {
+          method: 'POST',
+          headers,
+          body: '{"query":"x","unexpected":true}',
+        })
+      ).status,
+    ).toBe(400);
+    const response = await fetch(`${base}sources`, { method: 'POST', headers, body });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      kind: 'unassessed-source-hits',
+      modelCalls: 0,
+      searches: 3,
+    });
+    expect(sourceCalls).toBe(1);
+    expect(aiCalls).toBe(0);
+    expect(await (await fetch(`${base}corpus`)).json()).toEqual([]);
+    expect(await (await fetch(`${base}history`)).json()).toMatchObject({ runs: [] });
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 it('blocks local, private, mapped and metadata fetch destinations before connecting', async () => {
   expect(publicTransportUrl('https://example.org/docs/').pathname).toBe('/docs/');
   for (const uri of [

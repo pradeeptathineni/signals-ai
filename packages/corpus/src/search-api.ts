@@ -6,6 +6,7 @@ import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { parseRequest, type SearchResult } from '../../domain/src/search-contract.js';
 import { signalSearch } from './signal-search.js';
+import { directSearch } from './search-direct.js';
 import { codexRunner } from './search-runner.js';
 import { loadSettings, saveSettings } from './search-settings.js';
 import {
@@ -57,7 +58,7 @@ interface ActiveRun {
   error?: string;
   batch?: QueryBatch;
 }
-export function searchApi(root = process.cwd(), search = signalSearch) {
+export function searchApi(root = process.cwd(), search = signalSearch, locate = directSearch) {
   const token = randomBytes(32).toString('hex');
   const runs = new Map<string, ActiveRun>();
   const pruneRuns = () => {
@@ -118,7 +119,25 @@ export function searchApi(root = process.cwd(), search = signalSearch) {
         });
       else if (route === 'settings')
         json(200, mutation ? await saveSettings(body, root) : await loadSettings(root));
-      else if (route === 'corpus' && !mutation)
+      else if (route === 'sources' && mutation) {
+        const query = parseRequest(body);
+        const settings = await loadSettings(root);
+        json(
+          200,
+          await locate(
+            parseRequest({
+              ...query,
+              sources: query.sources ?? settings.sources,
+              supplementalSites: [
+                ...new Set([
+                  ...(settings.supplementalSites ?? []),
+                  ...(query.supplementalSites ?? []),
+                ]),
+              ],
+            }),
+          ),
+        );
+      } else if (route === 'corpus' && !mutation)
         json(200, await loadEntities(resolve(root, 'signals/entities')));
       else if (route === 'private-corpus' && !mutation)
         json(200, await loadEntities(resolve(root, '.signals/corpus/entities')));
