@@ -1,0 +1,243 @@
+{
+  "recordVersion": 2,
+  "entity": {
+    "uri": "https://www.w3.org/TR/WCAG22",
+    "name": "Web Content Accessibility Guidelines 2.2",
+    "kind": "standard",
+    "identity": "resolved",
+    "aliases": ["WCAG 2.2", "https://www.w3.org/TR/2024/REC-WCAG22-20241212/"],
+    "description": "Testable accessibility requirements covering web content across disabilities and device types.",
+    "facets": {
+      "domains": ["web accessibility"],
+      "capabilities": ["accessibility requirements", "conformance evaluation"],
+      "interfaces": [],
+      "deliveryForms": ["technical standard"],
+      "platforms": ["web"],
+      "licenses": [],
+      "tags": ["perceivable", "operable", "understandable", "robust"]
+    },
+    "observations": [
+      {
+        "feature": "maturity",
+        "indicator": "stable-interface",
+        "statement": "The published specification contains numbered normative success criteria, including No Keyboard Trap.",
+        "quote": "Success Criterion 2.1.2 No Keyboard Trap",
+        "independent": false,
+        "origin": "w3c-wcag22",
+        "status": "supported",
+        "basisId": "basis-c9658c598230b2f222e638c7",
+        "id": "observation-0c9712d2055e22bef550a85f",
+        "supersedes": [],
+        "derivation": "model-assessment",
+        "evidenceId": "evidence-610280c43356a5d5782d8ce6",
+        "verified": true
+      },
+      {
+        "feature": "maturity",
+        "indicator": "documented",
+        "statement": "The specification links guidance for meeting its keyboard accessibility criterion.",
+        "quote": "How to Meet Keyboard",
+        "independent": false,
+        "origin": "w3c-wcag22",
+        "status": "supported",
+        "basisId": "basis-e0b6ff22a87edc02ff144376",
+        "id": "observation-1185d392e52418b36130e3b3",
+        "supersedes": [],
+        "derivation": "model-assessment",
+        "evidenceId": "evidence-610280c43356a5d5782d8ce6",
+        "verified": true
+      },
+      {
+        "feature": "authority",
+        "indicator": "formal-current",
+        "statement": "The issuing body's specification identifies WCAG 2.2 as a W3C Recommendation, consistent with its publication history.",
+        "quote": "W3C Recommendation",
+        "independent": false,
+        "origin": "w3c-wcag22",
+        "status": "supported",
+        "basisId": "basis-36b4352ea81c5fa800caeee1",
+        "id": "observation-3d5748c15c56e0babb3212ed",
+        "supersedes": [],
+        "derivation": "model-assessment",
+        "evidenceId": "evidence-610280c43356a5d5782d8ce6",
+        "verified": true
+      },
+      {
+        "feature": "currentness",
+        "indicator": "current",
+        "statement": "The issuing body's publication history lists the 12 December 2024 Recommendation as its latest published entry.",
+        "quote": "12 December 2024 Recommendation",
+        "independent": false,
+        "origin": "w3c-wcag22",
+        "status": "supported",
+        "basisId": "basis-df047beda1626da905a13b0a",
+        "id": "observation-9af0431cd385e5c4d223ce49",
+        "supersedes": [],
+        "derivation": "model-assessment",
+        "evidenceId": "evidence-25b0ef417d7367e335451e59",
+        "verified": true
+      },
+      {
+        "feature": "verification",
+        "indicator": "inspectable",
+        "statement": "The published text provides an inspectable keyboard accessibility requirement.",
+        "quote": "Make all functionality available from a keyboard.",
+        "independent": false,
+        "origin": "w3c-wcag22",
+        "status": "supported",
+        "basisId": "basis-1b086b5261b193637fa841a8",
+        "id": "observation-aebe31d31b3590ff3c7b70fa",
+        "supersedes": [],
+        "derivation": "model-assessment",
+        "evidenceId": "evidence-610280c43356a5d5782d8ce6",
+        "verified": true
+      },
+      {
+        "feature": "maturity",
+        "indicator": "supported-or-complete",
+        "statement": "The specification has completed publication as a Recommendation through W3C's Recommendation track.",
+        "quote": "Recommendation track",
+        "independent": false,
+        "origin": "w3c-wcag22",
+        "status": "supported",
+        "basisId": "basis-7eb9f2a5c2733682709f3b26",
+        "id": "observation-af046d2d5d4bae18eab9f7e3",
+        "supersedes": [],
+        "derivation": "model-assessment",
+        "evidenceId": "evidence-610280c43356a5d5782d8ce6",
+        "verified": true
+      },
+      {
+        "feature": "defining",
+        "indicator": "defines",
+        "statement": "WCAG 2.2 expresses accessibility success criteria as testable statements.",
+        "quote": "testable statements",
+        "independent": false,
+        "origin": "w3c-wcag22",
+        "status": "supported",
+        "basisId": "basis-392aa44ac003a0a94f115c83",
+        "id": "observation-b7c9bff8e1109f1c92489b32",
+        "supersedes": [],
+        "derivation": "model-assessment",
+        "evidenceId": "evidence-610280c43356a5d5782d8ce6",
+        "verified": true
+      },
+      {
+        "feature": "maturity",
+        "indicator": "track-record",
+        "statement": "The publication history records Recommendation editions in both 2023 and 2024.",
+        "quote": "12 December 2024 Recommendation 5 October 2023 Recommendation",
+        "independent": false,
+        "origin": "w3c-wcag22",
+        "status": "supported",
+        "basisId": "basis-8d565d00af51d96c6d189787",
+        "id": "observation-e4ce9bf3817e992be92be7a8",
+        "supersedes": [],
+        "derivation": "model-assessment",
+        "evidenceId": "evidence-25b0ef417d7367e335451e59",
+        "verified": true
+      }
+    ],
+    "limits": [
+      "WCAG states that it cannot address every disability-related user need.",
+      "Conformance requires evaluation of complete pages and processes; a tool score is insufficient."
+    ],
+    "id": "entity-dccdaced831d38424d7b5166",
+    "acquisition": "configured-live",
+    "evidence": [
+      {
+        "uri": "https://www.w3.org/standards/history/WCAG22",
+        "title": "WCAG 2.2 publication history",
+        "publisher": "W3C",
+        "family": "standards",
+        "publishedAt": null,
+        "origin": "w3c-wcag22",
+        "id": "evidence-25b0ef417d7367e335451e59",
+        "fetchedAt": "2026-10-06T04:53:12.122Z",
+        "digest": "56edb29afd2a0705fae4eeaf164cbb532746c4cef0d417fa29cda848b21db16f",
+        "state": "fetched",
+        "reason": "private-cache-hit",
+        "excerpt": "12 December 2024 Recommendation … 12 December 2024 Recommendation 5 October 2023 Recommendation",
+        "normalizer": "text-v2",
+        "excerptDigest": "f1141c7c0a0336c36baabbe78dd87ebddd4e7665d2e796191334ff07db734e34"
+      },
+      {
+        "uri": "https://www.w3.org/TR/WCAG22",
+        "title": "Web Content Accessibility Guidelines (WCAG) 2.2",
+        "publisher": "W3C",
+        "family": "standards",
+        "publishedAt": "2024-12-12",
+        "origin": "w3c-wcag22",
+        "id": "evidence-610280c43356a5d5782d8ce6",
+        "fetchedAt": "2026-10-06T04:53:11.969Z",
+        "digest": "6e3c5fe397257cae509a2fb4752b73062cf8cbeb92c2cec618989b17e4cf7057",
+        "state": "fetched",
+        "reason": "private-cache-hit",
+        "excerpt": "How to Meet Keyboard … Make all functionality available from a keyboard. … Recommendation track … Success Criterion 2.1.2 No Keyboard Trap … W3C Recommendation … testable statements",
+        "normalizer": "text-v2",
+        "excerptDigest": "14a5bda1621c11d3a8000f956baf3447a41a64be08a40b8b5fb6771d152b5d9f"
+      }
+    ],
+    "currentEvidence": [
+      "evidence-25b0ef417d7367e335451e59",
+      "evidence-610280c43356a5d5782d8ce6"
+    ],
+    "currentChecks": {
+      "https://www.w3.org/TR/WCAG22": "2026-10-06T04:53:11.969Z",
+      "https://www.w3.org/standards/history/WCAG22": "2026-10-06T04:53:12.122Z"
+    },
+    "assessment": {
+      "policy": "signal-strength-v4",
+      "asOf": "2026-10-06T05:02:07.031Z",
+      "score": 83,
+      "features": {
+        "corroboration": {
+          "value": 0,
+          "contribution": 0,
+          "observations": [],
+          "state": "unknown"
+        },
+        "adoption": {
+          "value": 0,
+          "contribution": 0,
+          "observations": [],
+          "state": "not-applicable"
+        },
+        "maturity": {
+          "value": 1,
+          "contribution": 15,
+          "observations": [
+            "observation-0c9712d2055e22bef550a85f",
+            "observation-1185d392e52418b36130e3b3",
+            "observation-af046d2d5d4bae18eab9f7e3",
+            "observation-e4ce9bf3817e992be92be7a8"
+          ],
+          "state": "observed"
+        },
+        "currentness": {
+          "value": 1,
+          "contribution": 25,
+          "observations": ["observation-9af0431cd385e5c4d223ce49"],
+          "state": "observed"
+        },
+        "authority": {
+          "value": 1,
+          "contribution": 40,
+          "observations": ["observation-3d5748c15c56e0babb3212ed"],
+          "state": "observed"
+        },
+        "verification": {
+          "value": 0.25,
+          "contribution": 2.5,
+          "observations": ["observation-aebe31d31b3590ff3c7b70fa"],
+          "state": "observed"
+        }
+      },
+      "risk": 0,
+      "coverage": 0.8,
+      "missing": ["corroboration"],
+      "state": "assessed"
+    }
+  },
+  "state": "eligible-saved"
+}
