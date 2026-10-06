@@ -517,7 +517,14 @@ export async function saveEntities(
     const changes: string[] = [],
       skipped: string[] = [];
     const reasons: Record<string, string[]> = {};
-    items.forEach((item) => validateEntity(item.entity));
+    items
+      .filter((item) =>
+        mode === 'eligible'
+          ? saveDecision(item.entity, item.match, threshold).eligible &&
+            !dismissed.includes(item.entity.id)
+          : mode !== 'refresh' || existing.has(item.entity.id),
+      )
+      .forEach((item) => validateEntity(item.entity));
     for (const item of items) {
       if (
         (mode === 'eligible' &&

@@ -795,6 +795,33 @@ describe('live search contract and evidence policy', () => {
   });
 });
 describe('canonical saving and scheduling', () => {
+  it('validates publication bytes only for selected writes, preserving the privacy guard', async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-unselected-private-')));
+    try {
+      const input = proposal();
+      input.candidates[0]!.uri = 'https://example.com/safe';
+      input.candidates[0]!.observations.push({
+        ...input.candidates[0]!.observations[0]!,
+        feature: 'maturity',
+        indicator: 'documented',
+      });
+      const safe = (await acquired(input)).items[0]!;
+      const unselected = (await acquired()).items[0]!;
+      unselected.entity.description =
+        'git clone https://x-access-token:INSTALLATION_TOKEN@github.com/example/repository';
+      const result = await saveEntities([safe, unselected], 'eligible', root, 'public', 4);
+      expect(result.changed).toEqual([safe.entity.id]);
+      expect(result.skipped).toEqual([unselected.entity.id]);
+      expect(
+        (await loadEntities(join(root, 'signals/entities'))).map((record) => record.entity.id),
+      ).toEqual([safe.entity.id]);
+      await expect(saveEntities([unselected], 'manual', root)).rejects.toThrow(
+        'private_entity_bytes',
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
   it('rejects a selection receipt without its discovery kind before writing the ledger', async () => {
     const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-selection-kind-')));
     try {
