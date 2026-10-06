@@ -178,10 +178,7 @@
         "excerptDigest": "14a5bda1621c11d3a8000f956baf3447a41a64be08a40b8b5fb6771d152b5d9f"
       }
     ],
-    "currentEvidence": [
-      "evidence-25b0ef417d7367e335451e59",
-      "evidence-610280c43356a5d5782d8ce6"
-    ],
+    "currentEvidence": ["evidence-25b0ef417d7367e335451e59", "evidence-610280c43356a5d5782d8ce6"],
     "currentChecks": {
       "https://www.w3.org/TR/WCAG22": "2026-10-06T04:53:11.969Z",
       "https://www.w3.org/standards/history/WCAG22": "2026-10-06T04:53:12.122Z"
@@ -191,12 +188,7 @@
       "asOf": "2026-10-06T05:02:07.031Z",
       "score": 83,
       "features": {
-        "corroboration": {
-          "value": 0,
-          "contribution": 0,
-          "observations": [],
-          "state": "unknown"
-        },
+        "corroboration": { "value": 0, "contribution": 0, "observations": [], "state": "unknown" },
         "adoption": {
           "value": 0,
           "contribution": 0,

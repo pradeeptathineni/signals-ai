@@ -240,7 +240,7 @@ export async function atomicJson(path: string, value: unknown, publicFormat = fa
   if (existing?.isSymbolicLink()) throw new Error('symlink_file');
   const temporary = join(dirname(path), `.pending-${randomUUID()}`);
   const bytes = publicFormat
-    ? await format(JSON.stringify(value), { parser: 'json' })
+    ? await format(JSON.stringify(value), { parser: 'json', printWidth: 100 })
     : `${JSON.stringify(value, null, 2)}\n`;
   await writeFile(temporary, bytes, { flag: 'wx', mode: 0o600 });
   try {
