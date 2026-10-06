@@ -102,6 +102,43 @@ const runner = (value: unknown): SearchRunner => ({
 });
 
 describe('live search contract and evidence policy', () => {
+  it('retains a rejected extraction and its usage privately while withholding all preliminary credit', async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-extraction-receipt-')));
+    const raw = {
+      candidates: [{ uri: 'https://example.com/changed-identity', observations: [] }],
+      gaps: [],
+    };
+    try {
+      const result = await signalSearch(
+        { query: 'research', cache: 'private', save: 'never' },
+        {
+          root,
+          fetch,
+          runner: {
+            ...runner(proposal()),
+            enrich: async (_proposal, _material, _request, _signal, _progress, receipt) => {
+              await receipt?.(raw, { output_tokens: 123 });
+              throw new Error('extraction_identity_change');
+            },
+          },
+        },
+      );
+      expect(
+        JSON.parse(
+          await readFile(join(root, '.signals/extractions', `${result.runId}.json`), 'utf8'),
+        ),
+      ).toEqual({ proposal: raw, usage: { output_tokens: 123 } });
+      expect(result.items[0]!.entity.assessment.score).toBeNull();
+      expect(result.gaps).toContain('Grounded extraction unavailable: extraction_identity_change');
+      expect(result.usage.providerUsage).toEqual({
+        discovery: null,
+        extraction: { output_tokens: 123 },
+      });
+      expect(await loadEntities(join(root, 'signals/entities'))).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
   it('uses fixed capped attention anchors and rejects counts absent from their evidence without changing old policy replay', async () => {
     const measured = async (count: number) => {
       const input = proposal();

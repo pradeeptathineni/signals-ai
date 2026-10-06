@@ -5,6 +5,8 @@ import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
 import { digest } from './search-fetch.js';
 import { directSearch } from './search-direct.js';
+import { providerSchema, restoreOptionals } from './search-provider-schema.js';
+import { normalizeConsiderUrl } from '../../domain/src/url.js';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 import {
@@ -18,6 +20,20 @@ import {
 } from '../../domain/src/search-contract.js';
 
 const exec = promisify(execFile);
+export function bindExtractions<T extends { uri: string }>(
+  candidates: { uri: string }[],
+  extractions: T[],
+) {
+  const key = (uri: string) => `${normalizeConsiderUrl(uri).normalizedUrl}${new URL(uri).hash}`;
+  const bound = new Map<string, T>();
+  for (const item of extractions) {
+    const matches = candidates.filter((candidate) => key(candidate.uri) === key(item.uri));
+    if (matches.length !== 1 || bound.has(matches[0]!.uri))
+      throw new Error('extraction_identity_change');
+    bound.set(matches[0]!.uri, item);
+  }
+  return bound;
+}
 export class RunnerFailure extends Error {
   constructor(
     message: string,
@@ -46,6 +62,7 @@ export interface SearchRunner {
     request: SearchRequest,
     signal: AbortSignal,
     progress: (event: string) => void,
+    receipt?: (proposal: unknown, usage: unknown) => Promise<void>,
   ): Promise<{ proposal: Proposal; usage: unknown }>;
 }
 function researchPrompt(request: SearchRequest) {
@@ -149,12 +166,7 @@ export function codexRunner(
           progress(
             `Direct acquisition: ${direct.hits.length} ranked locators, ${direct.searches} calls, ${direct.gaps.length} gaps.`,
           );
-        await writeFile(
-          schema,
-          JSON.stringify(operation.schema ?? proposalSchema, (key, value: unknown) =>
-            key === 'uniqueItems' ? undefined : value,
-          ),
-        );
+        await writeFile(schema, JSON.stringify(providerSchema(operation.schema ?? proposalSchema)));
         // Read only model selection, never authentication; ambient hooks/MCP/project instructions stay out.
         const config = await readFile(join(homedir(), '.codex/config.toml'), 'utf8').catch(
           () => '',
@@ -311,7 +323,7 @@ export function codexRunner(
             }
             try {
               resolve({
-                proposal: JSON.parse(final),
+                proposal: restoreOptionals(JSON.parse(final), operation.schema ?? proposalSchema),
                 usage: {
                   provider: usage,
                   model: selectedModel ?? 'host-default',
@@ -346,6 +358,7 @@ export function codexRunner(
             request: SearchRequest,
             signal: AbortSignal,
             progress: (event: string) => void,
+            receipt?: (proposal: unknown, usage: unknown) => Promise<void>,
           ) {
             const schema = Type.Object(
               {
@@ -392,6 +405,7 @@ export function codexRunner(
                 live: false,
               },
             ).discover(request, signal, progress);
+            await receipt?.(result.proposal, result.usage);
             if (
               !Value.Check(schema, result.proposal) ||
               result.proposal.candidates.reduce((sum, item) => sum + item.observations.length, 0) >
@@ -399,20 +413,13 @@ export function codexRunner(
             )
               throw new Error('invalid_extraction_output');
             const extractions = result.proposal.candidates;
-            if (
-              extractions.some(
-                (item) => !proposal.candidates.some((candidate) => candidate.uri === item.uri),
-              ) ||
-              new Set(extractions.map((item) => item.uri)).size !== extractions.length
-            )
-              throw new Error('extraction_identity_change');
+            const bound = bindExtractions(proposal.candidates, extractions);
             return {
               proposal: {
                 ...proposal,
                 candidates: proposal.candidates.map((candidate) => ({
                   ...candidate,
-                  observations:
-                    extractions.find((item) => item.uri === candidate.uri)?.observations ?? [],
+                  observations: bound.get(candidate.uri)?.observations ?? [],
                 })),
                 gaps: [...proposal.gaps, ...result.proposal.gaps],
               },

@@ -422,14 +422,28 @@ export async function signalSearch(
       enrich: runner.enrich
         ? async (proposal, material) => {
             base.usage.modelCalls++;
+            let recorded = false;
             const grounded = await runner.enrich!(
               proposal,
               material,
               request,
               controller.signal,
               dependencies.progress ?? (() => {}),
+              async (proposal, usage) => {
+                base.usage.providerUsage = { discovery: discovery.usage, extraction: usage };
+                if (request.cache === 'private')
+                  await atomicJson(
+                    resolve(
+                      dependencies.root ?? process.cwd(),
+                      '.signals/extractions',
+                      `${base.runId}.json`,
+                    ),
+                    { proposal, usage },
+                  );
+                recorded = true;
+              },
             );
-            if (request.cache === 'private')
+            if (request.cache === 'private' && !recorded)
               await atomicJson(
                 resolve(
                   dependencies.root ?? process.cwd(),
