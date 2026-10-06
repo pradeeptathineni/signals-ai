@@ -171,6 +171,59 @@ describe('live search contract and evidence policy', () => {
       ),
     ).toBe(true);
   });
+  it('isolates repeated candidate identities without losing review of other candidates', async () => {
+    const input = proposal();
+    input.candidates.push({
+      ...structuredClone(input.candidates[0]!),
+      name: 'Different lead',
+      kind: 'practice',
+      uri: 'https://example.com/tool/',
+    });
+    input.candidates.push({
+      ...structuredClone(input.candidates[0]!),
+      uri: 'https://example.com/unique',
+      name: 'Unique tool',
+    });
+    const before = JSON.stringify(input);
+    let reviewed: string[] = [];
+    const result = await acceptDiscovery(
+      input,
+      { query: 'research' },
+      {
+        fetch,
+        asOf: date,
+        enrich: async (selected) => {
+          reviewed = selected.candidates.map((candidate) => candidate.name);
+          return selected;
+        },
+      },
+    );
+    expect(reviewed).toEqual(['Unique tool']);
+    expect(JSON.stringify(input)).toBe(before);
+    const ambiguous = result.items.find((item) => item.entity.identity === 'ambiguous')!;
+    expect(ambiguous.entity.observations).toEqual([]);
+    expect(ambiguous.entity.assessment.score).toBeNull();
+    expect(ambiguous.eligible).toBe(false);
+    expect(
+      result.items.find((item) => item.entity.name === 'Unique tool')!.entity.observations.length,
+    ).toBeGreaterThan(0);
+    input.candidates.pop();
+    const onlyAmbiguous = await acceptDiscovery(
+      input,
+      { query: 'research' },
+      {
+        fetch,
+        asOf: date,
+        enrich: async () => {
+          throw new Error('ambiguous_group_must_not_invoke_review');
+        },
+      },
+    );
+    expect(
+      onlyAmbiguous.gaps.some((gap) => gap.includes('ambiguous_group_must_not_invoke_review')),
+    ).toBe(false);
+    expect(onlyAmbiguous.items[0]!.entity.assessment.score).toBeNull();
+  });
   it('retains a rejected extraction and its usage privately while withholding all preliminary credit', async () => {
     const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-extraction-receipt-')));
     const raw = {

@@ -61,7 +61,7 @@ export async function acceptDiscovery(
     ) => Promise<Proposal>;
   } = {},
 ) {
-  let proposal = parseProposal(input);
+  let proposal = structuredClone(parseProposal(input));
   let asOf = dependencies.asOf ?? new Date().toISOString();
   const limits = budgets[request.profile ?? 'wide'];
   if (
@@ -160,7 +160,40 @@ export async function acceptDiscovery(
       return [{ index, uri: source.uri, text: excerpts }];
     });
     try {
-      proposal = parseProposal(await dependencies.enrich(proposal, material));
+      const key = (candidate: Proposal['candidates'][number]) => {
+        try {
+          return entityUri(candidate.uri);
+        } catch {
+          return candidate.uri;
+        }
+      };
+      const counts = new Map<string, number>();
+      for (const candidate of proposal.candidates)
+        counts.set(key(candidate), (counts.get(key(candidate)) ?? 0) + 1);
+      const reviewable = proposal.candidates.filter(
+        (candidate) => counts.get(key(candidate)) === 1,
+      );
+      const unresolved = proposal.candidates.filter(
+        (candidate) => counts.get(key(candidate)) !== 1,
+      );
+      proposal = reviewable.length
+        ? parseProposal(
+            await dependencies.enrich({ ...proposal, candidates: reviewable }, material),
+          )
+        : { ...proposal, candidates: [] };
+      proposal = {
+        ...proposal,
+        candidates: [
+          ...proposal.candidates,
+          ...unresolved.map((candidate) => ({ ...candidate, observations: [] })),
+        ],
+        gaps: unresolved.length
+          ? [
+              ...proposal.gaps,
+              'Repeated candidate identities require resolution before feature review.',
+            ]
+          : proposal.gaps,
+      };
       // Review can resolve preliminary uncertainty, but cannot erase actual fetch failures.
       gaps.splice(0, acquisitionGapCount, ...proposal.gaps);
     } catch (failure) {
