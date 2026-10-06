@@ -4,7 +4,11 @@ import { directSearch } from './search-direct.js';
 it('uses bounded ranked locators without inference, crawling or trusting returned private URLs', async () => {
   const calls: string[] = [];
   const result = await directSearch(
-    { query: 'model context protocol', supplementalSites: ['https://github.com/example'] },
+    {
+      query: 'model context protocol',
+      sources: ['github', 'hacker-news'],
+      supplementalSites: ['https://github.com/example'],
+    },
     undefined,
     async (uri) => {
       calls.push(uri);
@@ -42,6 +46,58 @@ it('uses bounded ranked locators without inference, crawling or trusting returne
   expect(result.hits[0]!.popularity.stars).toBe(1200);
   expect(result.kind).toBe('unassessed-source-hits');
   expect(result.gaps).toContain('github: unsafe or malformed result omitted');
+});
+
+it('retrieves general concepts through ranked Wikipedia locators without granting authority to rank or snippets', async () => {
+  const calls: string[] = [];
+  const result = await directSearch(
+    { query: 'accessibility', sources: ['open-web'] },
+    undefined,
+    async (uri) => {
+      calls.push(uri);
+      return {
+        uri,
+        text: '',
+        digest: 'a'.repeat(64),
+        json: {
+          query: {
+            search: [
+              { title: 'Web accessibility', pageid: 42, snippet: '<span>Accessibility</span>' },
+              { title: 'Unsafe missing identity' },
+            ],
+          },
+        },
+      };
+    },
+  );
+  expect(calls).toHaveLength(1);
+  expect(new URL(calls[0]!).searchParams.get('srsearch')).toBe('accessibility');
+  expect(new URL(calls[0]!).searchParams.get('srlimit')).toBe('5');
+  expect(result.hits).toEqual([
+    expect.objectContaining({
+      provider: 'wikipedia',
+      rank: 1,
+      uri: 'https://en.wikipedia.org/wiki/Web_accessibility',
+      popularity: {},
+    }),
+  ]);
+  expect(result.gaps).toContain('wikipedia: malformed result omitted');
+  expect(result.modelCalls).toBe(0);
+  const scoped = await directSearch(
+    {
+      query: 'accessibility',
+      sources: ['open-web'],
+      supplementalSites: ['https://en.wikipedia.org/wiki/Web_accessibility'],
+    },
+    undefined,
+    async () => {
+      throw new Error('must not fetch');
+    },
+  );
+  expect(scoped.searches).toBe(0);
+  expect(scoped.gaps).toContain(
+    'wikipedia: path-scoped direct search unavailable; use scoped broad search',
+  );
 });
 
 it('honors disabled source families and refuses unsupported direct path scopes', async () => {

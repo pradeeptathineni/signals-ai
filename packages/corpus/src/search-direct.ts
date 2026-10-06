@@ -3,7 +3,7 @@ import { normalizeConsiderUrl } from '../../domain/src/url.js';
 import { parseRequest, type SearchRequest } from '../../domain/src/search-contract.js';
 
 interface DirectHit {
-  provider: 'github' | 'hacker-news';
+  provider: 'github' | 'hacker-news' | 'wikipedia';
   rank: number;
   uri: string;
   title: string;
@@ -130,6 +130,55 @@ export async function directSearch(
       gaps.push(
         `${provider}: ${failure instanceof Error ? failure.message : 'direct_search_failed'}`,
       );
+    }
+  }
+  if ((!request.sources || request.sources.includes('open-web')) && !signal?.aborted) {
+    const scopes = choices.filter((uri) => new URL(uri).hostname === 'en.wikipedia.org');
+    if (scopes.some((uri) => new URL(uri).pathname !== '/'))
+      gaps.push('wikipedia: path-scoped direct search unavailable; use scoped broad search');
+    else if (request.query.length > 256)
+      gaps.push('wikipedia: query exceeds direct endpoint limit; broad search remains available');
+    else {
+      const endpoint = new URL('https://en.wikipedia.org/w/api.php');
+      for (const [key, value] of Object.entries({
+        action: 'query',
+        list: 'search',
+        srsearch: request.query,
+        srlimit: '5',
+        format: 'json',
+        formatversion: '2',
+        srprop: 'snippet',
+      }))
+        endpoint.searchParams.set(key, value);
+      try {
+        searches++;
+        const response = object((await fetch(endpoint.toString(), signal)).json);
+        const rows = object(response.query).search;
+        if (!Array.isArray(rows)) throw new Error('invalid_direct_response');
+        for (const [index, raw] of rows.slice(0, 5).entries()) {
+          const row = object(raw);
+          if (!text(row.title) || count(row.pageid) === undefined) {
+            gaps.push('wikipedia: malformed result omitted');
+            continue;
+          }
+          const uri = normalizeConsiderUrl(
+            `https://en.wikipedia.org/wiki/${encodeURIComponent(text(row.title).replace(/ /g, '_'))}`,
+          ).normalizedUrl;
+          hits.push({
+            provider: 'wikipedia',
+            rank: index + 1,
+            uri,
+            evidenceUri: uri,
+            title: text(row.title),
+            summary: text(row.snippet),
+            popularity: {},
+          });
+        }
+      } catch (failure) {
+        gaps.push(
+          `wikipedia: ${failure instanceof Error ? failure.message : 'direct_search_failed'}`,
+        );
+      }
     }
   }
   return {
