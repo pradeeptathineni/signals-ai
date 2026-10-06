@@ -25,6 +25,7 @@ import { dueSlot, runDueOnce } from './search-scheduler.js';
 import { defaultSettings, saveSettings, loadSettings } from './search-settings.js';
 import { normalizeText, normalizeSpan } from './search-fetch.js';
 import type { SearchRunner } from './search-runner.js';
+import { searchEvidenceBundle } from './search-exchange.js';
 
 const date = '2026-10-05T00:00:00.000Z';
 function proposal(): Proposal {
@@ -101,6 +102,16 @@ const runner = (value: unknown): SearchRunner => ({
 });
 
 describe('live search contract and evidence policy', () => {
+  it('exports actual native results through the frozen namespaced consumer contract without translating scores into confidence', async () => {
+    const result = await signalSearch(
+      { query: 'Portable research' },
+      { runner: runner(proposal()), fetch },
+    );
+    const bundle = searchEvidenceBundle(result, 'a'.repeat(40));
+    expect(bundle.candidates[0]!.signal!.evidence_confidence).toBe('unknown');
+    expect(bundle.extensions).toHaveProperty('signals-ai.native-assessments');
+    expect(bundle.sources[0]!.observed_at).toBe(date);
+  });
   it('assesses after real fetch receipts and replays an early historical cutoff without rewriting evidence', async () => {
     const result = await signalSearch(
       { query: 'Portable research' },
