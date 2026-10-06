@@ -8,6 +8,7 @@ import {
 } from '../../../packages/domain/src/public-corpus.js';
 import './styles.css';
 import { parsePublicIndex } from '../../../packages/domain/src/public-index.js';
+import { Workbench } from './workbench.js';
 
 const base = import.meta.env.BASE_URL;
 function display(value: string) {
@@ -95,9 +96,6 @@ function Corpus() {
   }
   return (
     <>
-      <a className="skip-link" href="#results">
-        Skip to findings
-      </a>
       <header className="masthead">
         <a href={base} className="brand">
           Signals<span>Public Corpus · pre-1 preview</span>
@@ -116,9 +114,10 @@ function Corpus() {
             choose.
           </p>
           <p className="scope">
-            Browse {options?.length ?? '…'} reviewed options. Search runs in your browser. Choose
-            every-keyword matching or rank word matches, then check the source claims and limits for
-            your question.
+            Historical findings retain their original signal-review-v1 scores, separate from native
+            entity strength. Browse {options?.length ?? '…'} reviewed options. Search runs in your
+            browser. Choose every-keyword matching or rank word matches, then check the source
+            claims and limits for your question.
           </p>
         </section>
         {error ? (
@@ -394,4 +393,4 @@ function Corpus() {
     </>
   );
 }
-createRoot(document.getElementById('root')!).render(<Corpus />);
+createRoot(document.getElementById('root')!).render(<Workbench legacyCorpus={<Corpus />} />);

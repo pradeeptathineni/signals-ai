@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Live signal-search uses an existing AI through native Agent Skills or installed Codex, fetched source bindings, entity identities and deterministic v2 strength profiles. The local workbench supports research, comparison, grounded follow-up, explicit saves and private interest provenance.
+- Configurable supplemental websites/path scopes, disabled query/corpus schedules and resumable one-shot interest lists share the kernel. Git publication remains a separate explicit operation; Pages remains read-only. Legacy evidence, v0 replay and retained private data stay preserved.
+
 ## 0.3.0
 
 - Git-backed JSON records in signal-type folders are the Corpus database. Indexes and Pages are generated

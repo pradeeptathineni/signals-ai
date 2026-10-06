@@ -3,6 +3,7 @@ import { loadPublicCorpus } from '../packages/corpus/src/public-corpus.js';
 import { filterPublicOptions, type PublicFilters } from '../packages/domain/src/public-corpus.js';
 import { readFile } from 'node:fs/promises';
 import { encodePublicEvidence } from '../packages/corpus/src/public-record.js';
+import { loadEntities } from '../packages/corpus/src/search-store.js';
 import {
   evidenceDigest,
   parseEvidenceBundle,
@@ -23,8 +24,9 @@ if (operation === 'digest') {
 }
 const corpus = await loadPublicCorpus();
 if (operation === 'check') {
+  const entities = await loadEntities();
   process.stdout.write(
-    `${corpus.bundles.length} reviewed bundles; ${corpus.options.length} public options.\n`,
+    `${corpus.bundles.length} reviewed bundles; ${corpus.options.length} public options; ${entities.length} native entities.\n`,
   );
 } else if (operation === 'search') {
   const filters: PublicFilters = {};
@@ -62,5 +64,5 @@ if (operation === 'check') {
     `${JSON.stringify({ universe: 'reviewed-public-files', filters, items: filterPublicOptions(corpus.options, filters) }, null, 2)}\n`,
   );
 } else if (operation === 'build') {
-  await publishPublicData(corpus);
+  await publishPublicData(corpus, 'dist', await loadEntities());
 } else throw new Error('Usage: corpus check | search --query=TEXT [--type=VALUE] | build');

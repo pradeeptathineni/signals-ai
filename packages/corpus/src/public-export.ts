@@ -2,11 +2,13 @@ import { lstat, mkdir, mkdtemp, rename, symlink, writeFile } from 'node:fs/promi
 import { join, resolve } from 'node:path';
 import type { loadPublicCorpus } from './public-corpus.js';
 import { parsePublicIndex } from '../../domain/src/public-index.js';
+import type { StoredEntity } from './search-store.js';
 
 /** Complete immutable derived bytes before atomically switching the public-data pointer. */
 export async function publishPublicData(
   corpus: Awaited<ReturnType<typeof loadPublicCorpus>>,
   directory = 'dist',
+  entities: StoredEntity[] = [],
 ) {
   parsePublicIndex(corpus.options);
   if (corpus.bundles.some(({ bundle }) => !/^[a-zA-Z0-9-]+$/.test(bundle.bundle_id)))
@@ -21,6 +23,7 @@ export async function publishPublicData(
     throw new Error('Existing public-data directory must be preserved or moved before building.');
   const staging = await mkdtemp(join(resolve(directory), 'public-snapshot-'));
   await writeFile(join(staging, 'corpus.json'), `${JSON.stringify(corpus.options, null, 2)}\n`);
+  await writeFile(join(staging, 'entities.json'), `${JSON.stringify(entities, null, 2)}\n`);
   await mkdir(join(staging, 'bundles'));
   for (const { bundle, admission, bytes } of corpus.bundles) {
     await writeFile(join(staging, 'bundles', `${bundle.bundle_id}.json`), bytes);

@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { localQueries } from './local-query.js';
+import { searchApi } from '../../packages/corpus/src/search-api.js';
 
 const queryDirectory = resolve(
   process.env.SIGNALS_QUERY_DIRECTORY || '.signals/queries',
@@ -13,7 +14,28 @@ if (['[', ']', '{', '}', '*', '?', '!'].some((character) => queryDirectory.inclu
 export default defineConfig({
   root: fileURLToPath(new URL('.', import.meta.url)),
   base: '/signals-ai/',
-  plugins: [react(), localQueries()],
+  plugins: [
+    react(),
+    localQueries(),
+    {
+      name: 'signals-workbench',
+      transformIndexHtml(html, context) {
+        return context.server
+          ? html.replace('<head>', '<head><script>window.__SIGNALS_LOCAL__=true;</script>')
+          : html;
+      },
+      configureServer(server) {
+        const api = searchApi();
+        server.middlewares.use((request, response, next) => {
+          void api(request, response)
+            .then((handled) => {
+              if (!handled) next();
+            })
+            .catch(next);
+        });
+      },
+    },
+  ],
   server: {
     host: '127.0.0.1',
     port: 5178,

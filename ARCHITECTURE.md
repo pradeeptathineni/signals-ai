@@ -1,41 +1,30 @@
 # Architecture
 
-Signals has three active responsibilities: maintain reviewed Git knowledge, retrieve/organize
-it for a question, and render the same findings for people and machines.
+Signals has one bounded live discovery kernel and two host integrations: an invoking Agent Skill and an explicitly configured headless Codex CLI. Local UI, query discovery and Corpus refresh call that kernel. Literal/ranked Corpus retrieval remains a separate offline operation.
 
-| Owner                                      | Responsibility                                                                                              |
-| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| `signals/<type>/*.json`                    | Canonical public findings, source-bound claims and separate signal review                                   |
-| `packages/domain`                          | Exact contracts, source/identity/privacy checks, literal filters and bounded model judgments                |
-| `packages/corpus`                          | File reading, atomic admission, private query saving, historical file reads and derived exports             |
-| `apps/corpus`                              | React search/filter/compare view; existing Vite server saves private local questions                        |
-| `scripts/corpus.ts`, `scripts/research.ts` | Machine search, agent context, explicit model organization and admission                                    |
-| `.signals/`                                | Private queries, drafts, retained immutable history and local evaluations; never served or built into Pages |
-| `dist/`                                    | Disposable complete public snapshots and static Pages assets                                                |
+| Owner                                                                     | Responsibility                                                                                          |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `packages/domain/search-contract.ts`, `search-score.ts`                   | Closed model protocol, typed indicators, pure strength reducers, relevance/filter/save policy           |
+| `packages/corpus/signal-search.ts`, `search-fetch.ts`, `search-runner.ts` | Bounded acquisition, SSRF-safe fetched evidence, supervised CLI and grounded extraction                 |
+| `packages/corpus/search-store.ts`                                         | Validated entity writes, immutable evidence merge, judgment successors, writer lock and private history |
+| `packages/corpus/search-scheduler.ts`, `search-settings.ts`               | Disabled-default interests, due slots, lease, retained outcomes and identity refresh                    |
+| `packages/corpus/search-api.ts`, `scripts/workbench.ts`                   | Loopback-only same-origin typed API, owned run IDs, CSRF token, asset allowlist                         |
+| `apps/corpus`                                                             | Search/Corpus/Settings, evidence inspection, filter/compare/save and static read-only view              |
+| `signals/entities/*.json`                                                 | Canonical native records using signal-strength-v0                                                       |
+| `signals/<type>/*.json`                                                   | Legacy findings with original signal-review-v1 meaning and frozen evidence                              |
+| `.signals/`                                                               | Private questions/runs/settings/cache/schedule state and retained history                               |
+| `dist/`                                                                   | Disposable public snapshots and Pages assets                                                            |
 
-The same pure filter and identities drive browser and CLI. Literal search has no semantic
-word dictionary. Model interpretation receives the constrained evidence universe, selects only
-known IDs/claims and gets a separate review. Rejected first-model summaries never become answers.
-Model failures preserve deterministic results; source acquisition through the host agent is
-labelled agent-assisted. An explicit loopback model does not imply a configured-live quality proof.
+The model interprets questions, plans domain-appropriate acquisition, resolves conservative identities and supplies source-bound semantic observations. Code owns the fixed score formula. Headless discovery is followed by bounded no-web extraction over fetched excerpts, replacing preliminary observations. Native hosts perform source grounding in their invoking agent. Quote checks establish text occurrence only; model judgments remain fallible.
 
-A finding is automatically admitted only when every option passes the versioned signal policy.
-Fatal privacy, authority, unsupported-claim and currency problems take precedence over ratings.
-The minimum dimension score prevents attractive prose from compensating for weak evidence.
-Publication checks exact shared identities and complete record validity before a non-overwriting
-atomic link; a scoped lock serializes cooperating writers. Interrupted private staging does not
-become public data. Git review and commits remain the publication boundary.
+The six-feature strength policy has fixed normalizers and type-specific currentness windows. Unknown inputs earn zero; repeated publisher/origin/source groups do not create independent support. Relevance is query-dependent. Automatic admission requires supported defining evidence, resolved identity, a direct match and the configured threshold. Manual saves permit supported lower-strength knowledge. Legacy minimum-review policy applies only to historical records.
 
-The public export completes all bytes before atomically switching its derived pointer. Withdrawn
-records retain original downloads and Git history. Source observations, reviews and publication
-dates remain distinct. Hashes protect byte identity, not truth or independence. Current records
-use native JSON; two pinned historical encodings preserve old download bytes.
+Entity evidence is immutable. An observation's stable basis binds entity, source bytes, feature and quote; changed indicator/status/independence creates a successor judgment. Scoring excludes superseded judgments; replay of an old observation cannot restore credit. Types retain URI identities. Monorepo subresources remain distinct; conflicting URI aliases fail closed. Per-entity atomic rename and a cooperating writer lock permit safe retries without claiming batch transactionality.
 
-The database/API/worker application is retired. All retained project data was exported and checked
-before container/volume removal. Historical catalog and workspace records remain private immutable
-JSONL snapshots with counts, column inventories and hashes. Frozen schema-v1 bundles still decode
-without changing old meaning; their original implementation remains in Git history.
+The CLI owns authentication. A disposable read-only runner disables shell, hooks, plugins, apps, memories, MCP execution and delegation. Process-group cancellation and output/time/tool limits bound it. Retrieved instructions cannot change permissions. Evidence fetching validates DNS, pins the connected address, checks redirects and limits bytes/time. Failed sources remain inspectable.
 
-[ADR-009](docs/architecture/ADR-009-database-retirement-and-signal-admission.md) governs storage and admission;
-[ADR-010](docs/architecture/ADR-010-ranked-word-retrieval.md) governs current retrieval. ADR-009 is the
-cross-cutting decision. Earlier ADRs describe historical choices; they do not enable retired services.
+Local endpoints accept loopback Host and same-origin requests. Mutations require a random session token; schemas reject arbitrary commands/paths. UI saves select server-owned results. Asset serving denies private files and symlink escapes. Pages contains public records only and has no live runner.
+
+Scheduled discovery uses durable slots and one lease. Completion follows retained results and canonical saves; interrupted inference becomes uncertain rather than silently repeated. Publication defaults to local-only. Existing build/Pages CI remains the hosting path.
+
+[ADR-011](docs/architecture/ADR-011-live-signal-search.md) governs current discovery/scoring. [ADR-009](docs/architecture/ADR-009-database-retirement-and-signal-admission.md) governs database retirement and retained legacy admission; [ADR-010](docs/architecture/ADR-010-ranked-word-retrieval.md) governs offline ranked retrieval. Frozen schema-v1 exchange and private snapshots retain their original identities, dates and policy meanings.

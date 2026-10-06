@@ -25,9 +25,96 @@ a:hover {
   color: #123e2c;
 }
 button,
+textarea,
 input,
 select {
   font: inherit;
+}
+.workbench-nav {
+  max-width: 1200px;
+  margin: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 2rem;
+  border-bottom: 1px solid #c4cdc1;
+}
+.workbench-nav span {
+  margin-left: auto;
+}
+.workbench-nav [aria-current='page'] {
+  background: #205c44;
+  color: white;
+}
+.workbench {
+  max-width: 1200px;
+  margin: auto;
+  padding: 1rem 2rem;
+}
+.workbench textarea {
+  min-height: 110px;
+  resize: vertical;
+}
+.entity-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 310px), 1fr));
+  gap: 1.2rem;
+  margin: 1.5rem 0;
+}
+.entity-card {
+  padding: 1.3rem;
+  border: 1px solid #c4cdc1;
+  background: white;
+  border-radius: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.entity-card h2 {
+  font-size: 1.3rem;
+}
+.check,
+.actions {
+  display: flex;
+  gap: 0.7rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 0.8rem 0;
+}
+.workbench pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.workbench-footer {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+.workbench details,
+.workbench form,
+.workbench .actions,
+.workbench .filters > label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.workbench .filters {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.workbench fieldset {
+  margin: 1rem 0;
+}
+@media (max-width: 560px) {
+  .workbench .filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .workbench,
+  .workbench-nav {
+    padding: 1rem;
+  }
+  .workbench-nav span {
+    margin-left: 0;
+    width: 100%;
+  }
 }
 button {
   cursor: pointer;

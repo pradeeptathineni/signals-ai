@@ -1,5 +1,14 @@
 # Dependency baseline
 
+The 2026-10-05 gate identified [GHSA-68fv-2mgg-jv7q](https://github.com/advisories/GHSA-68fv-2mgg-jv7q) in the development path `Vite -> PostCSS -> source-map-js`. The lockfile now pins the patched `source-map-js@1.2.2` (BSD-3-Clause); direct versions remain unchanged. The existing exact Repomix exception was not broadened. Build/browser checks and the audit policy verify the updated tree.
+
+Live discovery adds no npm dependency. The optional headless adapter supervises the user's installed
+Codex CLI (0.160.0 observed 2026-10-05); its existing authentication stays outside Signals. Native
+Agent Skills callers use their own permitted tools. Node HTTPS/DNS/child-process primitives own the
+bounded adapter, pinned connections and interval scheduler. Croner/queues and a new service estate
+were rejected for the shipped interval contract. Structured provider schemas omit `uniqueItems`
+because the installed endpoint rejected it; the unchanged domain validator enforces uniqueness.
+
 Record export reuses the existing exact-pinned Prettier 3.9.9 to preserve previously published
 interchange bytes. Native JSON parsing plus duplicate-key rejection and the existing schema
 validators enforce the closed record format. No database or new parser dependency is needed

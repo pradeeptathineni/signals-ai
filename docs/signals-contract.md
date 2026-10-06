@@ -1,40 +1,23 @@
 # Product contract
 
-Signals returns useful source-backed options or explicit gaps. It does not install or execute
-cataloged candidates. A high signal is useful within its stated need and supported scope; it is
-not universally relevant, guaranteed correct or a calibrated prediction of benefit.
+Signals investigates ordinary questions against live public evidence and returns typed reusable entities plus explicit gaps. Native Agent Skills use the invoking AI; headless UI/jobs use an explicitly installed and authenticated Codex CLI. Both share the proposal contract, safe source fetcher, identity checks and deterministic reducers. Search-only memory mode requires no Corpus and creates no repository state. Systems remain data: candidate installation/execution, arbitrary crawling and general agent runtime are outside this product.
 
-Deterministic search performs literal or ranked word retrieval and exact type/domain/tag/source constraints. The
-configured model organizes the same constrained collection and gets a second review. Both source
-IDs and claims must belong to selected options. Unknown IDs, malformed output and model failures
-preserve exact indexed results. Only approved selections contribute the answer summary.
+Relevance belongs to a query result. Intrinsic strength belongs to a reusable entity. signal-strength-v3 retains 25C+20A+20M+15F+10H+10V for ordinary kinds and uses 10C+15M+25F+40H+10V for formal standards, where adoption is not applicable. The strongest supported risk band subtracts 5, 15 or 25. Unknowns earn zero without renormalizing earned credit. Independent origin/publisher groups saturate corroboration. Sourced star/download counts can earn attention credit; independent mentions can earn corroboration, while broad adoption needs attributable independent use. Currentness uses source claims/dates and type windows. For a standard's mutable formal status, an actually fetched status snapshot is valid for 365 days; its original publication date stays unchanged. Expired checks cap currentness at one-half and formal-current authority at three-quarters. Threshold 75 is a starting ordinal policy, not calibrated certainty. Manual saves permit supported resources below that threshold. v0 replay retains its original all-unsuperseded-snapshot semantics and weights.
 
-Fresh research uses the host agent's existing permitted public-source tools. It preserves the
-actual question, primary evidence, source observations, claims and limits. A separate review
-challenges every option's relevance, evidence applicability, useful action and clarity. Every
-dimension must be strong (3 of4); exceptional4 requires additional proof. Fatal problems cannot
-be compensated by other scores. Only qualifying public findings are atomically admitted.
+Model observations retain exact source/quote bindings and model-assessment derivation. The fetched-span flag checks text occurrence, not truth or entailment. Headless source-grounded extraction replaces preliminary judgments; native agents perform that review themselves. Unsupported defining claims leave a candidate unassessed. Ambiguous identities stay provisional. Conflicting URI aliases require resolution rather than silent duplicate merges.
 
-Users ask questions; agents construct records and reviews. `research query` saves ordinary
-questions privately. `research context` supplies the same precise evidence for an agent.
-`research curate` can obtain a second review from an explicitly configured loopback model using
-bounded source material at the recorded observation dates. Agent-assisted reviews can use
-`research admit`; internal run identities are declarations, not proof of reviewer independence.
-These commands neither commit nor push. Git publication exposes only reviewed public records.
+Canonical native entities live in signals/entities. Legacy findings retain their frozen evidence schema1, signal-review-v1 and exact historical score labels. New assessment is carried separately in schema-v1 compatibility extensions; it never becomes legacy confidence/fit. Publication and fetch dates remain distinct. Immutable evidence is retained; changed observations append successors and remove superseded credit. New evidence projections also bind their selected excerpts through excerptDigest, so a later new span over the same raw document creates a successor projection instead of overwriting old evidence. currentEvidence explicitly selects current snapshots, including A→B→A without changing original fetch dates. v2 ignores inactive historical raw snapshots for current credit.
 
-Canonical public records live under `signals/<type>/`; domain and tags are metadata. Exact
-bundle downloads, source IDs and internal review reasons support verification and correction.
-Separate receipt graphs and human-authored digest/feedback forms are retired. Private questions,
-drafts and retained history stay under `.signals/`, ignored by Git and denied by Vite. Pages never
-reads that directory and never starts a model or local service.
+Local Search/Corpus/Settings offers bounded progress/cancellation, filters, comparison, explicit saves, dismissal, grounded follow-up and explicit further acquisition. The loopback API validates Host/Origin/token and accepts only typed operations. Private settings, queries, runs and retained data remain ignored and denied by asset serving. Pages is public/read-only and cannot start the user's AI.
 
-Historical data was migrated before database retirement. Local file readers check retained
-hashes and counts; old records do not become new high-signal findings automatically. Original
-source commits and exact schema1 downloads retain their recorded meaning. Corrections append
-successors; original withdrawals remain downloadable. A source's age is not refreshed by export.
+Discovery starts disabled. Editable interests and saved-entity refresh share the live kernel. UTC interval slots coalesce missed work, a lease prevents overlap, and completion follows local saves. Repeated completed slots do no inference; uncertain interrupted slots do not repeat automatically. Timer execution requires the local process/laptop to be awake. Publication defaults to local-only; explicit reviewed/unattended choices use ordinary verified Git pushes and existing Pages CI. No OS timer or stable release is enabled by setup.
 
-The loopback client requires a chosen HTTP endpoint, port and model ID, with bounded time/input/
-output, no redirects, no credentials and no cloud discovery. An agent-assisted source acquisition,
-a model stub, a configured-live call and human validation are different evidence classes.
-Current tests do not establish live model usefulness or answers for every possible question.
-Only 0.x milestones are authorized; stable release needs a new user decision.
+Global and per-interest supplemental HTTPS website/path scopes share a twenty-URL effective limit, validated before inference. They supplement applicable broad sources and never grant access, independence or budget expansion. Query-list one-shot activation snapshots up to 512 configured interests, processes a bounded chosen count sequentially, and resumes pending questions with durable private receipts. An interrupted running question becomes uncertain rather than repeating paid inference. A per-batch lease and global AI lease prevent cooperating overlap. One-shot activation does not change recurrence or publication settings. Private selections.json associates saved identities with run/question/interest/concepts, including unchanged canonical results; no-save memory mode bypasses that ledger.
+
+Automated fixture checks, configured-live observations, review and human usefulness are separate evidence classes. The live study reports actual coverage, failures, model/tool/time usage and calibration limits. It does not claim universal superiority or measured user benefit.
+
+v1 preserves the earlier standard weights with strict excerpt-snapshot selection and first-fetch status aging. v2 adds raw-document-stable judgment bases, currentChecks bound to actual reacquisition, and current credit from bound excerpts of the selected raw digest. A different excerpt selection cannot resurrect a retired judgment tuple. Normal unchanged rechecks produce no public diff; renewing an expired status check is a material assessment change. Original publication and first-fetch bytes stay immutable.
+
+v3 is current. It retains those weights and snapshot rules, but independent original third-party sources may earn corroboration and adoption credit regardless of source family. Own-origin evidence stays excluded, including project subdomains, GitHub namespaces and connected publisher/origin groups. Shared publishing hosts distinguish originating documents and identity-bearing story/video parameters. Earlier policy versions replay unchanged. Literal JSON evidence and v3 matched spans preserve text characters; HTML markup cleanup applies only to HTML/text acquisition.
+
+Model/effort references can be configured separately for discovery and frozen evidence extraction. Blank extraction references inherit discovery. The same installed CLI owns authentication for both stages, serially; no provider fallback is implicit. Usage records the selected references and available provider counters. Subscription cost and internal provider request counts remain unknown.

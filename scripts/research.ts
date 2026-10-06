@@ -8,6 +8,9 @@ import {
   saveQuery,
 } from '../packages/corpus/src/research-store.js';
 import { reviewDraft, type SourceMaterial } from '../packages/corpus/src/review-draft.js';
+import { signalSearch } from '../packages/corpus/src/signal-search.js';
+import { searchEvidenceBundle } from '../packages/corpus/src/search-exchange.js';
+import { execFileSync } from 'node:child_process';
 
 const [operation, ...args] = process.argv.slice(2);
 if (operation === 'curate') {
@@ -27,6 +30,24 @@ if (operation === 'curate') {
   if (args.length !== 3) throw new Error('history CONTAINER_SNAPSHOT DATABASE TABLE');
   console.log(JSON.stringify(await readRetainedTable(args[0]!, args[1]!, args[2]!), null, 2));
 } else if (['query', 'context'].includes(operation ?? '')) {
+  const result = await signalSearch(
+    { query: args.join(' '), save: 'never', cache: 'memory' },
+    { progress: (event) => process.stderr.write(`${event}\n`) },
+  );
+  console.log(
+    JSON.stringify(
+      operation === 'context'
+        ? searchEvidenceBundle(
+            result,
+            execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+          )
+        : result,
+      null,
+      2,
+    ),
+  );
+  if (['failed', 'not_configured'].includes(result.status)) process.exitCode = 1;
+} else if (operation === 'corpus-query') {
   const question = args.filter((arg) => arg !== '--model').join(' ');
   const options = (await loadPublicCorpus()).options;
   let model;
@@ -43,23 +64,11 @@ if (operation === 'curate') {
     }
   }
   const result = await researchQuery(options, question, {}, model);
-  if (operation === 'context')
-    console.log(
-      JSON.stringify(
-        {
-          result,
-          options: options.slice(0, 48),
-          next: 'Use the Signals research skill: interpret, fetch permitted primary evidence, draft findings, independent second review, then admit only high-signal public findings. Users supply questions, never review artifacts.',
-        },
-        null,
-        2,
-      ),
-    );
-  else {
+  {
     const saved = await saveQuery(result);
     console.log(JSON.stringify({ ...result, saved }, null, 2));
   }
 } else
   throw new Error(
-    'research query QUESTION [--model] | context QUESTION | admit DRAFT.json TYPE | history SNAPSHOT DATABASE TABLE',
+    'research query/context QUESTION | corpus-query QUESTION [--model] | admit DRAFT.json TYPE | history SNAPSHOT DATABASE TABLE',
   );

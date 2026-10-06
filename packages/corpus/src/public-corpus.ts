@@ -90,6 +90,7 @@ export async function loadPublicCorpus(
         if (legacy) throw new Error('Competing single-record and legacy manifest Corpus masters.');
         if (records.size >= 1000) throw new Error('Corpus exceeds record limit.');
         const file = relative(rootPath, path).replace(/\\/g, '/');
+        if (file.startsWith('entities/')) continue;
         records.set(file, await readPublicRecord(await readFile(path, 'utf8'), file));
       } else if (!legacy && !(directory === rootPath && entry.name === 'README.md')) {
         throw new Error('Unexpected Corpus file; drafts stay outside the public collection.');

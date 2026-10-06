@@ -40,7 +40,10 @@
     "verify": "bash scripts/verify.sh",
     "research": "node --import tsx scripts/research.ts",
     "test:local-query": "playwright test --config playwright.local-query.config.ts",
-    "eval:corpus": "node --import tsx scripts/evaluate-corpus.ts"
+    "eval:corpus": "node --import tsx scripts/evaluate-corpus.ts",
+    "signal-search": "node --import tsx scripts/signal-search.ts",
+    "start": "node --import tsx scripts/workbench.ts",
+    "discovery": "node --import tsx scripts/discovery.ts"
   },
   "dependencies": {
     "ajv": "8.20.0",
