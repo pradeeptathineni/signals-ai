@@ -102,6 +102,42 @@ const runner = (value: unknown): SearchRunner => ({
 });
 
 describe('live search contract and evidence policy', () => {
+  it('bounds the complete extraction payload and retains beginning/end coverage even with dense source anchors', async () => {
+    const input = proposal();
+    input.sources = Array.from({ length: 60 }, (_, index) => ({
+      ...input.sources[0]!,
+      uri: `https://example.com/source-${index}`,
+    }));
+    input.candidates[0]!.observations = input.sources.map((_, source) => ({
+      ...input.candidates[0]!.observations[0]!,
+      source,
+    }));
+    let captured: { text: string }[] = [];
+    await acceptDiscovery(
+      input,
+      { query: 'research', profile: 'wide' },
+      {
+        asOf: date,
+        fetch: async (uri) => ({
+          ...(await fetch(uri)),
+          text: `head sentinel ${'padding '.repeat(4000)} portable research tool ${'padding '.repeat(4000)} tail sentinel`,
+        }),
+        enrich: async (proposal, material) => {
+          captured = material;
+          return proposal;
+        },
+      },
+    );
+    expect(captured).toHaveLength(60);
+    expect(captured.reduce((sum, source) => sum + source.text.length, 0)).toBeLessThanOrEqual(
+      48000,
+    );
+    expect(
+      captured.every(
+        (source) => source.text.includes('head sentinel') && source.text.includes('tail sentinel'),
+      ),
+    ).toBe(true);
+  });
   it('retains a rejected extraction and its usage privately while withholding all preliminary credit', async () => {
     const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-extraction-receipt-')));
     const raw = {

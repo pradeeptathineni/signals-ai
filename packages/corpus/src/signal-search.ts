@@ -140,16 +140,20 @@ export async function acceptDiscovery(
           text.toLowerCase().lastIndexOf(candidate.name.toLowerCase()),
         ])
         .filter((location) => location >= 0);
-      const excerpts = [
+      const anchored = [
         ...[...new Set(locations)]
           .slice(0, 5)
           .map((location) => text.slice(Math.max(0, location - 100), location + 700)),
-        text.slice(0, Math.min(2000, allowance)),
-        text.slice(Math.floor(text.length / 2), Math.floor(text.length / 2) + 700),
-        text.slice(-700),
       ]
         .join(' … ')
-        .slice(0, allowance);
+        .slice(0, Math.floor(allowance * 0.4));
+      const remaining = Math.max(0, allowance - anchored.length - 40);
+      const width = Math.floor(remaining / 5);
+      const windows = Array.from({ length: 5 }, (_, index) => {
+        const start = Math.floor(((text.length - width) * index) / 4);
+        return text.slice(start, start + width);
+      });
+      const excerpts = [anchored, ...windows].filter(Boolean).join(' … ').slice(0, allowance);
       return [{ index, uri: source.uri, text: excerpts }];
     });
     try {
