@@ -1120,6 +1120,32 @@ describe('canonical saving and scheduling', () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+  it('reopens private history without allowing its private bytes into the corpus', async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-private-history-')));
+    try {
+      const result = await signalSearch(
+        { query: 'private history' },
+        { runner: runner(proposal()), fetch },
+      );
+      result.items[0]!.entity.description = 'Public documentation example: token=PLACEHOLDER';
+      await retainRun(result, root);
+      const path = join(root, '.signals/runs', `${result.runId}.json`);
+      const bytes = await readFile(path, 'utf8');
+      const reopened = await loadRun(result.runId, root);
+      expect(reopened.items[0]!.entity.description).toContain('token=PLACEHOLDER');
+      expect(await readFile(path, 'utf8')).toBe(bytes);
+      await expect(saveEntities(reopened.items, 'manual', root)).rejects.toThrow(
+        'private_entity_bytes',
+      );
+      const tampered = structuredClone(result);
+      tampered.runId = 'a0000000-0000-4000-8000-000000000001';
+      tampered.items[0]!.entity.id = entityIdentity('https://example.com/different');
+      await retainRun(tampered, root);
+      await expect(loadRun(tampered.runId, root)).rejects.toThrow('invalid_entity_identity');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
   it('manually saves low scores, preserves identity on retyping and rejects private/tampered bytes', async () => {
     const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-store-')));
     try {

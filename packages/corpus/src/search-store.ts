@@ -121,9 +121,13 @@ const entitySchema = Type.Object(
 const privatePattern =
   /(?:\/Users\/|\/home\/|file:\/\/|-----BEGIN .*PRIVATE KEY|\b(?:gh[pousr]_|github_pat_|sk-proj-)[A-Za-z0-9_-]{10,}|\b(?:password|api[_-]?key|secret|token)\s*[=:]\s*\S+)/i;
 export function validateEntity(input: unknown): Entity {
+  const entity = validateRetainedEntity(input);
+  if (privatePattern.test(JSON.stringify(entity))) throw new Error('private_entity_bytes');
+  return entity;
+}
+function validateRetainedEntity(input: unknown): Entity {
   if (!Value.Check(entitySchema, input)) throw new Error('invalid_entity_schema');
   const entity = input as unknown as Entity;
-  if (privatePattern.test(JSON.stringify(entity))) throw new Error('private_entity_bytes');
   if (entity.id !== entityIdentity(entity.uri)) throw new Error('invalid_entity_identity');
   const evidence = new Map(entity.evidence.map((source) => [source.id, source]));
   if (
@@ -685,7 +689,7 @@ export async function loadRun(
       item.entity.assessment.asOf,
       item.entity.assessment.policy,
     );
-    validateEntity(item.entity);
+    validateRetainedEntity(item.entity);
     Object.assign(item, saveDecision(item.entity, item.match, threshold));
   }
   return result;
