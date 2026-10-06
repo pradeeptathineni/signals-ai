@@ -24,7 +24,7 @@ const saveEntities: typeof saveNativeEntities = (items, mode, root, destination,
 import { dueSlot, runDueOnce } from './search-scheduler.js';
 import { defaultSettings, saveSettings, loadSettings } from './search-settings.js';
 import { normalizeText, normalizeSpan } from './search-fetch.js';
-import type { SearchRunner } from './search-runner.js';
+import { RunnerFailure, type SearchRunner } from './search-runner.js';
 import { searchEvidenceBundle } from './search-exchange.js';
 
 const date = '2026-10-05T00:00:00.000Z';
@@ -102,6 +102,23 @@ const runner = (value: unknown): SearchRunner => ({
 });
 
 describe('live search contract and evidence policy', () => {
+  it('preserves observed acquisition usage on a failed runner without inventing provider token counts', async () => {
+    const result = await signalSearch(
+      { query: 'Portable research' },
+      {
+        runner: {
+          ...runner(proposal()),
+          discover: async () => {
+            throw new RunnerFailure('budget_exhausted', 9, { provider: null });
+          },
+        },
+      },
+    );
+    expect(result.status).toBe('failed');
+    expect(result.usage.searches).toBe(9);
+    expect(result.usage.providerUsage).toEqual({ provider: null });
+    expect(result.usage.cost).toBeNull();
+  });
   it('exports actual native results through the frozen namespaced consumer contract without translating scores into confidence', async () => {
     const result = await signalSearch(
       { query: 'Portable research' },

@@ -13,7 +13,7 @@ import {
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
 import { assessEntity, filterSearchItems, saveDecision } from '../../domain/src/search-score.js';
 import { digest, fetchEvidence, normalizeText, normalizeSpan } from './search-fetch.js';
-import { codexRunner, type SearchRunner } from './search-runner.js';
+import { codexRunner, RunnerFailure, type SearchRunner } from './search-runner.js';
 import { privateCacheFetch } from './search-cache.js';
 import { atomicJson, saveEntities, retainRun } from './search-store.js';
 import { resolve } from 'node:path';
@@ -465,6 +465,10 @@ export async function signalSearch(
       base.persistence = { changed: saved.changed, skipped: saved.skipped, privateRun: false };
     }
   } catch (failure) {
+    if (failure instanceof RunnerFailure) {
+      base.usage.searches = failure.searches;
+      base.usage.providerUsage = failure.providerUsage;
+    }
     base.status = controller.signal.aborted ? 'cancelled' : 'failed';
     base.gaps.push(failure instanceof Error ? failure.message : 'search_failed');
   } finally {

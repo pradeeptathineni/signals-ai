@@ -38,7 +38,13 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
   const [followup, setFollowup] = useState(''),
     [answer, setAnswer] = useState<null | {
       answer: string;
-      statements: { entityId: string; evidenceId: string; statement: string }[];
+      statements: {
+        entityId: string;
+        evidenceId: string;
+        observationId: string;
+        statement: string;
+        quote: string;
+      }[];
     }>(null);
   const [history, setHistory] = useState('');
   const [answerBusy, setAnswerBusy] = useState(false);
@@ -1259,17 +1265,38 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                 </form>
                 {answer && (
                   <section>
-                    <p>{answer.answer}</p>
-                    <ul>
-                      {answer.statements.map((statement, index) => (
-                        <li key={index}>
-                          {statement.statement}{' '}
-                          <small>
-                            {statement.entityId} / {statement.evidenceId}
-                          </small>
-                        </li>
-                      ))}
-                    </ul>
+                    <p>
+                      {answer.answer.replace(/observation-[a-f0-9]{24}/g, (id) => {
+                        const index = answer.statements.findIndex(
+                          (statement) => statement.observationId === id,
+                        );
+                        return index >= 0 ? String(index + 1) : 'unbound reference';
+                      })}
+                    </p>
+                    <ol aria-label="Evidence used in answer">
+                      {answer.statements.map((statement) => {
+                        const entity = result.items.find(
+                          (item) => item.entity.id === statement.entityId,
+                        )?.entity;
+                        const source = entity?.evidence.find(
+                          (source) => source.id === statement.evidenceId,
+                        );
+                        return (
+                          <li key={statement.observationId}>
+                            {statement.statement}{' '}
+                            {source && (
+                              <a href={source.uri} target="_blank" rel="noreferrer">
+                                {entity?.name}: {source.title}
+                              </a>
+                            )}
+                            <details>
+                              <summary>Supporting span</summary>
+                              <blockquote>{statement.quote}</blockquote>
+                            </details>
+                          </li>
+                        );
+                      })}
+                    </ol>
                   </section>
                 )}
                 <a

@@ -54,14 +54,17 @@ export async function answerFromEvidence(
       controller.signal,
       () => {},
     );
+    if (!Value.Check(schema, response.proposal)) throw new Error('unbound_followup_output');
+    const answer = response.proposal;
     if (
-      !Value.Check(schema, response.proposal) ||
-      response.proposal.observations.some(
+      answer.observations.some(
         (id) => !material.some((statement) => statement.observationId === id),
+      ) ||
+      [...answer.answer.matchAll(/observation-[a-f0-9]{24}/g)].some(
+        (match) => !answer.observations.includes(match[0]),
       )
     )
       throw new Error('unbound_followup_output');
-    const answer = response.proposal;
     return {
       mode: 'frozen-evidence-model',
       answer: answer.answer,

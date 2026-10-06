@@ -18,6 +18,15 @@ import {
 } from '../../domain/src/search-contract.js';
 
 const exec = promisify(execFile);
+export class RunnerFailure extends Error {
+  constructor(
+    message: string,
+    public readonly searches: number,
+    public readonly providerUsage: unknown,
+  ) {
+    super(message);
+  }
+}
 export interface SearchRunner {
   evidenceClass?: 'configured-live' | 'fixture';
   readiness(): Promise<{
@@ -279,11 +288,25 @@ export function codexRunner(
             clearTimeout(timer);
             signal.removeEventListener('abort', abort);
             if (signal.aborted) {
-              reject(new Error('cancelled'));
+              reject(
+                new RunnerFailure('cancelled', searches, {
+                  provider: usage,
+                  model: selectedModel ?? 'host-default',
+                  effort: selectedEffort ?? 'host-default',
+                  direct,
+                }),
+              );
               return;
             }
             if (code !== 0 || !final) {
-              reject(new Error(`runner_failed:${output.slice(0, 300)}`));
+              reject(
+                new RunnerFailure(`runner_failed:${output.slice(0, 300)}`, searches, {
+                  provider: usage,
+                  model: selectedModel ?? 'host-default',
+                  effort: selectedEffort ?? 'host-default',
+                  direct,
+                }),
+              );
               return;
             }
             try {
@@ -336,6 +359,8 @@ export function codexRunner(
                             Type.Object(
                               {
                                 ...observationSchema.properties,
+                                statement: Type.String({ minLength: 1, maxLength: 240 }),
+                                quote: Type.String({ minLength: 1, maxLength: 160 }),
                                 feature: Type.Literal(feature),
                                 indicator: Type.Enum<string[]>([...values]),
                               },
