@@ -221,6 +221,7 @@ describe('live search contract and evidence policy', () => {
   it('decodes legacy spans with their original cleanup while requiring literal spans in text-v2', async () => {
     const item = (await acquired()).items[0]!;
     const observation = item.entity.observations[0]!;
+    delete observation.identityVersion;
     observation.quote = 'portable <legacy> research tool';
     Object.assign(
       observation,
@@ -240,6 +241,7 @@ describe('live search contract and evidence policy', () => {
       )
     ).items[0]!.entity;
     literal.observations[0]!.quote = observation.quote;
+    delete literal.observations[0]!.identityVersion;
     Object.assign(
       literal.observations[0]!,
       observationIdentity(
@@ -1123,6 +1125,36 @@ describe('canonical saving and scheduling', () => {
       record = (await loadEntities(join(root, 'signals/entities')))[0]!;
       expect(record.entity.assessment.score).toBe(0);
       expect(record.entity.evidence).toEqual(original.entity.evidence);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+  it('retains a narrowed claim as an immutable successor and rejects replay of its older wording', async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-claim-correction-')));
+    try {
+      const input = proposal();
+      input.candidates[0]!.observations[0]!.statement = 'Supports every research workflow.';
+      const original = (await acquired(input)).items[0]!;
+      await saveEntities([original], 'manual', root);
+      input.candidates[0]!.observations[0]!.statement = 'Describes a portable research tool.';
+      const corrected = (await acquired(input)).items[0]!;
+      await saveEntities([corrected], 'refresh', root);
+      let record = (await loadEntities(join(root, 'signals/entities')))[0]!;
+      expect(record.entity.observations).toHaveLength(2);
+      const successor = record.entity.observations.find((item) => item.supersedes.length)!;
+      expect(successor.statement).toBe('Describes a portable research tool.');
+      expect(successor.supersedes).toEqual([original.entity.observations[0]!.id]);
+      expect(record.entity.evidence).toEqual(original.entity.evidence);
+      expect((await saveEntities([corrected], 'refresh', root)).changed).toHaveLength(0);
+      await saveEntities([original], 'refresh', root);
+      record = (await loadEntities(join(root, 'signals/entities')))[0]!;
+      expect(record.entity.observations).toHaveLength(2);
+      expect(record.entity.observations.find((item) => item.supersedes.length)!.statement).toBe(
+        successor.statement,
+      );
+      const tampered = structuredClone(corrected.entity);
+      tampered.observations[0]!.statement = 'A different unbound claim.';
+      expect(() => validateEntity(tampered)).toThrow('forged_observation_identity');
     } finally {
       await rm(root, { recursive: true, force: true });
     }

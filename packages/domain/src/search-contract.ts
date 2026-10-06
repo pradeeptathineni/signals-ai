@@ -157,6 +157,7 @@ export interface Entity extends Omit<Candidate, 'observations' | 'match'> {
   currentChecks?: Record<string, string>;
   observations: (Omit<Observation, 'source'> & {
     id: string;
+    identityVersion?: 2;
     basisId: string;
     supersedes: string[];
     evidenceId: string;

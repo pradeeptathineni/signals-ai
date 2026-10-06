@@ -32,7 +32,9 @@ export function entityIdentity(uri: string) {
 export function observationIdentity(
   entityId: string,
   evidenceId: string,
-  observation: Omit<Proposal['candidates'][number]['observations'][number], 'source'>,
+  observation: Omit<Proposal['candidates'][number]['observations'][number], 'source'> & {
+    identityVersion?: 2;
+  },
   basisEvidenceId = evidenceId,
   literal = false,
 ) {
@@ -40,7 +42,7 @@ export function observationIdentity(
   const basisId = `basis-${digest(`${entityId}:${basisEvidenceId}:${observation.feature}:${quote.toLowerCase()}`).slice(0, 24)}`;
   return {
     basisId,
-    id: `observation-${digest(`${basisId}:${observation.indicator}:${observation.status}:${observation.independent}:${observation.origin.trim().toLowerCase()}${basisEvidenceId === evidenceId ? '' : `:${evidenceId}`}${observation.attention ? `:${observation.attention.metric}:${observation.attention.value}` : ''}`).slice(0, 24)}`,
+    id: `observation-${digest(`${basisId}:${observation.indicator}:${observation.status}:${observation.independent}:${observation.origin.trim().toLowerCase()}${basisEvidenceId === evidenceId ? '' : `:${evidenceId}`}${observation.attention ? `:${observation.attention.metric}:${observation.attention.value}` : ''}${observation.identityVersion === 2 ? `:claim-v2:${normalizeSpan(observation.statement).toLowerCase()}` : ''}`).slice(0, 24)}`,
   };
 }
 
@@ -228,10 +230,11 @@ export async function acceptDiscovery(
           source.excerpt.toLowerCase().includes(quote.toLowerCase());
         return {
           ...fields,
+          identityVersion: 2 as const,
           ...observationIdentity(
             id,
             source.id,
-            observation,
+            { ...observation, identityVersion: 2 },
             source.excerptDigest
               ? `evidence-${digest(`${source.uri}:${source.digest}${source.normalizer ? `:${source.normalizer}` : ''}`).slice(0, 24)}`
               : source.id,

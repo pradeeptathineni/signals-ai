@@ -56,6 +56,7 @@ const entitySchema = Type.Object(
           ...observationSchema.properties,
           source: Type.Optional(observationSchema.properties.source),
           id: Type.String(),
+          identityVersion: Type.Optional(Type.Literal(2)),
           basisId: Type.String(),
           supersedes: Type.Array(Type.String(), { maxItems: 1000 }),
           derivation: Type.Literal('model-assessment'),
@@ -430,6 +431,7 @@ function mergeEntity(prior: Entity, incoming: Entity): Entity {
       item.origin.trim().toLowerCase(),
       item.attention?.metric ?? '',
       item.attention?.value ?? '',
+      normalizeSpan(item.statement).toLowerCase(),
     ].join(':');
   const successors = incoming.observations
     .filter((observation) => {
