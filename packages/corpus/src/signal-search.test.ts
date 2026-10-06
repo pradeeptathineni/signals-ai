@@ -102,6 +102,49 @@ const runner = (value: unknown): SearchRunner => ({
 });
 
 describe('live search contract and evidence policy', () => {
+  it('uses fixed capped attention anchors and rejects counts absent from their evidence without changing old policy replay', async () => {
+    const measured = async (count: number) => {
+      const input = proposal();
+      input.candidates[0]!.observations.push({
+        ...input.candidates[0]!.observations[0]!,
+        feature: 'adoption',
+        indicator: 'attention',
+        quote: `Repository has ${count} stars`,
+        attention: { metric: 'stars', value: count },
+      });
+      return (
+        await acceptDiscovery(
+          input,
+          { query: 'research' },
+          {
+            asOf: date,
+            fetch: async (uri) => ({
+              ...(await fetch(uri)),
+              text: `A portable research tool. Repository has ${count} stars`,
+            }),
+          },
+        )
+      ).items[0]!.entity;
+    };
+    const zero = await measured(0),
+      low = await measured(10),
+      high = await measured(10000),
+      huge = await measured(1000000);
+    expect(zero.assessment.features.adoption!.value).toBe(0);
+    expect(low.assessment.features.adoption!.value).toBeLessThan(
+      high.assessment.features.adoption!.value,
+    );
+    expect(high.assessment.features.adoption!.contribution).toBe(5);
+    expect(huge.assessment.features.adoption!.contribution).toBe(5);
+    expect(assessEntity(low, date, 'signal-strength-v3').features.adoption!.contribution).toBe(5);
+    expect(high.assessment.score).toBeLessThan(75);
+    validateEntity(low);
+    low.observations.find((item) => item.attention)!.attention!.value = 1000000;
+    expect(() => validateEntity(low)).toThrow('unbound_attention_count');
+    const unbound = proposal();
+    unbound.candidates[0]!.observations[0]!.attention = { metric: 'stars', value: 10000 };
+    await expect(acquired(unbound)).rejects.toThrow('unbound_attention_count');
+  });
   it('decodes legacy spans with their original cleanup while requiring literal spans in text-v2', async () => {
     const item = (await acquired()).items[0]!;
     const observation = item.entity.observations[0]!;

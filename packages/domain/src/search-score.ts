@@ -16,6 +16,13 @@ const standardWeights = {
   authority: 40,
   verification: 10,
 };
+const attentionAnchors = {
+  stars: 10000,
+  forks: 1000,
+  downloads: 1000000,
+  points: 1000,
+  mentions: 10,
+};
 const bands: Record<string, Record<string, number>> = {
   adoption: {
     attention: 0.25,
@@ -62,26 +69,26 @@ export function activeEvidenceIds(entity: Pick<Entity, 'evidence' | 'currentEvid
 }
 export function activeObservations(
   entity: Pick<Entity, 'evidence' | 'currentEvidence' | 'observations'>,
-  policy: Assessment['policy'] = 'signal-strength-v3',
+  policy: Assessment['policy'] = 'signal-strength-v4',
 ) {
   const evidence =
     policy === 'signal-strength-v0'
       ? new Set(entity.evidence.map((source) => source.id))
       : activeEvidenceIds(entity);
-  if (policy === 'signal-strength-v2' || policy === 'signal-strength-v3') {
+  if (['signal-strength-v2', 'signal-strength-v3', 'signal-strength-v4'].includes(policy)) {
     const physical = new Set(
       entity.evidence
         .filter((source) => evidence.has(source.id))
         .map(
           (source) =>
-            `${source.uri}:${source.digest}${policy === 'signal-strength-v3' ? `:${source.normalizer ?? 'legacy'}` : ''}`,
+            `${source.uri}:${source.digest}${policy !== 'signal-strength-v2' ? `:${source.normalizer ?? 'legacy'}` : ''}`,
         ),
     );
     entity.evidence.forEach((source) => {
       if (
         source.digest &&
         physical.has(
-          `${source.uri}:${source.digest}${policy === 'signal-strength-v3' ? `:${source.normalizer ?? 'legacy'}` : ''}`,
+          `${source.uri}:${source.digest}${policy !== 'signal-strength-v2' ? `:${source.normalizer ?? 'legacy'}` : ''}`,
         )
       )
         evidence.add(source.id);
@@ -126,7 +133,7 @@ export function assessEntity(
     'observations' | 'evidence' | 'kind' | 'identity' | 'currentEvidence' | 'currentChecks' | 'uri'
   >,
   asOf: string,
-  policy: Assessment['policy'] = 'signal-strength-v3',
+  policy: Assessment['policy'] = 'signal-strength-v4',
 ): Assessment {
   if (!Number.isFinite(Date.parse(asOf))) throw new Error('invalid_assessment_date');
   const active = activeObservations(entity, policy);
@@ -139,7 +146,7 @@ export function assessEntity(
     const age =
       (Date.parse(asOf) -
         Date.parse(
-          (policy === 'signal-strength-v2' || policy === 'signal-strength-v3'
+          (['signal-strength-v2', 'signal-strength-v3', 'signal-strength-v4'].includes(policy)
             ? entity.currentChecks?.[source.uri]
             : undefined) ?? source.fetchedAt,
         )) /
@@ -197,7 +204,7 @@ export function assessEntity(
   );
   const independentOrigin = (evidenceId: string) => {
     const source = entity.evidence.find((item) => item.id === evidenceId)!;
-    return (policy === 'signal-strength-v3'
+    return (policy === 'signal-strength-v3' || policy === 'signal-strength-v4'
       ? !ownGroups.has(groups.get(source.id))
       : source.family !== 'primary') && source.origin.trim().toLowerCase() !== 'unknown'
       ? groups.get(source.id)
@@ -228,7 +235,22 @@ export function assessEntity(
     } else if (feature === 'maturity') {
       value = new Set(observations.map((item) => item.indicator)).size / 4;
     } else {
-      value = Math.max(0, ...observations.map((item) => bands[feature]?.[item.indicator] ?? 0));
+      value = Math.max(
+        0,
+        ...observations.map((item) =>
+          policy === 'signal-strength-v4' &&
+          feature === 'adoption' &&
+          item.indicator === 'attention' &&
+          item.attention
+            ? 0.25 *
+              Math.min(
+                1,
+                Math.log1p(item.attention.value) /
+                  Math.log1p(attentionAnchors[item.attention.metric]),
+              )
+            : (bands[feature]?.[item.indicator] ?? 0),
+        ),
+      );
       if (
         feature === 'authority' &&
         entity.kind === 'standard' &&

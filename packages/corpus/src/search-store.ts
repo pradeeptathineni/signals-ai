@@ -20,6 +20,7 @@ import {
   observationSchema,
   proposalSchema,
   indicators,
+  attentionBound,
   type Entity,
   type SearchItem,
   type SearchResult,
@@ -89,6 +90,7 @@ const entitySchema = Type.Object(
           'signal-strength-v1',
           'signal-strength-v2',
           'signal-strength-v3',
+          'signal-strength-v4',
         ]),
         asOf: Type.String(),
         score: Type.Union([Type.Integer({ minimum: 0, maximum: 100 }), Type.Null()]),
@@ -166,6 +168,7 @@ export function validateEntity(input: unknown): Entity {
     )
       throw new Error('invalid_observation_indicator');
     const source = evidence.get(observation.evidenceId)!;
+    if (!attentionBound(observation)) throw new Error('unbound_attention_count');
     const normalize = source.normalizer === 'text-v2' ? normalizeSpan : normalizeText;
     const quote = normalize(observation.quote);
     const rawIdentity = source.excerptDigest
@@ -420,7 +423,14 @@ function mergeEntity(prior: Entity, incoming: Entity): Entity {
   ].sort((a, b) => a.id.localeCompare(b.id));
   const superseded = new Set(prior.observations.flatMap((item) => item.supersedes));
   const judgment = (item: Entity['observations'][number]) =>
-    [item.indicator, item.status, item.independent, item.origin.trim().toLowerCase()].join(':');
+    [
+      item.indicator,
+      item.status,
+      item.independent,
+      item.origin.trim().toLowerCase(),
+      item.attention?.metric ?? '',
+      item.attention?.value ?? '',
+    ].join(':');
   const successors = incoming.observations
     .filter((observation) => {
       const history = prior.observations.filter((old) => old.basisId === observation.basisId);

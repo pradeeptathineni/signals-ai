@@ -40,7 +40,7 @@ export function observationIdentity(
   const basisId = `basis-${digest(`${entityId}:${basisEvidenceId}:${observation.feature}:${quote.toLowerCase()}`).slice(0, 24)}`;
   return {
     basisId,
-    id: `observation-${digest(`${basisId}:${observation.indicator}:${observation.status}:${observation.independent}:${observation.origin.trim().toLowerCase()}${basisEvidenceId === evidenceId ? '' : `:${evidenceId}`}`).slice(0, 24)}`,
+    id: `observation-${digest(`${basisId}:${observation.indicator}:${observation.status}:${observation.independent}:${observation.origin.trim().toLowerCase()}${basisEvidenceId === evidenceId ? '' : `:${evidenceId}`}${observation.attention ? `:${observation.attention.metric}:${observation.attention.value}` : ''}`).slice(0, 24)}`,
   };
 }
 

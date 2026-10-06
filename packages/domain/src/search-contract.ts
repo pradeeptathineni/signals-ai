@@ -30,6 +30,15 @@ export const observationSchema = Type.Object(
     independent: Type.Boolean(),
     origin: label,
     status: enumOf(['supported', 'contradicted', 'uncertain']),
+    attention: Type.Optional(
+      Type.Object(
+        {
+          metric: enumOf(['stars', 'forks', 'downloads', 'points', 'mentions']),
+          value: Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER }),
+        },
+        closed,
+      ),
+    ),
   },
   closed,
 );
@@ -158,7 +167,12 @@ export interface Entity extends Omit<Candidate, 'observations' | 'match'> {
   assessment: Assessment;
 }
 export interface Assessment {
-  policy: 'signal-strength-v0' | 'signal-strength-v1' | 'signal-strength-v2' | 'signal-strength-v3';
+  policy:
+    | 'signal-strength-v0'
+    | 'signal-strength-v1'
+    | 'signal-strength-v2'
+    | 'signal-strength-v3'
+    | 'signal-strength-v4';
   asOf: string;
   score: number | null;
   features: Record<
@@ -218,6 +232,7 @@ export function parseProposal(input: unknown): Proposal {
   if (unique.size !== proposal.coverage.length) throw new Error('duplicate_coverage');
   for (const candidate of proposal.candidates) {
     for (const observation of candidate.observations) {
+      if (!attentionBound(observation)) throw new Error('unbound_attention_count');
       if (
         !proposal.sources[observation.source] ||
         !Object.hasOwn(indicators, observation.feature) ||
@@ -231,4 +246,16 @@ export function parseProposal(input: unknown): Proposal {
       throw new Error('invalid_match_binding');
   }
   return proposal;
+}
+export function attentionBound(
+  observation: Pick<Observation, 'attention' | 'quote' | 'feature' | 'indicator'>,
+) {
+  return (
+    !observation.attention ||
+    (observation.feature === 'adoption' &&
+      observation.indicator === 'attention' &&
+      (observation.quote.match(/\d+(?:[,_]\d{3})*/g) ?? []).some(
+        (number) => Number(number.replace(/[,_]/g, '')) === observation.attention!.value,
+      ))
+  );
 }
