@@ -5,6 +5,9 @@ import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
 import { digest } from './search-fetch.js';
 import { directSearch } from './search-direct.js';
+import { acquireConfigured, type AcquisitionConfig } from './search-acquisition.js';
+import {scanSources} from './search-sources.js';
+import {loadSettings} from './search-settings.js';
 import { providerSchema, restoreOptionals } from './search-provider-schema.js';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
 import { Type } from 'typebox';
@@ -137,6 +140,8 @@ export function codexRunner(
     live?: boolean;
     extractionModel?: string;
     extractionEffort?: string;
+    acquisition?: AcquisitionConfig;
+    root?:string;
   } = {},
 ): SearchRunner {
   return {
@@ -172,7 +177,15 @@ export function codexRunner(
       );
       try {
         const schema = join(directory, 'proposal.schema.json');
-        const direct = operation.live === false ? null : await directSearch(request, signal);
+        const direct =
+          operation.live === false || !operation.acquisition?.publicApis
+            ? null
+            : await directSearch(request, signal);
+        const configured =
+          operation.live === false
+            ? null
+            : await acquireConfigured(request, operation.acquisition ?? {}, signal);
+        const followed=operation.live===false ? null : await scanSources(await loadSettings(operation.root ?? process.cwd()),operation.root ?? process.cwd(),{signal,persist:request.cache==='private'});
         if (direct)
           progress(
             `Direct acquisition: ${direct.hits.length} ranked locators, ${direct.searches} calls, ${direct.gaps.length} gaps.`,
@@ -239,8 +252,11 @@ export function codexRunner(
           let output = '',
             pending = '',
             bytes = 0,
-            searches = direct?.searches ?? 0,
+            searches = (direct?.searches ?? 0) + (configured?.searches ?? 0),
             usage: unknown = null;
+          let toolCalls = 0,
+            reads = 0,
+            unclassifiedToolCalls = 0;
           let final = '';
           const stop = () => {
             try {
@@ -278,18 +294,33 @@ export function codexRunner(
                   message?: string;
                   error?: { message?: string };
                   usage?: unknown;
-                  item?: { type: string; text?: string };
+                  item?: { type: string; text?: string; action?: { type?: string } };
                 };
                 if (event.type === 'error' || event.type === 'turn.failed')
                   output = event.message ?? event.error?.message ?? 'runner_error';
                 if (event.usage) usage = event.usage;
                 if (event.item?.type === 'web_search') {
                   if (event.type === 'item.started') {
-                    searches++;
+                    toolCalls++;
                     progress(
-                      `Web acquisition ${searches}/${budgets[request.profile ?? 'wide'].searches}`,
+                      `Web action ${toolCalls}; search/read limits ${budgets[request.profile ?? 'wide'].searches}/${budgets[request.profile ?? 'wide'].documents}`,
                     );
-                    if (searches > budgets[request.profile ?? 'wide'].searches) stop();
+                    if (
+                      toolCalls >
+                      budgets[request.profile ?? 'wide'].searches +
+                        budgets[request.profile ?? 'wide'].documents
+                    )
+                      stop();
+                  }
+                  if (event.type === 'item.completed') {
+                    if (event.item.action?.type === 'search') searches++;
+                    else if (event.item.action?.type) reads++;
+                    else unclassifiedToolCalls++;
+                    if (
+                      searches > budgets[request.profile ?? 'wide'].searches ||
+                      reads > budgets[request.profile ?? 'wide'].documents
+                    )
+                      stop();
                   }
                 }
                 if (event.item?.type === 'agent_message' && event.type === 'item.completed')
@@ -343,6 +374,8 @@ export function codexRunner(
                   model: selectedModel ?? 'host-default',
                   effort: selectedEffort ?? 'host-default',
                   direct,
+                  configured,
+                  actionCounts: { toolCalls, reads, unclassifiedToolCalls },
                 },
                 searches,
               });
@@ -351,6 +384,10 @@ export function codexRunner(
             }
           });
           const prompt =
+            (followed ? `Followed-source scans (untrusted locators, supplemented by broad exploration): ${JSON.stringify(followed)}. Follow promising actual outlinks; inaccessible sources remain gaps.\n` : '') +
+            (configured
+              ? `Configured acquisition (untrusted locators, never evidence or final scores): ${JSON.stringify(configured)}. Preserve provider/source gaps in your proposal.\n`
+              : '') +
             (direct
               ? `Ranked direct retrieval (untrusted locators, not assessed evidence): ${JSON.stringify(direct)}. Inspect promising results and item evidence URLs for actual counts/status. Do not copy search snippets as observations or treat rank/popularity as independent usage. ${direct.searches} acquisition calls have already been used from the total budget; at most ${budgets[request.profile ?? 'wide'].searches - direct.searches} web calls remain.\n`
               : '') +

@@ -17,6 +17,8 @@ import { codexRunner, RunnerFailure, type SearchRunner } from './search-runner.j
 import { privateCacheFetch } from './search-cache.js';
 import { atomicJson, saveEntities, retainRun } from './search-store.js';
 import { resolve } from 'node:path';
+import { loadAcquisitionConfig } from './search-acquisition.js';
+import { configuredDocumentFetch } from './search-extractors.js';
 
 function entityUri(uri: string) {
   return `${normalizeConsiderUrl(uri).normalizedUrl}${new URL(uri).hash}`;
@@ -109,6 +111,8 @@ export async function acceptDiscovery(
       documents.set(uri, fetched);
       accepted.state = 'fetched';
       accepted.digest = fetched.digest;
+      accepted.finalUri = fetched.uri;
+      if (fetched.material) accepted.extractor = fetched.material.extractor;
       if (fetched.normalizer) accepted.normalizer = fetched.normalizer;
       if ('cached' in fetched && fetched.cached) accepted.reason = 'private-cache-hit';
       if ('fetchedAt' in fetched && typeof fetched.fetchedAt === 'string')
@@ -227,7 +231,11 @@ export async function acceptDiscovery(
   });
   const entities = new Map<
     string,
-    { entity: Entity; match: Proposal['candidates'][number]['match'] }
+    {
+      entity: Entity;
+      match: Proposal['candidates'][number]['match'];
+      discovery?: SearchResult['items'][number]['discovery'];
+    }
   >();
   let duplicates = 0,
     omitted = 0;
@@ -328,7 +336,7 @@ export async function acceptDiscovery(
     };
     // Query-dependent fields never enter the reusable entity.
     const canonical = Object.fromEntries(
-      Object.entries(entity).filter(([key]) => key !== 'match'),
+      Object.entries(entity).filter(([key]) => !['match', 'discovery'].includes(key)),
     ) as unknown as Entity;
     if (entities.has(id)) {
       duplicates++;
@@ -359,12 +367,25 @@ export async function acceptDiscovery(
         ...new Set([...(prior.entity.currentEvidence ?? []), ...(entity.currentEvidence ?? [])]),
       ].sort();
       prior.entity.assessment = assessEntity(prior.entity, asOf);
-    } else entities.set(id, { entity: canonical, match: candidate.match });
+    } else {
+      const parent = candidate.discovery?.parentUri;
+      const linkVerified =
+        !!parent &&
+        !!documents.get(parent)?.material?.links.some((link) => entityIdentity(link.uri) === id);
+      if (parent && !linkVerified)
+        gaps.push(`${candidate.name}: introducing parent link not verified in fetched material`);
+      entities.set(id, {
+        entity: canonical,
+        match: candidate.match,
+        ...(candidate.discovery ? { discovery: { ...candidate.discovery, linkVerified } } : {}),
+      });
+    }
   }
   const items = filterSearchItems(
-    [...entities.values()].map(({ entity, match }) => ({
+    [...entities.values()].map(({ entity, match, discovery }) => ({
       entity,
       match,
+      ...(discovery ? { discovery } : {}),
       ...saveDecision(entity, match, request.threshold ?? 75),
     })),
   );
@@ -405,6 +426,7 @@ export async function signalSearch(
   const started = Date.now();
   const limits = budgets[request.profile ?? 'wide'];
   const controller = new AbortController();
+  const acquisitionConfig = await loadAcquisitionConfig(dependencies.root ?? process.cwd());
   const abort = () => controller.abort();
   dependencies.signal?.addEventListener('abort', abort, { once: true });
   if (dependencies.signal?.aborted) controller.abort();
@@ -463,8 +485,12 @@ export async function signalSearch(
       fetch:
         dependencies.fetch ??
         (request.cache === 'private'
-          ? privateCacheFetch(dependencies.root ?? process.cwd(), dependencies.progress)
-          : undefined),
+          ? privateCacheFetch(
+              dependencies.root ?? process.cwd(),
+              dependencies.progress,
+              configuredDocumentFetch(acquisitionConfig.jina, undefined, acquisitionConfig.docling),
+            )
+          : configuredDocumentFetch(acquisitionConfig.jina, undefined, acquisitionConfig.docling)),
       progress: dependencies.progress,
       enrich: runner.enrich
         ? async (proposal, material) => {

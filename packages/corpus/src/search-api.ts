@@ -8,6 +8,7 @@ import { parseRequest, type SearchResult } from '../../domain/src/search-contrac
 import { signalSearch } from './signal-search.js';
 import { directSearch } from './search-direct.js';
 import { codexRunner } from './search-runner.js';
+import { loadAcquisitionConfig } from './search-acquisition.js';
 import { loadSettings, saveSettings } from './search-settings.js';
 import {
   loadEntities,
@@ -245,6 +246,8 @@ export function searchApi(root = process.cwd(), search = signalSearch, locate = 
           {
             root,
             runner: codexRunner(settings.model || undefined, settings.effort || undefined, {
+              root,
+              acquisition: await loadAcquisitionConfig(root),
               extractionModel: settings.extractionModel || undefined,
               extractionEffort: settings.extractionEffort || undefined,
             }),

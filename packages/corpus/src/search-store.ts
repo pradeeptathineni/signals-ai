@@ -41,6 +41,7 @@ const feature = Type.Object(
 );
 const properties = { ...candidateSchema.properties };
 delete (properties as Partial<typeof properties>).match;
+delete (properties as Partial<typeof properties>).discovery;
 const entitySchema = Type.Object(
   {
     ...properties,
@@ -76,6 +77,8 @@ const entitySchema = Type.Object(
           digest: Type.Union([Type.String(), Type.Null()]),
           excerptDigest: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$' })),
           normalizer: Type.Optional(Type.Literal('text-v2')),
+          finalUri: Type.Optional(Type.String({ maxLength: 2048 })),
+          extractor: Type.Optional(Type.String({ maxLength: 100 })),
           state: Type.Enum(['fetched', 'failed', 'denied']),
           reason: Type.String(),
           excerpt: Type.String({ maxLength: 12000 }),

@@ -2,6 +2,7 @@ import { lookup } from 'node:dns/promises';
 import { request } from 'node:https';
 import { createHash } from 'node:crypto';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
+import { extractHtml, extractFeed, type DocumentMaterial } from './search-document.js';
 
 export const digest = (value: string) => createHash('sha256').update(value).digest('hex');
 export const normalizeSpan = (value: string) => value.replace(/\s+/g, ' ').trim();
@@ -55,7 +56,16 @@ export async function fetchEvidence(
   input: string,
   signal?: AbortSignal,
   redirects = 0,
-): Promise<{ text: string; digest: string; uri: string; json?: unknown; normalizer?: 'text-v2' }> {
+  allowPdf = false,
+): Promise<{
+  text: string;
+  digest: string;
+  uri: string;
+  json?: unknown;
+  normalizer?: 'text-v2';
+  material?: DocumentMaterial;
+  bytes?: Buffer;
+}> {
   const { url, address } = await resolvePublicUrl(input);
   return new Promise((resolve, reject) => {
     const req = request(
@@ -80,6 +90,7 @@ export async function fetchEvidence(
             new URL(response.headers.location, url).toString(),
             signal,
             redirects + 1,
+            allowPdf,
           ).then(resolve, reject);
           return;
         }
@@ -95,6 +106,7 @@ export async function fetchEvidence(
           return;
         }
         if (
+          !(allowPdf && /application\/pdf/i.test(response.headers['content-type'] ?? '')) &&
           !/text\/|application\/(?:json|(?:[\w.-]+\+)?xml)/i.test(
             response.headers['content-type'] ?? '',
           )
@@ -116,21 +128,38 @@ export async function fetchEvidence(
         response.on('error', reject);
         response.on('end', () => {
           const raw = Buffer.concat(chunks).toString('utf8');
-          try {
-            resolve({
-              text: /html|xml/i.test(response.headers['content-type'] ?? '')
-                ? normalizeText(raw)
-                : normalizeSpan(raw),
-              digest: digest(raw),
-              uri: url.toString(),
-              normalizer: 'text-v2',
-              ...(/application\/json/i.test(response.headers['content-type'] ?? '')
-                ? { json: JSON.parse(raw) as unknown }
-                : {}),
-            });
-          } catch {
-            reject(new Error('invalid_source_json'));
-          }
+          void (async () => {
+            try {
+              const contentType = response.headers['content-type'] ?? '';
+              if (/application\/pdf/i.test(contentType)) {
+                const bytes = Buffer.concat(chunks);
+                resolve({
+                  text: '',
+                  digest: createHash('sha256').update(bytes).digest('hex'),
+                  uri: url.toString(),
+                  bytes,
+                });
+                return;
+              }
+              const material = /html/i.test(contentType)
+                ? extractHtml(raw, url.toString())
+                : /xml/i.test(contentType)
+                  ? await extractFeed(raw, url.toString())
+                  : undefined;
+              resolve({
+                text: material?.text ?? normalizeSpan(raw),
+                digest: digest(raw),
+                uri: url.toString(),
+                normalizer: 'text-v2',
+                ...(material ? { material } : {}),
+                ...(/application\/json/i.test(response.headers['content-type'] ?? '')
+                  ? { json: JSON.parse(raw) as unknown }
+                  : {}),
+              });
+            } catch (error) {
+              reject(error instanceof Error ? error : new Error('invalid_source_document'));
+            }
+          })();
         });
       },
     );

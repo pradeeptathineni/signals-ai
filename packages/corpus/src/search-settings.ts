@@ -20,6 +20,23 @@ const settingsSchema = Type.Object(
     destination: Type.Enum(['public', 'private']),
     publication: Type.Enum(['local-only', 'reviewed-push', 'unattended']),
     sources: Type.Array(Type.Enum(channels), { minItems: 1, maxItems: 12, uniqueItems: true }),
+    followedSources: Type.Optional(
+      Type.Array(
+        Type.Object(
+          {
+            uri: Type.String({ maxLength: 2048 }),
+            label: Type.String({ minLength: 1, maxLength: 200 }),
+            enabled: Type.Boolean(),
+            interests: Type.Array(Type.String({ maxLength: 80 }), {
+              maxItems: 30,
+              uniqueItems: true,
+            }),
+          },
+          closed,
+        ),
+        { maxItems: 50 },
+      ),
+    ),
     supplementalSites: Type.Optional(
       Type.Array(Type.String({ maxLength: 2048 }), { maxItems: 20, uniqueItems: true }),
     ),
@@ -80,6 +97,16 @@ export const defaultSettings: SearchSettings = {
 function validateSettings(input: unknown) {
   if (!Value.Check(settingsSchema, input)) throw new Error('invalid_settings');
   const settings = structuredClone(input);
+  for (const source of settings.followedSources ?? [])
+    source.uri = parseRequest({
+      query: 'Validate followed source',
+      supplementalSites: [source.uri],
+    }).supplementalSites![0]!;
+  if (
+    new Set((settings.followedSources ?? []).map((source) => source.uri)).size !==
+    (settings.followedSources ?? []).length
+  )
+    throw new Error('duplicate_followed_source');
   settings.supplementalSites = parseRequest({
     query: 'Validate search scopes',
     supplementalSites: settings.supplementalSites,

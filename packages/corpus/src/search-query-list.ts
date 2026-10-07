@@ -7,6 +7,7 @@ import { loadSettings, type SearchSettings } from './search-settings.js';
 import { atomicJson, retainRun, saveEntities, withWriter } from './search-store.js';
 import { signalSearch } from './signal-search.js';
 import { codexRunner } from './search-runner.js';
+import { loadAcquisitionConfig } from './search-acquisition.js';
 import { parseRequest, budgets } from '../../domain/src/search-contract.js';
 
 const batchSchema = Type.Object(
@@ -217,6 +218,8 @@ async function executeBatch(options: BatchOptions, batchId: string) {
         {
           root,
           runner: codexRunner(settings.model || undefined, settings.effort || undefined, {
+            root,
+            acquisition: await loadAcquisitionConfig(root),
             extractionModel: settings.extractionModel || undefined,
             extractionEffort: settings.extractionEffort || undefined,
           }),

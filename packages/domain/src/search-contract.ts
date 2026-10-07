@@ -89,6 +89,23 @@ export const candidateSchema = Type.Object(
       closed,
     ),
     limits: Type.Array(text, { maxItems: 30 }),
+    discovery: Type.Optional(
+      Type.Object(
+        {
+          introducedBy: enumOf([
+            'user-seeded',
+            'model-nominated',
+            'unseeded-query',
+            'hub-discovered',
+            'followed-source',
+            'unknown',
+          ]),
+          parentUri: Type.Optional(Type.String({ maxLength: 2048 })),
+          query: Type.Optional(Type.String({ maxLength: 2000 })),
+        },
+        closed,
+      ),
+    ),
   },
   closed,
 );
@@ -103,6 +120,17 @@ export const proposalSchema = Type.Object(
           family: enumOf(channels),
           publishedAt: Type.Union([Type.String({ maxLength: 40 }), Type.Null()]),
           origin: label,
+          role: Type.Optional(
+            enumOf([
+              'primary',
+              'hub',
+              'community',
+              'practitioner',
+              'registry',
+              'scholarly',
+              'counterevidence',
+            ]),
+          ),
         },
         closed,
       ),
@@ -182,6 +210,8 @@ export type Source = Proposal['sources'][number] & {
   state: 'fetched' | 'failed' | 'denied';
   reason: string;
   excerpt: string;
+  finalUri?: string;
+  extractor?: string;
 };
 export interface Entity extends Omit<Candidate, 'observations' | 'match'> {
   id: string;
@@ -230,6 +260,7 @@ export interface SearchItem {
   match: Candidate['match'];
   eligible: boolean;
   reasons: string[];
+  discovery?: Candidate['discovery'] & { linkVerified: boolean };
 }
 export interface SearchResult {
   schemaVersion: 2;

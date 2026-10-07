@@ -16,6 +16,7 @@ import {
 } from './search-store.js';
 import { signalSearch } from './signal-search.js';
 import { codexRunner } from './search-runner.js';
+import { loadAcquisitionConfig } from './search-acquisition.js';
 import { digest } from './search-fetch.js';
 import { publicationReadiness, publishCorpus } from './search-publish.js';
 
@@ -212,6 +213,8 @@ export async function runDueOnce(
         result = await (options.search ?? signalSearch)(job.request, {
           root,
           runner: codexRunner(settings.model || undefined, settings.effort || undefined, {
+            root,
+            acquisition: await loadAcquisitionConfig(root),
             extractionModel: settings.extractionModel || undefined,
             extractionEffort: settings.extractionEffort || undefined,
           }),

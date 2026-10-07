@@ -8,6 +8,7 @@ import { retainRun, saveEntities } from '../packages/corpus/src/search-store.js'
 import { randomUUID } from 'node:crypto';
 import { directSearch } from '../packages/corpus/src/search-direct.js';
 import type { SearchResult } from '../packages/domain/src/search-contract.js';
+import { loadAcquisitionConfig } from '../packages/corpus/src/search-acquisition.js';
 
 const { values } = parseArgs({
   options: {
@@ -81,6 +82,8 @@ try {
         }
       : await signalSearch(request, {
           runner: codexRunner(values.model, values.effort, {
+            root: process.cwd(),
+            acquisition: await loadAcquisitionConfig(process.cwd()),
             extractionModel: values['extract-model'],
             extractionEffort: values['extract-effort'],
           }),
