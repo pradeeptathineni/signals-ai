@@ -290,6 +290,7 @@ export interface SearchItem {
   match: Candidate['match'];
   eligible: boolean;
   reasons: string[];
+  change?: 'new-to-corpus' | 'unchanged' | 'supported-description-or-status-changed';
   discovery?: Candidate['discovery'] & { linkVerified: boolean };
   priority?: NonNullable<Candidate['priority']> & {
     policy: 'contextual-priority-v1';
@@ -341,6 +342,8 @@ export function parseProposal(input: unknown): Proposal {
   const unique = new Set(proposal.coverage.map((item) => item.channel));
   if (unique.size !== proposal.coverage.length) throw new Error('duplicate_coverage');
   for (const candidate of proposal.candidates) {
+    if (candidate.discovery?.parentUri) normalizeConsiderUrl(candidate.discovery.parentUri);
+    for (const relation of candidate.priority?.relations ?? []) normalizeConsiderUrl(relation.uri);
     for (const observation of candidate.observations) {
       if (!attentionBound(observation)) throw new Error('unbound_attention_count');
       if (

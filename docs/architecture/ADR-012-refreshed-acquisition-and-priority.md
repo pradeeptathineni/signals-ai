@@ -1,5 +1,11 @@
 # ADR-012: Task-directed acquisition and separate contextual priority
 
+Contextual-priority-v1 orders source-bound fit (direct 60, partial 30, incompatible/unknown 0), value (high 30, medium 20, low 10), and actual new-to-corpus membership (10). Missing inspected evidence or unknown applicability stays null. Skip subtracts 20; mute subtracts 100 and moves the item behind unmuted results. Intrinsic assessment/admission are unchanged. Personal novelty is unknown without feedback. Query items expose supported entity deltas and explicit alternatives/contrary relationships; public entities omit these query-dependent fields.
+
+The public product routes use discovery's grounded observations and deterministic fetched-span validation by default. An extra frozen review is explicitly configurable and does not acquire new sources. Undefined programmatic review retains the older API behavior for compatibility. CLI/UI/jobs explicitly select their review policy.
+
+Docling's trial pins package 2.135.0 and upstream `213288f4a81bc1f509522a854c0c807e96dbc5a3`; the Intel trial used numpy 1.26.4, scipy 1.15.3, transformers 4.57.6 and opencv-python 4.11.0.86 with torch 2.2.2. These are isolated optional dependencies, not npm product dependencies. Layout Heron `8f39ad3c0b4c58e9c2d2c84a38465abf757272d8` is Apache-2.0; Docling table models use CDLA-Permissive-2.0/Apache-2.0. Local conversion disables remote services, online model resolution and OCR; selected artifacts are provisioned separately. The trial preserved headings, negation, table cells and page/bbox locators. Oversized documents fail the unchanged transport limit.
+
 Accepted for local implementation, 2026-10-07. Supersedes ADR-011's default three-endpoint acquisition and shallow combined tool allowance; historical strength/replay and schema-v1 meanings remain unchanged.
 
 Native host research owns interpretation and query directions. Automatic headless research uses permitted native web tools, with search and read budgets accounted separately. Model-free public APIs remain usable explicitly (`--sources-only`), or as a selected supplemental provider. They are no longer an implicit software/encyclopedia bias on every question. The one kernel retains every provisional candidate and source failure; discovery quality is measured separately from corpus admission.

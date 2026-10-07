@@ -65,6 +65,8 @@ export async function fetchEvidence(
   normalizer?: 'text-v2';
   material?: DocumentMaterial;
   bytes?: Buffer;
+  identityUnverified?: boolean;
+  truncated?: boolean;
 }> {
   const { url, address } = await resolvePublicUrl(input);
   return new Promise((resolve, reject) => {

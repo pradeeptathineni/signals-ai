@@ -1,6 +1,7 @@
 import type { SearchResult } from '../../domain/src/search-contract.js';
 import { type EvidenceBundle, parseEvidenceBundle } from '../../domain/src/evidence-exchange.js';
 import { digest } from './search-fetch.js';
+import { activeObservations } from '../../domain/src/search-score.js';
 
 /** Compatibility transport preserves old meanings; it never translates intrinsic scores into old ratings. */
 export function searchEvidenceBundle(result: SearchResult, commit: string): EvidenceBundle {
@@ -66,6 +67,36 @@ export function searchEvidenceBundle(result: SearchResult, commit: string): Evid
       'Native signal strength is an evidence policy index. Legacy confidence/fit ratings are unmeasured. Only precise publication timestamps populate legacy observed_at; original partial dates and fetch times remain distinct in extensions. No adoption or execution authority.',
     ],
     extensions: {
+      'signals.recommendations': {
+        version: 'signals-recommendation-v1',
+        query: result.query,
+        items: result.items.flatMap((item) => {
+          const priority = item.priority;
+          const capability = item.entity.facets.capabilities[0];
+          const claimIds = activeObservations(item.entity, item.entity.assessment.policy)
+            .filter(
+              (observation) =>
+                observation.verified && priority?.evidenceIds.includes(observation.evidenceId),
+            )
+            .map((observation) => observation.id);
+          if (!priority || !capability || !claimIds.length) return [];
+          return [
+            {
+              candidate_id: item.entity.id,
+              capability,
+              action: priority.action,
+              reason: priority.reason,
+              limitations: [...priority.constraints, ...item.entity.limits],
+              provenance: {
+                claim_ids: claimIds,
+                assessed_at: item.entity.assessment.asOf,
+                assessor: 'Signals bounded model judgment',
+              },
+              assessment_state: item.entity.assessment.score === null ? 'screened' : 'assessed',
+            },
+          ];
+        }),
+      },
       'signals-ai.contextual-priority': {
         schema_version: 1,
         query: result.query,

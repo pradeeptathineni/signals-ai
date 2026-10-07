@@ -19,7 +19,7 @@ import { atomicJson, saveEntities, retainRun, loadEntities } from './search-stor
 import { resolve } from 'node:path';
 import { loadAcquisitionConfig } from './search-acquisition.js';
 import { configuredDocumentFetch } from './search-extractors.js';
-import { contextualize, rankContextual } from '../../domain/src/search-priority.js';
+import { contextualize, rankContextual, entityDelta } from '../../domain/src/search-priority.js';
 import { loadPersonal } from './search-personal.js';
 import { loadSettings } from './search-settings.js';
 import { updateInbox } from './search-inbox.js';
@@ -116,9 +116,15 @@ export async function acceptDiscovery(
       accepted.state = 'fetched';
       accepted.digest = fetched.digest;
       accepted.finalUri = fetched.uri;
+      normalizeConsiderUrl(fetched.uri);
       if (fetched.material) accepted.extractor = fetched.material.extractor;
       if (fetched.normalizer) accepted.normalizer = fetched.normalizer;
       if ('cached' in fetched && fetched.cached) accepted.reason = 'private-cache-hit';
+      if ('identityUnverified' in fetched && fetched.identityUnverified) {
+        accepted.reason = 'provider_final_identity_unverified';
+        gaps.push(`${source.title}: provider final source identity unverified`);
+      }
+      if (fetched.truncated) gaps.push(`${source.title}: provider document truncated`);
       if ('fetchedAt' in fetched && typeof fetched.fetchedAt === 'string')
         accepted.fetchedAt = fetched.fetchedAt;
       accepted.id = `evidence-${digest(`${uri}:${fetched.digest}`).slice(0, 24)}`;
@@ -554,7 +560,6 @@ export async function signalSearch(
     await contextualizeResult(base, dependencies.root ?? process.cwd());
     const inbox = (await loadSettings(dependencies.root ?? process.cwd())).promisingInbox;
     if (request.cache === 'private' && inbox?.enabled && !controller.signal.aborted) {
-      await retainRun(base, dependencies.root ?? process.cwd());
       await updateInbox(
         dependencies.root ?? process.cwd(),
         base,
@@ -631,5 +636,9 @@ export async function contextualizeResult(result: SearchResult, root: string) {
       await loadPersonal(root),
     ),
   );
+  result.items = result.items.map((item) => {
+    const prior = known.find((record) => record.entity.id === item.entity.id);
+    return { ...item, change: prior ? entityDelta(prior.entity, item.entity) : 'new-to-corpus' };
+  });
   return result;
 }

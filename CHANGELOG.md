@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Native-first intent-derived discovery, explicit URL capture, optional reviewed acquisition/extraction and separate search/read budgets. Readability/RSS retain original outlinks; denied providers remain gaps.
+- Contextual priority/actions/alternatives are separate from intrinsic strength and admission. Private notes/feedback, source health, promising inbox, entity deltas and evidence preview share the existing workbench and store. Additional frozen review is configurable.
+
 - Live signal-search uses an existing AI through native Agent Skills or installed Codex, fetched source bindings, entity identities and deterministic v2 strength profiles. The local workbench supports research, comparison, grounded follow-up, explicit saves and private interest provenance.
 - Configurable supplemental websites/path scopes, disabled query/corpus schedules and resumable one-shot interest lists share the kernel. Git publication remains a separate explicit operation; Pages remains read-only. Legacy evidence, v0 replay and retained private data stay preserved.
 

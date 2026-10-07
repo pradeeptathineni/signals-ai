@@ -374,8 +374,25 @@ export function codexRunner(
               return;
             }
             try {
+              const proposed: unknown = restoreOptionals(
+                JSON.parse(final),
+                operation.schema ?? discoverySchema,
+              );
+              if (operation.live !== false && Value.Check(discoverySchema, proposed)) {
+                proposed.gaps = [
+                  ...new Set([
+                    ...proposed.gaps,
+                    ...(configured?.gaps ?? []),
+                    ...(direct?.gaps ?? []),
+                    ...(followed?.sources
+                      .filter((source) => source.state === 'failed')
+                      .map((source) => `${source.label}: ${source.reason ?? 'source_failed'}`) ??
+                      []),
+                  ]),
+                ].slice(0, 30);
+              }
               resolve({
-                proposal: restoreOptionals(JSON.parse(final), operation.schema ?? discoverySchema),
+                proposal: proposed,
                 usage: {
                   provider: usage,
                   model: selectedModel ?? 'host-default',

@@ -10,6 +10,7 @@ import { searchEvidenceBundle } from './search-exchange.js';
 import { parseContextualExchange } from './search-context-exchange.js';
 import { randomUUID } from 'node:crypto';
 import { budgets, type SearchResult } from '../../domain/src/search-contract.js';
+import { saveDecision } from '../../domain/src/search-score.js';
 import type { Proposal } from '../../domain/src/search-contract.js';
 
 async function pool() {
@@ -93,6 +94,14 @@ it('ranks the same frozen pool by contextual value without changing strength, el
   expect(contextualize(original, new Set([original[0]!.entity.id]))[0]!.priority?.novelty).toBe(
     'known-in-corpus',
   );
+});
+it('hosted reader identity uncertainty blocks automatic admission without changing intrinsic strength', async () => {
+  const item = (await pool())[0]!;
+  const strength = structuredClone(item.entity.assessment);
+  expect(saveDecision(item.entity, item.match, 0).eligible).toBe(true);
+  item.entity.evidence[0]!.reason = 'provider_final_identity_unverified';
+  expect(saveDecision(item.entity, item.match, 0).reasons).toContain('source_identity_unverified');
+  expect(item.entity.assessment).toEqual(strength);
 });
 it('keeps user notes/feedback private and ignores fetch timestamps when detecting entity changes', async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'priority-test-')));

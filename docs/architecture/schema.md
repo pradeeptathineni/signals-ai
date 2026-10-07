@@ -1,5 +1,7 @@
 # Data map
 
+Query items add optional discovery parent/query provenance, contextual priority/actions/constraints/relationships and a delta against the saved entity. None of these fields enter the intrinsic canonical entity. `.signals/personal.json`, `inbox.json`, `source-state.json` and `providers.json` are private, schema-validated state, excluded from assets and exchange. Native schema-v1 exchange remains frozen; `signals-ai.contextual-priority` is an optional advisory extension (schema_version 1), without private notes/feedback.
+
 | Data            | Authority and shape                                                                                                                            |
 | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | Native entity   | signals/entities/entity-<URI hash>.json, closed recordVersion2 wrapper with user-saved or eligible-saved state                                 |

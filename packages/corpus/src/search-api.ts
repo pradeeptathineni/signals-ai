@@ -8,7 +8,7 @@ import { parseRequest, type SearchResult } from '../../domain/src/search-contrac
 import { signalSearch } from './signal-search.js';
 import { directSearch } from './search-direct.js';
 import { codexRunner } from './search-runner.js';
-import { loadAcquisitionConfig } from './search-acquisition.js';
+import { loadAcquisitionConfig, acquisitionReadiness } from './search-acquisition.js';
 import { scanSources } from './search-sources.js';
 import { loadPersonal, updatePersonal } from './search-personal.js';
 import { loadInbox, updateInbox } from './search-inbox.js';
@@ -118,6 +118,7 @@ export function searchApi(root = process.cwd(), search = signalSearch, locate = 
         json(200, {
           token,
           capability: await codexRunner().readiness(),
+          providers: acquisitionReadiness(await loadAcquisitionConfig(root)),
           active,
           limits: 'One AI job; quick 8 searches/20 documents/240s; wide 24/60/600s.',
         });

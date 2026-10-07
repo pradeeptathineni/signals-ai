@@ -5,6 +5,7 @@ import json
 import sys
 import contextlib
 import io
+import os
 
 
 def main():
@@ -26,6 +27,9 @@ def main():
     elif provider == "docling":
         if request.get("model_downloads_authorized") is not True:
             raise RuntimeError("document_extraction_unavailable_models_not_authorized")
+        os.environ['HF_HUB_OFFLINE'] = '1'
+        os.environ['TRANSFORMERS_OFFLINE'] = '1'
+        os.environ['HF_HUB_DISABLE_TELEMETRY'] = '1'
         from docling.document_converter import DocumentConverter
         if importlib.metadata.version('docling') != request.get('expected_version'):
             raise RuntimeError('unreviewed_docling_version')
@@ -33,6 +37,7 @@ def main():
         from docling.datamodel.base_models import InputFormat
         from docling.document_converter import PdfFormatOption
         options = PdfPipelineOptions(artifacts_path=request["artifacts_path"])
+        options.do_ocr = False
         options.enable_remote_services = False
         converter = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=options)})
         document = converter.convert(request["document_path"]).document

@@ -1,5 +1,10 @@
 import { expect, it } from 'vitest';
-import { jinaDocument, configuredDocumentFetch } from './search-extractors.js';
+import {
+  jinaDocument,
+  configuredDocumentFetch,
+  normalizeDocling,
+  doclingDocument,
+} from './search-extractors.js';
 it('validates target before hosted dispatch and never uses a reader to bypass denied access', async () => {
   let called = false;
   await expect(
@@ -19,6 +24,32 @@ it('validates target before hosted dispatch and never uses a reader to bypass de
       throw new Error('source_denied_403');
     })('https://example.com'),
   ).rejects.toThrow('source_denied_403');
+});
+it('keeps Docling page/table locators and negation, failing closed before unauthorized models', async () => {
+  const material = normalizeDocling({
+    schema_version: 1,
+    text: 'Local does not guarantee privacy.\n|Tool|Local|\n|A|No|',
+    sections: [
+      {
+        locator: '#/tables/0',
+        text: '|Tool|Local|\n|A|No|',
+        provenance: [{ page: 2, bbox: { l: 10, t: 50 } }],
+      },
+    ],
+  });
+  expect(material.text).toContain('does not');
+  expect(material.sections[0]?.provenance).toEqual([{ page: 2, bbox: { l: 10, t: 50 } }]);
+  await expect(
+    doclingDocument('https://example.com/paper.pdf', {
+      python: '/missing/python3',
+      artifactsPath: '/missing/artifacts',
+      modelsAuthorized: false,
+      version: '2.135.0',
+    }),
+  ).rejects.toThrow('models_not_authorized');
+  expect(() => normalizeDocling({ schema_version: 2, text: 'Snippet', sections: [] })).toThrow(
+    'invalid_docling_document',
+  );
 });
 it('preserves provider uncertainty and publication uncertainty rather than claiming original bytes', async () => {
   const result = await jinaDocument('https://example.com', undefined, {

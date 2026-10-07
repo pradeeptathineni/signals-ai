@@ -1,6 +1,8 @@
 import { Readability } from '@mozilla/readability';
 import { parseHTML } from 'linkedom';
 import Parser from 'rss-parser';
+import { Type } from 'typebox';
+import { Value } from 'typebox/value';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
 import { normalizeSpan } from './search-fetch.js';
 
@@ -12,6 +14,32 @@ export interface DocumentMaterial {
   links: { uri: string; title: string }[];
   sections: { locator: string; text: string; provenance?: unknown[] }[];
   extractor: string;
+}
+const bounded = Type.String({ maxLength: 2000000 });
+const materialSchema = Type.Object(
+  {
+    text: bounded,
+    title: bounded,
+    author: Type.Union([bounded, Type.Null()]),
+    publishedAt: Type.Union([bounded, Type.Null()]),
+    links: Type.Array(Type.Object({ uri: bounded, title: bounded }), { maxItems: 200 }),
+    sections: Type.Array(
+      Type.Object({
+        locator: bounded,
+        text: bounded,
+        provenance: Type.Optional(Type.Array(Type.Unknown())),
+      }),
+      { maxItems: 1000 },
+    ),
+    extractor: bounded,
+  },
+  { additionalProperties: false },
+);
+export function cachedMaterial(value: unknown): DocumentMaterial | undefined {
+  if (value === undefined) return undefined;
+  if (!Value.Check(materialSchema, value)) throw new Error('invalid_cached_document');
+  for (const link of value.links) normalizeConsiderUrl(link.uri);
+  return value;
 }
 const date = (value?: string | null) =>
   value && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : null;
@@ -44,12 +72,12 @@ export function extractHtml(raw: string, uri: string): DocumentMaterial {
     }));
   let article;
   try {
-    article = new Readability(document as unknown as Document, { maxElemsToParse: 30000 }).parse();
+    article = new Readability(document, { maxElemsToParse: 30000 }).parse();
   } catch {
     /* Link-rich hubs retain their original text and outlinks. */
   }
   return {
-    text: normalizeSpan(article?.textContent || fallback),
+    text: normalizeSpan(`${article?.title || title}\n${article?.textContent || fallback}`),
     title: article?.title || title,
     author: article?.byline || null,
     publishedAt: date(article?.publishedTime) ?? publishedAt,
@@ -75,7 +103,7 @@ export async function extractFeed(raw: string, uri: string): Promise<DocumentMat
     ),
     title: feed.title ?? '',
     author: null,
-    publishedAt: date(feed.lastBuildDate),
+    publishedAt: date(typeof feed.lastBuildDate === 'string' ? feed.lastBuildDate : null),
     links,
     sections: feed.items.slice(0, 100).map((item, index) => ({
       locator: `item:${index + 1}`,

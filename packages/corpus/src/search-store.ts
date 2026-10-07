@@ -30,6 +30,25 @@ import { entityIdentity, observationIdentity } from './signal-search.js';
 import { digest, normalizeText, normalizeSpan } from './search-fetch.js';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
 
+/** Read-only private state never creates directories and rejects every symlink component. */
+export async function readPrivateJson(
+  root: string,
+  name: string,
+  fallback: unknown,
+  max = 2000000,
+): Promise<unknown> {
+  if (!/^[a-zA-Z0-9/_-]+\.json$/.test(name)) throw new Error('invalid_private_state_path');
+  const path = resolve(root, '.signals', name);
+  const stat = await lstat(path).catch((e: NodeJS.ErrnoException) => {
+    if (e.code !== 'ENOENT') throw e;
+    return null;
+  });
+  if (!stat) return fallback;
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > max || (await realpath(path)) !== path)
+    throw new Error('unsafe_private_state');
+  return JSON.parse(await readFile(path, 'utf8')) as unknown;
+}
+
 const feature = Type.Object(
   {
     value: Type.Number({ minimum: 0, maximum: 1 }),

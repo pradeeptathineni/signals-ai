@@ -1,9 +1,8 @@
-import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 import { channels, parseRequest } from '../../domain/src/search-contract.js';
-import { atomicJson } from './search-store.js';
+import { atomicJson, readPrivateJson } from './search-store.js';
 
 const closed = { additionalProperties: false };
 const settingsSchema = Type.Object(
@@ -135,15 +134,9 @@ function validateSettings(input: unknown) {
   return settings;
 }
 export async function loadSettings(root = process.cwd()) {
-  const raw = await readFile(resolve(root, '.signals/settings.json'), 'utf8').catch(
-    (error: NodeJS.ErrnoException) => {
-      if (error.code !== 'ENOENT') throw error;
-      return null;
-    },
-  );
-  return raw
-    ? validateSettings({ ...structuredClone(defaultSettings), ...(JSON.parse(raw) as object) })
-    : structuredClone(defaultSettings);
+  const raw = await readPrivateJson(root, 'settings.json', {});
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('invalid_settings');
+  return validateSettings({ ...structuredClone(defaultSettings), ...raw });
 }
 export async function saveSettings(settings: unknown, root = process.cwd()) {
   const validated = validateSettings(settings);

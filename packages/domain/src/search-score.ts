@@ -377,6 +377,21 @@ export function saveDecision(entity: Entity, match: SearchItem['match'], thresho
   if (entity.assessment.score === null) reasons.push('no_supported_defining_claim');
   else if (entity.assessment.score < threshold) reasons.push('below_threshold');
   if (match.level !== 'direct') reasons.push('not_direct');
+  const defining = activeObservations(entity, entity.assessment.policy).filter(
+    (observation) =>
+      observation.feature === 'defining' &&
+      observation.verified &&
+      observation.status === 'supported',
+  );
+  if (
+    defining.length &&
+    defining.every(
+      (observation) =>
+        entity.evidence.find((source) => source.id === observation.evidenceId)?.reason ===
+        'provider_final_identity_unverified',
+    )
+  )
+    reasons.push('source_identity_unverified');
   if (
     activeObservations(entity, entity.assessment.policy).some(
       (item) => item.feature === 'defining' && item.verified && item.status === 'contradicted',

@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
@@ -10,9 +10,10 @@ import { fileURLToPath } from 'node:url';
 import { runProviderProcess } from './search-provider-process.js';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
+import { readPrivateJson } from './search-store.js';
 
 const exec = promisify(execFile);
-export const last30daysPin = '7f582ad8c2e140eca08098b245f9e31b68e28b60';
+const last30daysPin = '7f582ad8c2e140eca08098b245f9e31b68e28b60';
 export interface AcquisitionConfig {
   publicApis?: boolean;
   searxng?: string;
@@ -26,7 +27,7 @@ export interface AcquisitionConfig {
   };
   last30days?: { checkout: string; python: string; discovery?: boolean };
 }
-export interface AcquisitionHit {
+interface AcquisitionHit {
   provider: string;
   uri: string;
   title: string;
@@ -95,7 +96,7 @@ export function normalizeAcquisition(
         ? body.results.flatMap((item) => {
             const row = object(item);
             return Array.isArray(row.evidence_urls)
-              ? row.evidence_urls.map((url) => ({
+              ? (row.evidence_urls as unknown[]).map((url) => ({
                   url,
                   title: row.topic,
                   summary: row.why_spiking,
@@ -133,16 +134,53 @@ export function normalizeAcquisition(
 }
 
 export async function loadAcquisitionConfig(root: string): Promise<AcquisitionConfig> {
-  const raw = await readFile(resolve(root, '.signals/providers.json'), 'utf8').catch(
-    (e: NodeJS.ErrnoException) => {
-      if (e.code !== 'ENOENT') throw e;
-      return '{}';
-    },
-  );
-  const x = object(JSON.parse(raw));
+  const x = await readPrivateJson(root, 'providers.json', {}, 64000);
   if (!Value.Check(configSchema, x)) throw new Error('invalid_acquisition_config');
   if (x.searxng) normalizeConsiderUrl(text(x.searxng, 2048));
-  return x as AcquisitionConfig;
+  return x;
+}
+
+export function acquisitionReadiness(config: AcquisitionConfig) {
+  return [
+    {
+      provider: 'public-apis',
+      configured: !!config.publicApis,
+      state: config.publicApis ? 'configured-not-probed' : 'disabled',
+    },
+    {
+      provider: 'searxng',
+      configured: !!config.searxng,
+      state: config.searxng ? 'configured-not-probed' : 'disabled',
+    },
+    {
+      provider: 'last30days',
+      configured: !!config.last30days,
+      state: config.last30days ? 'configured-pin-and-runtime-checked-at-use' : 'disabled',
+    },
+    {
+      provider: 'jina-reader',
+      configured: !!config.jina,
+      state: config.jina ? 'configured-public-targets-only' : 'disabled',
+    },
+    {
+      provider: 'docling',
+      configured: !!config.docling,
+      state: !config.docling
+        ? 'disabled'
+        : config.docling.modelsAuthorized
+          ? 'configured-local-artifacts-not-probed'
+          : 'blocked-model-authorization',
+    },
+    {
+      provider: 'gpt-researcher',
+      configured: !!config.gptResearcher,
+      state: !config.gptResearcher
+        ? 'disabled'
+        : config.gptResearcher.billingAuthorized
+          ? 'configured-not-probed'
+          : 'blocked-api-budget',
+    },
+  ];
 }
 
 export async function acquireConfigured(

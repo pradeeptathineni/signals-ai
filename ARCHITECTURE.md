@@ -1,5 +1,7 @@
 # Architecture
 
+[ADR-012](docs/architecture/ADR-012-refreshed-acquisition-and-priority.md) adds reviewed optional acquisition and extraction behind one live kernel. The document parser preserves original outlinks and heading/table addresses behind pinned safe HTTPS transport. Private source-health, annotations and inbox use the existing writer; query-only priority/delta/relations never become canonical evidence. A repeated source scan is not a new discovery, and a changed source page is not automatically a meaningful claim change.
+
 Signals has one bounded live discovery kernel and two host integrations: an invoking Agent Skill and an explicitly configured headless Codex CLI. Local UI, query discovery and Corpus refresh call that kernel. Literal/ranked Corpus retrieval remains a separate offline operation.
 
 | Owner                                                                     | Responsibility                                                                                          |
@@ -15,7 +17,7 @@ Signals has one bounded live discovery kernel and two host integrations: an invo
 | `.signals/`                                                               | Private questions/runs/settings/cache/schedule state and retained history                               |
 | `dist/`                                                                   | Disposable public snapshots and Pages assets                                                            |
 
-The model interprets questions, plans domain-appropriate acquisition, resolves conservative identities and supplies source-bound semantic observations. Code owns the fixed score formula. Headless discovery is followed by bounded no-web extraction over fetched excerpts, replacing preliminary observations. Native hosts perform source grounding in their invoking agent. Quote checks establish text occurrence only; model judgments remain fallible.
+The model interprets questions, plans domain-appropriate acquisition, resolves conservative identities and supplies source-bound semantic observations. Code owns the fixed score formula. Discovery supplies source-bound observations which are checked against safely fetched text. Optional extra grounded review (`--review` or Settings) revises them over frozen excerpts without web access; ordinary product routes do not require a second model pass. Native hosts perform source grounding in their invoking agent. Quote checks establish text occurrence only; model judgments remain fallible.
 
 The six-feature strength policy has fixed normalizers and type-specific currentness windows. Unknown inputs earn zero; repeated publisher/origin/source groups do not create independent support. Relevance is query-dependent. Automatic admission requires supported defining evidence, resolved identity, a direct match and the configured threshold. Manual saves permit supported lower-strength knowledge. Legacy minimum-review policy applies only to historical records.
 

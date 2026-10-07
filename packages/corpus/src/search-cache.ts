@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { atomicJson } from './search-store.js';
 import { fetchEvidence, digest } from './search-fetch.js';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
+import { cachedMaterial } from './search-document.js';
 
 /** Explicit private caching retains bounded fetched text; memory/no-save never calls this. */
 export function privateCacheFetch(
@@ -34,10 +35,16 @@ export function privateCacheFetch(
         signal?.throwIfAborted();
         progress?.(`Private cache hit: ${new URL(normalized).hostname}`);
         return {
-          uri: normalized,
+          uri:
+            'finalUri' in cached && typeof cached.finalUri === 'string'
+              ? normalizeConsiderUrl(cached.finalUri).normalizedUrl
+              : normalized,
           text: cached.text,
           digest: cached.digest,
           normalizer: 'text-v2' as const,
+          material: cachedMaterial('material' in cached ? cached.material : undefined),
+          identityUnverified: 'identityUnverified' in cached && cached.identityUnverified === true,
+          truncated: 'truncated' in cached && cached.truncated === true,
           cached: true,
           fetchedAt:
             'fetchedAt' in cached && typeof cached.fetchedAt === 'string'
@@ -55,7 +62,13 @@ export function privateCacheFetch(
     }
     const fetched = await fetch(normalized, signal);
     const fetchedAt = new Date().toISOString();
-    await atomicJson(path, { ...fetched, normalizer: 'text-v2', uri: normalized, fetchedAt });
+    await atomicJson(path, {
+      ...fetched,
+      normalizer: 'text-v2',
+      uri: normalized,
+      finalUri: fetched.uri,
+      fetchedAt,
+    });
     return { ...fetched, normalizer: 'text-v2' as const, cached: false, fetchedAt };
   };
 }

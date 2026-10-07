@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, useRef, type ReactNode } from 'react';
 import {
   filterSearchItems,
   sourceHost,
@@ -12,6 +12,10 @@ import type { SearchSettings } from '../../../packages/corpus/src/search-setting
 import type { StoredEntity } from '../../../packages/corpus/src/search-store.js';
 import type { QueryBatch } from '../../../packages/corpus/src/search-query-list.js';
 import type { DirectSearchResult } from '../../../packages/corpus/src/search-direct.js';
+import { PersonalEditor } from './workbench-personal.js';
+import { SourceManager } from './workbench-sources.js';
+import type { PersonalState } from '../../../packages/domain/src/search-priority.js';
+import type { InboxEntry } from '../../../packages/corpus/src/search-inbox.js';
 
 const local = (window as Window & { __SIGNALS_LOCAL__?: boolean }).__SIGNALS_LOCAL__ === true;
 const base = import.meta.env.BASE_URL;
@@ -20,9 +24,25 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
   const [token, setToken] = useState(''),
     [ready, setReady] = useState('Checking runner…');
   const [settings, setSettings] = useState<SearchSettings | null>(null);
+  const [providers, setProviders] = useState<
+    { provider: string; configured: boolean; state: string }[]
+  >([]);
   const [query, setQuery] = useState(''),
     [result, setResult] = useState<SearchResult | null>(null);
   const [captureUrl, setCaptureUrl] = useState('');
+  const [personal, setPersonal] = useState<Record<string, PersonalState>>({});
+  const [inbox, setInbox] = useState<InboxEntry[]>([]);
+  const [preview, setPreview] = useState<{
+    statement: string;
+    quote: string;
+    title: string;
+    uri: string;
+  } | null>(null);
+  const evidenceDialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (preview && evidenceDialog.current && !evidenceDialog.current.open)
+      evidenceDialog.current.showModal();
+  }, [preview]);
   const [run, setRun] = useState(''),
     [events, setEvents] = useState<string[]>([]),
     [busy, setBusy] = useState(false);
@@ -67,13 +87,21 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
     }[]
   >([]);
   async function api<T>(route: string, body?: unknown): Promise<T> {
+    let requestToken = token;
+    if (body !== undefined && !requestToken) {
+      const session = await fetch(`${base}__signals/api/session`).then(
+        (response) => response.json() as Promise<{ token: string }>,
+      );
+      requestToken = session.token;
+      setToken(requestToken);
+    }
     const response = await fetch(
       `${base}__signals/api/${route}`,
       body === undefined
         ? {}
         : {
             method: 'POST',
-            headers: { 'content-type': 'application/json', 'x-signals-token': token },
+            headers: { 'content-type': 'application/json', 'x-signals-token': requestToken },
             body: JSON.stringify(body),
           },
     );
@@ -105,10 +133,12 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
             response.json() as Promise<{
               token: string;
               capability: { available: boolean; reason: string; runner: string };
+              providers: { provider: string; configured: boolean; state: string }[];
             }>,
         )
         .then((session) => {
           setToken(session.token);
+          setProviders(session.providers);
           setReady(
             `${session.capability.available ? 'Ready' : 'Unavailable'}: ${session.capability.runner}. ${session.capability.reason}`,
           );
@@ -116,6 +146,12 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
         .catch(() => setReady('Local bridge unavailable.'));
       void api<SearchSettings>('settings')
         .then(setSettings)
+        .catch((failure: unknown) => setError(String(failure)));
+      void api<Record<string, PersonalState>>('personal')
+        .then(setPersonal)
+        .catch((failure: unknown) => setError(String(failure)));
+      void api<InboxEntry[]>('inbox')
+        .then(setInbox)
         .catch((failure: unknown) => setError(String(failure)));
     }
   }, []);
@@ -239,6 +275,15 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
       saveDecision(item.entity, item.match, settings?.threshold ?? 75).eligible &&
       !saved.has(item.entity.id),
   );
+  async function openRun(runId: string) {
+    const opened = await api<{ id: string }>('history/open', { runId });
+    setRun(opened.id);
+    setBusy(true);
+    setResult(null);
+    setTab('Search');
+    setSelected([]);
+    setEvents(['Opening frozen evidence…']);
+  }
   const Container = tab === 'Corpus' ? 'section' : 'main';
   return (
     <>
@@ -265,6 +310,22 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
         <span>{local ? 'Local workbench' : 'Public corpus · read only'}</span>
       </nav>
       <Container id="workbench-content" className="workbench" aria-label="Native Signals entities">
+        <dialog ref={evidenceDialog} aria-label="Evidence preview" onClose={() => setPreview(null)}>
+          {preview && (
+            <>
+              <h2>Supporting passage</h2>
+              <p>{preview.statement}</p>
+              <blockquote>{preview.quote}</blockquote>
+              <a href={preview.uri} target="_blank" rel="noreferrer">
+                {preview.title}
+              </a>
+              <p>A matched passage records text occurrence; the semantic judgment may be wrong.</p>
+              <button onClick={() => evidenceDialog.current?.close()}>
+                Close evidence preview
+              </button>
+            </>
+          )}
+        </dialog>
         {error && <p role="alert">{error}</p>}
         {message && <p role="status">{message}</p>}
         {tab === 'Settings' && settings ? (
@@ -401,6 +462,73 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
               ))}
             </fieldset>
             <h2>Discovery</h2>
+            <SourceManager
+              settings={settings}
+              onChange={setSettings}
+              scan={() => api('source-scan', {})}
+            />
+            <details>
+              <summary>Configured acquisition and extraction providers</summary>
+              <p>
+                Optional providers are selected in private .signals/providers.json. Configuration is
+                separate from a successful runtime probe; failures appear as research gaps.
+              </p>
+              <ul>
+                {providers.map((provider) => (
+                  <li key={provider.provider}>
+                    {provider.provider}: {provider.state}
+                  </li>
+                ))}
+              </ul>
+            </details>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={settings.groundedReview ?? false}
+                onChange={(event) =>
+                  setSettings({ ...settings, groundedReview: event.target.checked })
+                }
+              />
+              Request an additional grounded assessment pass
+            </label>
+            <p>
+              Discovery already returns source-bound observations. An extra review uses more time
+              and inference.
+            </p>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={settings.promisingInbox?.enabled ?? false}
+                onChange={(event) =>
+                  setSettings({
+                    ...settings,
+                    promisingInbox: {
+                      enabled: event.target.checked,
+                      minimumPriority: settings.promisingInbox?.minimumPriority ?? 70,
+                    },
+                  })
+                }
+              />
+              Keep promising results in a private inbox
+            </label>
+            <label>
+              Minimum contextual priority for inbox
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={settings.promisingInbox?.minimumPriority ?? 70}
+                onChange={(event) =>
+                  setSettings({
+                    ...settings,
+                    promisingInbox: {
+                      enabled: settings.promisingInbox?.enabled ?? false,
+                      minimumPriority: Number(event.target.value),
+                    },
+                  })
+                }
+              />
+            </label>
             <label>
               Supplemental websites and paths (one public HTTPS URL per line)
               <textarea
@@ -809,99 +937,122 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
               </p>
             </section>
             {tab === 'Search' && (
-              <form
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void action(() => start());
-                }}
-              >
-                <label>
-                  Research question
-                  <textarea
-                    required
-                    maxLength={2000}
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                    placeholder="What do you want to understand or find?"
-                  />
-                </label>
-                <p>{ready}</p>
-                <label>
-                  Capture a public URL
-                  <input
-                    type="url"
-                    value={captureUrl}
-                    onChange={(event) => setCaptureUrl(event.target.value)}
-                    placeholder="https://…"
-                  />
-                </label>
-                <button
-                  type="button"
-                  disabled={busy || sourceBusy || !token || !captureUrl.trim()}
-                  onClick={() =>
-                    void action(() =>
-                      start(
-                        undefined,
-                        query.trim() ||
-                          'Capture this resource and describe its supported uses and limits.',
-                        undefined,
-                        undefined,
-                        [captureUrl],
-                      ),
-                    )
-                  }
+              <>
+                {inbox.length > 0 && (
+                  <details>
+                    <summary>Promising inbox ({inbox.length})</summary>
+                    <p>
+                      Provisional candidates retained privately. They have not been admitted to your
+                      Corpus.
+                    </p>
+                    <ul>
+                      {inbox.map((entry) => (
+                        <li key={entry.id}>
+                          <a href={entry.uri} rel="noreferrer">
+                            {entry.name}
+                          </a>{' '}
+                          <button onClick={() => void action(() => openRun(entry.runId))}>
+                            Reopen {entry.name}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void action(() => start());
+                  }}
                 >
-                  Capture URL
-                </button>
-                <p>
-                  {settings?.profile ?? 'wide'} budget:{' '}
-                  {JSON.stringify(budgets[settings?.profile ?? 'wide'])}. Review before saving;
-                  results retained privately.
-                </p>
-                <div className="actions">
-                  <button disabled={busy || sourceBusy || !token || !query.trim()} type="submit">
-                    Start search
-                  </button>
+                  <label>
+                    Research question
+                    <textarea
+                      required
+                      maxLength={2000}
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                      placeholder="What do you want to understand or find?"
+                    />
+                  </label>
+                  <p>{ready}</p>
+                  <label>
+                    Capture a public URL
+                    <input
+                      type="url"
+                      value={captureUrl}
+                      onChange={(event) => setCaptureUrl(event.target.value)}
+                      placeholder="https://…"
+                    />
+                  </label>
                   <button
-                    disabled={busy || sourceBusy || !result}
                     type="button"
-                    onClick={() => {
-                      void action(() => start());
-                    }}
+                    disabled={busy || sourceBusy || !token || !captureUrl.trim()}
+                    onClick={() =>
+                      void action(() =>
+                        start(
+                          undefined,
+                          query.trim() ||
+                            'Capture this resource and describe its supported uses and limits.',
+                          undefined,
+                          undefined,
+                          [captureUrl],
+                        ),
+                      )
+                    }
                   >
-                    Search further
+                    Capture URL
                   </button>
-                  <button
-                    disabled={busy || sourceBusy || !token || !query.trim()}
-                    type="button"
-                    onClick={() => {
-                      void action(async () => {
-                        setSourceBusy(true);
-                        setSourceResult(null);
-                        try {
-                          setSourceResult(await api<DirectSearchResult>('sources', { query }));
-                        } finally {
-                          setSourceBusy(false);
-                        }
-                      });
-                    }}
-                  >
-                    {sourceBusy ? 'Finding sources…' : 'Find sources without AI'}
-                  </button>
-                  <button
-                    disabled={!busy}
-                    type="button"
-                    onClick={() => {
-                      void action(async () => {
-                        await api(`cancel/${run}`, {});
-                        setMessage('Cancellation requested.');
-                      });
-                    }}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
+                  <p>
+                    {settings?.profile ?? 'wide'} budget:{' '}
+                    {JSON.stringify(budgets[settings?.profile ?? 'wide'])}. Review before saving;
+                    results retained privately.
+                  </p>
+                  <div className="actions">
+                    <button disabled={busy || sourceBusy || !token || !query.trim()} type="submit">
+                      Start search
+                    </button>
+                    <button
+                      disabled={busy || sourceBusy || !result}
+                      type="button"
+                      onClick={() => {
+                        void action(() => start());
+                      }}
+                    >
+                      Search further
+                    </button>
+                    <button
+                      disabled={busy || sourceBusy || !token || !query.trim()}
+                      type="button"
+                      onClick={() => {
+                        void action(async () => {
+                          setSourceBusy(true);
+                          setSourceResult(null);
+                          try {
+                            setSourceResult(await api<DirectSearchResult>('sources', { query }));
+                          } finally {
+                            setSourceBusy(false);
+                          }
+                        });
+                      }}
+                    >
+                      {sourceBusy ? 'Finding sources…' : 'Find sources without AI'}
+                    </button>
+                    <button
+                      disabled={!busy}
+                      type="button"
+                      onClick={() => {
+                        void action(async () => {
+                          await api(`cancel/${run}`, {});
+                          setMessage('Cancellation requested.');
+                        });
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </>
             )}
             {tab === 'Search' && sourceResult && (
               <section aria-label="Source links">
@@ -1084,7 +1235,7 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                     value={filters.sort ?? 'match'}
                     onChange={(event) => change('sort', event.target.value)}
                   >
-                    {['match', 'score', 'newest', 'type'].map((value) => (
+                    {['priority', 'match', 'score', 'newest', 'type'].map((value) => (
                       <option key={value}>{value}</option>
                     ))}
                   </select>
@@ -1097,6 +1248,19 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
             </section>
             {local && result && tab === 'Search' && (
               <div className="actions">
+                <button
+                  disabled={!selected.length}
+                  onClick={() =>
+                    void action(async () => {
+                      setInbox(
+                        await api<InboxEntry[]>('inbox', { runId: result.runId, ids: selected }),
+                      );
+                      setMessage('Selected candidates added to the private promising inbox.');
+                    })
+                  }
+                >
+                  Keep selected in inbox
+                </button>
                 <button
                   disabled={!selected.length}
                   onClick={() => {
@@ -1166,7 +1330,11 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
             )}
             <section aria-label="Entity results" className="entity-grid">
               {items.map((item) => (
-                <article className="entity-card" key={item.entity.id}>
+                <article
+                  className="entity-card"
+                  key={item.entity.id}
+                  id={`entity-${item.entity.id}`}
+                >
                   <label className="check">
                     <input
                       type="checkbox"
@@ -1186,6 +1354,101 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                     {item.match.level} · {saved.has(item.entity.id) ? 'Saved' : 'Unsaved'}
                   </p>
                   <p>{item.match.reason}</p>
+                  {item.change && <p>Compared with saved evidence: {item.change}.</p>}
+                  {item.priority && (
+                    <section aria-label={`Why ${item.entity.name} matters`}>
+                      <p>
+                        <strong>
+                          Contextual priority {item.priority.score ?? 'unknown'} ·{' '}
+                          {item.priority.action}
+                        </strong>
+                      </p>
+                      <p>{item.priority.reason}</p>
+                      <p>
+                        {item.priority.novelty}; personal novelty: {item.priority.personalNovelty}.{' '}
+                        {item.entity.assessment.score === null
+                          ? 'Unassessed candidate'
+                          : item.eligible
+                            ? 'Eligible for automatic admission'
+                            : 'Inspectable candidate; manual review/save available'}
+                        .
+                      </p>
+                      <ul>
+                        {item.priority.constraints.map((constraint) => (
+                          <li key={constraint}>{constraint}</li>
+                        ))}
+                      </ul>
+                      {(item.priority.relations ?? []).map((relation) => (
+                        <p key={relation.uri}>
+                          {relation.kind}:{' '}
+                          <a
+                            href={
+                              all.some((other) => other.entity.uri === relation.uri)
+                                ? `#entity-${all.find((other) => other.entity.uri === relation.uri)!.entity.id}`
+                                : relation.uri
+                            }
+                            rel="noreferrer"
+                          >
+                            {relation.reason}
+                          </a>
+                        </p>
+                      ))}
+                    </section>
+                  )}
+                  {item.discovery && (
+                    <p>
+                      Introduced by {item.discovery.introducedBy}
+                      {item.discovery.parentUri && (
+                        <>
+                          {' '}
+                          from{' '}
+                          <a href={item.discovery.parentUri} rel="noreferrer">
+                            this source
+                          </a>{' '}
+                          ({item.discovery.linkVerified ? 'outlink matched' : 'outlink unverified'})
+                        </>
+                      )}
+                      .
+                    </p>
+                  )}
+                  {local && (
+                    <PersonalEditor
+                      name={item.entity.name}
+                      value={personal[item.entity.id]}
+                      onSave={(value) =>
+                        action(async () => {
+                          await api('personal', {
+                            id: item.entity.id,
+                            note: value.note,
+                            feedback: value.feedback,
+                            novelty: value.novelty,
+                          });
+                          setPersonal((current) => ({ ...current, [item.entity.id]: value }));
+                          setMessage('Private note and feedback saved.');
+                        })
+                      }
+                    />
+                  )}
+                  {local && item.entity.evidence.length > 0 && (
+                    <button
+                      onClick={() => {
+                        if (!settings) return;
+                        const source = item.entity.evidence[0]!;
+                        const uri = item.discovery?.parentUri ?? source.uri;
+                        setSettings({
+                          ...settings,
+                          followedSources: [
+                            ...(settings.followedSources ?? []).filter((s) => s.uri !== uri),
+                            { uri, label: source.title, enabled: true, interests: [] },
+                          ],
+                        });
+                        setTab('Settings');
+                        setMessage('Source added to Settings; save to follow it.');
+                      }}
+                    >
+                      Follow introducing source
+                    </button>
+                  )}
                   <details>
                     <summary>Score, limits and sources</summary>
                     <p>
@@ -1232,6 +1495,22 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                             ) && ' · inactive historical input'}
                             <p>{observation.statement}</p>
                             <q>{observation.quote}</q>
+                            <button
+                              onClick={() => {
+                                const source = item.entity.evidence.find(
+                                  (source) => source.id === observation.evidenceId,
+                                );
+                                if (source)
+                                  setPreview({
+                                    statement: observation.statement,
+                                    quote: observation.quote,
+                                    title: source.title,
+                                    uri: source.uri,
+                                  });
+                              }}
+                            >
+                              Preview evidence for {item.entity.name}
+                            </button>
                             {' · '}
                             <a href={`#source-${item.entity.id}-${observation.evidenceId}`}>
                               Source:{' '}

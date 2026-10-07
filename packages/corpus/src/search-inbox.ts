@@ -1,8 +1,7 @@
-import { readFile, lstat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
-import { atomicJson, withWriter } from './search-store.js';
+import { atomicJson, withWriter, readPrivateJson } from './search-store.js';
 import type { SearchResult } from '../../domain/src/search-contract.js';
 const schema = Type.Array(
   Type.Object(
@@ -19,15 +18,9 @@ const schema = Type.Array(
 );
 export type InboxEntry = { id: string; runId: string; name: string; uri: string; at: string };
 export async function loadInbox(root: string): Promise<InboxEntry[]> {
-  const path = resolve(root, '.signals/inbox.json');
-  const stat = await lstat(path).catch((e: NodeJS.ErrnoException) => {
-    if (e.code !== 'ENOENT') throw e;
-    return null;
-  });
-  if (stat?.isSymbolicLink() || (stat && stat.size > 1000000)) throw new Error('unsafe_inbox');
-  const parsed: unknown = stat ? JSON.parse(await readFile(path, 'utf8')) : [];
+  const parsed = await readPrivateJson(root, 'inbox.json', [], 1000000);
   if (!Value.Check(schema, parsed)) throw new Error('invalid_inbox');
-  return parsed as InboxEntry[];
+  return parsed;
 }
 export async function updateInbox(
   root: string,

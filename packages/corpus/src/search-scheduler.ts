@@ -114,6 +114,7 @@ export async function runDueOnce(
       extractionEffort: settings.extractionEffort,
       profile: settings.profile,
       threshold: settings.threshold,
+      groundedReview: settings.groundedReview ?? false,
       sources: settings.sources,
       supplementalSites: settings.supplementalSites,
       destination: settings.destination,
@@ -137,6 +138,7 @@ export async function runDueOnce(
             query: query.query,
             context: query.context,
             profile: settings.profile,
+            review: settings.groundedReview ?? false,
             threshold: settings.threshold,
             sources: settings.sources,
             supplementalSites: [

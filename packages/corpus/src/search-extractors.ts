@@ -141,7 +141,7 @@ export function configuredDocumentFetch(
     } catch (e) {
       if (e instanceof Error && e.message === 'unsupported_content') {
         if (docling) return doclingDocument(uri, docling, signal);
-        throw new Error('document_extraction_unavailable');
+        throw new Error('document_extraction_unavailable', { cause: e });
       }
       if (
         !jina ||
