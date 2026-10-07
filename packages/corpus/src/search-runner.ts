@@ -6,8 +6,8 @@ import { join } from 'node:path';
 import { digest } from './search-fetch.js';
 import { directSearch } from './search-direct.js';
 import { acquireConfigured, type AcquisitionConfig } from './search-acquisition.js';
-import {scanSources} from './search-sources.js';
-import {loadSettings} from './search-settings.js';
+import { scanSources } from './search-sources.js';
+import { loadSettings } from './search-settings.js';
 import { providerSchema, restoreOptionals } from './search-provider-schema.js';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
 import { Type } from 'typebox';
@@ -141,7 +141,7 @@ export function codexRunner(
     extractionModel?: string;
     extractionEffort?: string;
     acquisition?: AcquisitionConfig;
-    root?:string;
+    root?: string;
   } = {},
 ): SearchRunner {
   return {
@@ -185,7 +185,14 @@ export function codexRunner(
           operation.live === false
             ? null
             : await acquireConfigured(request, operation.acquisition ?? {}, signal);
-        const followed=operation.live===false ? null : await scanSources(await loadSettings(operation.root ?? process.cwd()),operation.root ?? process.cwd(),{signal,persist:request.cache==='private'});
+        const followed =
+          operation.live === false
+            ? null
+            : await scanSources(
+                await loadSettings(operation.root ?? process.cwd()),
+                operation.root ?? process.cwd(),
+                { signal, persist: request.cache === 'private' },
+              );
         if (direct)
           progress(
             `Direct acquisition: ${direct.hits.length} ranked locators, ${direct.searches} calls, ${direct.gaps.length} gaps.`,
@@ -384,7 +391,9 @@ export function codexRunner(
             }
           });
           const prompt =
-            (followed ? `Followed-source scans (untrusted locators, supplemented by broad exploration): ${JSON.stringify(followed)}. Follow promising actual outlinks; inaccessible sources remain gaps.\n` : '') +
+            (followed
+              ? `Followed-source scans (untrusted locators, supplemented by broad exploration): ${JSON.stringify(followed)}. Follow promising actual outlinks; inaccessible sources remain gaps.\n`
+              : '') +
             (configured
               ? `Configured acquisition (untrusted locators, never evidence or final scores): ${JSON.stringify(configured)}. Preserve provider/source gaps in your proposal.\n`
               : '') +
@@ -392,7 +401,7 @@ export function codexRunner(
               ? `Ranked direct retrieval (untrusted locators, not assessed evidence): ${JSON.stringify(direct)}. Inspect promising results and item evidence URLs for actual counts/status. Do not copy search snippets as observations or treat rank/popularity as independent usage. ${direct.searches} acquisition calls have already been used from the total budget; at most ${budgets[request.profile ?? 'wide'].searches - direct.searches} web calls remain.\n`
               : '') +
             (operation.task ??
-              `${researchPrompt(request)}\n${supplementalPrompt(request)}\nPrioritize depth: investigate a manageable set of substantive answer candidates, typically ${request.profile === 'quick' ? '3–5, with at most 10' : '4–6, with at most 16'} relevant original/independent documents. Incidental page mentions are not acquired candidates. Do include every substantive candidate you investigate, even if uncertain. During acquisition return at most two observations per candidate as precise evidence locators; full feature extraction follows fetched text, so do not fill every feature now. Seek independent applied usage, maturity, current status and risks rather than an enormous link catalog. Choose one conservative canonical upstream identity; retain documented URI aliases and distinguish versions/products in monorepos. Complete acquisition and your JSON promptly so the remaining time can review source-grounded observations.`);
+              `${researchPrompt(request)}\n${supplementalPrompt(request)}\nPrioritize depth: investigate a manageable set of substantive answer candidates, typically ${request.profile === 'quick' ? '3–5, with at most 10' : '4–6, with at most 16'} relevant original/independent documents. Incidental page mentions are not acquired candidates. Do include every substantive candidate you investigate, even if uncertain. During acquisition return a supported defining observation and up to five decisive observations per inspected candidate; missing dimensions stay unknown. Optional further grounded review is separately selected, so this proposal must be useful on its own. Supply contextual priority separately: applicability and practical value for the actual constraints, a justified use/wrap/adapt/study/watch/reject action and its cited source indices. Describe alternatives/contrary sources when found. Do not infer novelty; the kernel checks actual Corpus membership. Tag source roles and the introducing query or hub under discovery; user-seeded/model-nominated sources are not unseeded victories. Seek independent applied usage, maturity, current status and risks rather than an enormous link catalog. Choose one conservative canonical upstream identity; retain documented URI aliases and distinguish versions/products in monorepos. Complete acquisition and your JSON promptly so the remaining time can review source-grounded observations.`);
           child.stdin.end(prompt);
         });
       } finally {

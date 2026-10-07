@@ -397,7 +397,7 @@ export interface SearchFilters {
   match?: string;
   state?: string;
   saved?: 'saved' | 'unsaved';
-  sort?: 'match' | 'score' | 'newest' | 'type';
+  sort?: 'match' | 'score' | 'newest' | 'type' | 'priority';
 }
 export function sourceHost(uri: string) {
   try {
@@ -433,6 +433,18 @@ export function filterSearchItems(
         (!filters.saved || saved.has(entity.id) === (filters.saved === 'saved')),
     )
     .sort((a, b) => {
+      if (filters.sort === 'priority' || (!filters.sort && (a.priority || b.priority))) {
+        const fit = (item: SearchItem) =>
+          item.priority?.applicability === 'incompatible' || item.match.level === 'out-of-scope'
+            ? 1
+            : 0;
+        const mute = (item: SearchItem) => (item.priority?.feedback === 'mute' ? 1 : 0);
+        const order =
+          mute(a) - mute(b) ||
+          fit(a) - fit(b) ||
+          (b.priority?.score ?? -1) - (a.priority?.score ?? -1);
+        if (order) return order;
+      }
       const match =
         !filters.sort || filters.sort === 'match' ? rank[a.match.level] - rank[b.match.level] : 0;
       const type = filters.sort === 'type' ? a.entity.kind.localeCompare(b.entity.kind) : 0;

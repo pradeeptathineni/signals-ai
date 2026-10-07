@@ -15,10 +15,14 @@ import { assessEntity, filterSearchItems, saveDecision } from '../../domain/src/
 import { digest, fetchEvidence, normalizeText, normalizeSpan } from './search-fetch.js';
 import { codexRunner, RunnerFailure, type SearchRunner } from './search-runner.js';
 import { privateCacheFetch } from './search-cache.js';
-import { atomicJson, saveEntities, retainRun } from './search-store.js';
+import { atomicJson, saveEntities, retainRun, loadEntities } from './search-store.js';
 import { resolve } from 'node:path';
 import { loadAcquisitionConfig } from './search-acquisition.js';
 import { configuredDocumentFetch } from './search-extractors.js';
+import { contextualize, rankContextual } from '../../domain/src/search-priority.js';
+import { loadPersonal } from './search-personal.js';
+import { loadSettings } from './search-settings.js';
+import { updateInbox } from './search-inbox.js';
 
 function entityUri(uri: string) {
   return `${normalizeConsiderUrl(uri).normalizedUrl}${new URL(uri).hash}`;
@@ -235,6 +239,7 @@ export async function acceptDiscovery(
       entity: Entity;
       match: Proposal['candidates'][number]['match'];
       discovery?: SearchResult['items'][number]['discovery'];
+      priority?: SearchResult['items'][number]['priority'];
     }
   >();
   let duplicates = 0,
@@ -336,7 +341,7 @@ export async function acceptDiscovery(
     };
     // Query-dependent fields never enter the reusable entity.
     const canonical = Object.fromEntries(
-      Object.entries(entity).filter(([key]) => !['match', 'discovery'].includes(key)),
+      Object.entries(entity).filter(([key]) => !['match', 'discovery', 'priority'].includes(key)),
     ) as unknown as Entity;
     if (entities.has(id)) {
       duplicates++;
@@ -377,15 +382,29 @@ export async function acceptDiscovery(
       entities.set(id, {
         entity: canonical,
         match: candidate.match,
+        ...(candidate.priority
+          ? {
+              priority: {
+                ...candidate.priority,
+                policy: 'contextual-priority-v1',
+                score: null,
+                novelty: 'unknown',
+                personalNovelty: 'unknown',
+                feedback: 'none',
+                evidenceIds: candidate.priority.sources.map((index) => sources[index]!.id),
+              },
+            }
+          : {}),
         ...(candidate.discovery ? { discovery: { ...candidate.discovery, linkVerified } } : {}),
       });
     }
   }
   const items = filterSearchItems(
-    [...entities.values()].map(({ entity, match, discovery }) => ({
+    [...entities.values()].map(({ entity, match, discovery, priority }) => ({
       entity,
       match,
       ...(discovery ? { discovery } : {}),
+      ...(priority ? { priority } : {}),
       ...saveDecision(entity, match, request.threshold ?? 75),
     })),
   );
@@ -426,7 +445,6 @@ export async function signalSearch(
   const started = Date.now();
   const limits = budgets[request.profile ?? 'wide'];
   const controller = new AbortController();
-  const acquisitionConfig = await loadAcquisitionConfig(dependencies.root ?? process.cwd());
   const abort = () => controller.abort();
   dependencies.signal?.addEventListener('abort', abort, { once: true });
   if (dependencies.signal?.aborted) controller.abort();
@@ -452,6 +470,7 @@ export async function signalSearch(
     limits,
   };
   try {
+    const acquisitionConfig = await loadAcquisitionConfig(dependencies.root ?? process.cwd());
     const runner = dependencies.runner ?? codexRunner();
     const readiness = await runner.readiness();
     dependencies.progress?.(readiness.reason);
@@ -492,45 +511,62 @@ export async function signalSearch(
             )
           : configuredDocumentFetch(acquisitionConfig.jina, undefined, acquisitionConfig.docling)),
       progress: dependencies.progress,
-      enrich: runner.enrich
-        ? async (proposal, material) => {
-            base.usage.modelCalls++;
-            let recorded = false;
-            const grounded = await runner.enrich!(
-              proposal,
-              material,
-              request,
-              controller.signal,
-              dependencies.progress ?? (() => {}),
-              async (proposal, usage) => {
-                base.usage.providerUsage = { discovery: discovery.usage, extraction: usage };
-                if (request.cache === 'private')
-                  await atomicJson(
-                    resolve(
-                      dependencies.root ?? process.cwd(),
-                      '.signals/extractions',
-                      `${base.runId}.json`,
-                    ),
-                    { proposal, usage },
-                  );
-                recorded = true;
-              },
-            );
-            if (request.cache === 'private' && !recorded)
-              await atomicJson(
-                resolve(
-                  dependencies.root ?? process.cwd(),
-                  '.signals/extractions',
-                  `${base.runId}.json`,
-                ),
-                { proposal: grounded.proposal, usage: grounded.usage },
+      enrich:
+        runner.enrich && request.review !== false
+          ? async (proposal, material) => {
+              base.usage.modelCalls++;
+              let recorded = false;
+              const grounded = await runner.enrich!(
+                proposal,
+                material,
+                request,
+                controller.signal,
+                dependencies.progress ?? (() => {}),
+                async (proposal, usage) => {
+                  base.usage.providerUsage = { discovery: discovery.usage, extraction: usage };
+                  if (request.cache === 'private')
+                    await atomicJson(
+                      resolve(
+                        dependencies.root ?? process.cwd(),
+                        '.signals/extractions',
+                        `${base.runId}.json`,
+                      ),
+                      { proposal, usage },
+                    );
+                  recorded = true;
+                },
               );
-            base.usage.providerUsage = { discovery: discovery.usage, extraction: grounded.usage };
-            return grounded.proposal;
-          }
-        : undefined,
+              if (request.cache === 'private' && !recorded)
+                await atomicJson(
+                  resolve(
+                    dependencies.root ?? process.cwd(),
+                    '.signals/extractions',
+                    `${base.runId}.json`,
+                  ),
+                  { proposal: grounded.proposal, usage: grounded.usage },
+                );
+              base.usage.providerUsage = { discovery: discovery.usage, extraction: grounded.usage };
+              return grounded.proposal;
+            }
+          : undefined,
     });
     Object.assign(base, accepted);
+    await contextualizeResult(base, dependencies.root ?? process.cwd());
+    const inbox = (await loadSettings(dependencies.root ?? process.cwd())).promisingInbox;
+    if (request.cache === 'private' && inbox?.enabled && !controller.signal.aborted) {
+      await retainRun(base, dependencies.root ?? process.cwd());
+      await updateInbox(
+        dependencies.root ?? process.cwd(),
+        base,
+        base.items
+          .filter(
+            (item) =>
+              item.priority?.feedback !== 'mute' &&
+              (item.priority?.score ?? -1) >= inbox.minimumPriority,
+          )
+          .map((item) => item.entity.id),
+      );
+    }
     base.usage.documents = base.sources.filter((source) => source.state === 'fetched').length;
     base.status = controller.signal.aborted
       ? 'cancelled'
@@ -581,4 +617,19 @@ export async function signalSearch(
     }
   }
   return base;
+}
+
+export async function contextualizeResult(result: SearchResult, root: string) {
+  const known = [
+    ...(await loadEntities(resolve(root, 'signals/entities'))),
+    ...(await loadEntities(resolve(root, '.signals/corpus/entities'))),
+  ];
+  result.items = rankContextual(
+    contextualize(
+      result.items,
+      new Set(known.map((record) => record.entity.id)),
+      await loadPersonal(root),
+    ),
+  );
+  return result;
 }

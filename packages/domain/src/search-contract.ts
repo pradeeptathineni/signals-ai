@@ -89,6 +89,35 @@ export const candidateSchema = Type.Object(
       closed,
     ),
     limits: Type.Array(text, { maxItems: 30 }),
+    priority: Type.Optional(
+      Type.Object(
+        {
+          applicability: enumOf(['direct', 'partial', 'incompatible', 'unknown']),
+          value: enumOf(['high', 'medium', 'low', 'unknown']),
+          action: enumOf(['use', 'wrap', 'adapt', 'study', 'watch', 'reject']),
+          reason: text,
+          constraints: Type.Array(text, { maxItems: 10 }),
+          sources: Type.Array(Type.Integer({ minimum: 0, maximum: 59 }), {
+            maxItems: 20,
+            uniqueItems: true,
+          }),
+          relations: Type.Optional(
+            Type.Array(
+              Type.Object(
+                {
+                  uri: Type.String({ maxLength: 2048 }),
+                  kind: enumOf(['alternative', 'related', 'contrary']),
+                  reason: text,
+                },
+                closed,
+              ),
+              { maxItems: 10 },
+            ),
+          ),
+        },
+        closed,
+      ),
+    ),
     discovery: Type.Optional(
       Type.Object(
         {
@@ -193,6 +222,7 @@ const requestSchema = Type.Object(
     profile: Type.Optional(enumOf(['quick', 'wide'])),
     save: Type.Optional(enumOf(['never', 'eligible'])),
     cache: Type.Optional(enumOf(['memory', 'private'])),
+    review: Type.Optional(Type.Boolean()),
     threshold: Type.Optional(Type.Integer({ minimum: 0, maximum: 100 })),
   },
   closed,
@@ -261,6 +291,14 @@ export interface SearchItem {
   eligible: boolean;
   reasons: string[];
   discovery?: Candidate['discovery'] & { linkVerified: boolean };
+  priority?: NonNullable<Candidate['priority']> & {
+    policy: 'contextual-priority-v1';
+    score: number | null;
+    novelty: 'new-to-corpus' | 'known-in-corpus' | 'unknown';
+    personalNovelty: 'confirmed-new' | 'known' | 'unknown';
+    feedback: 'none' | 'skip' | 'mute' | 'useful';
+    evidenceIds: string[];
+  };
 }
 export interface SearchResult {
   schemaVersion: 2;
@@ -316,6 +354,8 @@ export function parseProposal(input: unknown): Proposal {
     }
     if (candidate.match.sources.some((index) => !proposal.sources[index]))
       throw new Error('invalid_match_binding');
+    if (candidate.priority?.sources.some((index) => !proposal.sources[index]))
+      throw new Error('invalid_priority_binding');
   }
   return proposal;
 }

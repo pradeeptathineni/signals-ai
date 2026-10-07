@@ -9,6 +9,9 @@ import { signalSearch } from './signal-search.js';
 import { directSearch } from './search-direct.js';
 import { codexRunner } from './search-runner.js';
 import { loadAcquisitionConfig } from './search-acquisition.js';
+import { scanSources } from './search-sources.js';
+import { loadPersonal, updatePersonal } from './search-personal.js';
+import { loadInbox, updateInbox } from './search-inbox.js';
 import { loadSettings, saveSettings } from './search-settings.js';
 import {
   loadEntities,
@@ -120,7 +123,79 @@ export function searchApi(root = process.cwd(), search = signalSearch, locate = 
         });
       else if (route === 'settings')
         json(200, mutation ? await saveSettings(body, root) : await loadSettings(root));
-      else if (route === 'sources' && mutation) {
+      else if (route === 'source-scan' && mutation) {
+        if (
+          !Value.Check(
+            Type.Object(
+              { interest: Type.Optional(Type.String({ maxLength: 80 })) },
+              { additionalProperties: false },
+            ),
+            body,
+          )
+        )
+          throw new Error('invalid_source_scan');
+        json(
+          200,
+          await scanSources(await loadSettings(root), root, {
+            interest: body.interest,
+            persist: true,
+          }),
+        );
+      } else if (route === 'personal') {
+        if (!mutation) json(200, await loadPersonal(root));
+        else {
+          const schema = Type.Object(
+            {
+              id: Type.String({ pattern: '^entity-[a-f0-9]{24}$' }),
+              note: Type.String({ maxLength: 5000 }),
+              feedback: Type.Enum(['none', 'skip', 'mute', 'useful']),
+              novelty: Type.Enum(['confirmed-new', 'known', 'unknown']),
+            },
+            { additionalProperties: false },
+          );
+          if (!Value.Check(schema, body)) throw new Error('invalid_personal_state');
+          const known =
+            [...runs.values()].some((run) =>
+              run.result?.items.some((item) => item.entity.id === body.id),
+            ) ||
+            [
+              ...(await loadEntities(resolve(root, 'signals/entities'))),
+              ...(await loadEntities(resolve(root, '.signals/corpus/entities'))),
+            ].some((record) => record.entity.id === body.id);
+          if (!known) throw new Error('unknown_result_identity');
+          json(
+            200,
+            await updatePersonal(root, body.id, {
+              note: body.note,
+              feedback: body.feedback,
+              novelty: body.novelty,
+              seenAt: new Date().toISOString(),
+            }),
+          );
+        }
+      } else if (route === 'inbox') {
+        if (!mutation) json(200, await loadInbox(root));
+        else {
+          if (
+            !Value.Check(
+              Type.Object(
+                {
+                  runId: selection.properties.runId,
+                  ids: selection.properties.ids,
+                  remove: Type.Optional(Type.Boolean()),
+                },
+                { additionalProperties: false },
+              ),
+              body,
+            )
+          )
+            throw new Error('invalid_inbox_selection');
+          const result = [...runs.values()].find((run) => run.result?.runId === body.runId)?.result;
+          if (!result) throw new Error('unknown_result_identity');
+          await retainRun(result, root);
+          json(200, await updateInbox(root, result, body.ids, body.remove));
+        }
+      } else if (route === 'sources' && mutation) {
         const query = parseRequest(body);
         const settings = await loadSettings(root);
         json(
@@ -233,6 +308,7 @@ export function searchApi(root = process.cwd(), search = signalSearch, locate = 
           {
             ...query,
             profile: query.profile ?? settings.profile,
+            review: query.review ?? settings.groundedReview ?? false,
             threshold: query.threshold ?? settings.threshold,
             sources: settings.sources,
             supplementalSites: [

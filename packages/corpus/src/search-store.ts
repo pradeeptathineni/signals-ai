@@ -42,6 +42,7 @@ const feature = Type.Object(
 const properties = { ...candidateSchema.properties };
 delete (properties as Partial<typeof properties>).match;
 delete (properties as Partial<typeof properties>).discovery;
+delete (properties as Partial<typeof properties>).priority;
 const entitySchema = Type.Object(
   {
     ...properties,

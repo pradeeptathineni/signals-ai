@@ -15,6 +15,7 @@ const settingsSchema = Type.Object(
     extractionModel: Type.Optional(Type.String({ maxLength: 100 })),
     extractionEffort: Type.Optional(Type.String({ maxLength: 30 })),
     profile: Type.Enum(['quick', 'wide']),
+    groundedReview: Type.Optional(Type.Boolean()),
     threshold: Type.Integer({ minimum: 0, maximum: 100 }),
     retentionDays: Type.Integer({ minimum: 1, maximum: 90 }),
     destination: Type.Enum(['public', 'private']),
@@ -41,6 +42,12 @@ const settingsSchema = Type.Object(
       Type.Array(Type.String({ maxLength: 2048 }), { maxItems: 20, uniqueItems: true }),
     ),
     queryDiscovery: Type.Boolean(),
+    promisingInbox: Type.Optional(
+      Type.Object(
+        { enabled: Type.Boolean(), minimumPriority: Type.Integer({ minimum: 0, maximum: 100 }) },
+        closed,
+      ),
+    ),
     corpusDiscovery: Type.Boolean(),
     timezone: Type.Literal('UTC'),
     corpusEveryDays: Type.Integer({ minimum: 1, maximum: 3650 }),

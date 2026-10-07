@@ -1,5 +1,9 @@
 import { parseArgs } from 'node:util';
-import { acceptDiscovery, signalSearch } from '../packages/corpus/src/signal-search.js';
+import {
+  acceptDiscovery,
+  signalSearch,
+  contextualizeResult,
+} from '../packages/corpus/src/signal-search.js';
 import { discoverySchema, parseRequest, budgets } from '../packages/domain/src/search-contract.js';
 import { codexRunner } from '../packages/corpus/src/search-runner.js';
 import { execFileSync } from 'node:child_process';
@@ -26,6 +30,7 @@ const { values } = parseArgs({
     json: { type: 'boolean' },
     schema: { type: 'boolean' },
     capability: { type: 'boolean' },
+    review: { type: 'boolean' },
     'sources-only': { type: 'boolean' },
     accept: { type: 'boolean' },
     context: { type: 'boolean' },
@@ -45,6 +50,7 @@ try {
       cache: values.cache ?? 'memory',
       supplementalSites: values.site,
       captureUrls: values.url,
+      review: values.review ?? false,
       threshold: Number(values.threshold ?? 75),
     });
     const controller = new AbortController();
@@ -91,6 +97,7 @@ try {
           progress: (event) => process.stderr.write(`${event}\n`),
         });
     if (values.accept) {
+      await contextualizeResult(result, process.cwd());
       result.usage.documents = result.sources.filter((source) => source.state === 'fetched').length;
       // Native acquisition is owned by the caller; family counts can overlap.
       // This helper performs no search tool calls and cannot infer the host's usage.

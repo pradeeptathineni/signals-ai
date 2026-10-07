@@ -1,0 +1,81 @@
+import type { SearchItem } from './search-contract.js';
+export interface PersonalState {
+  note: string;
+  feedback: 'none' | 'skip' | 'mute' | 'useful';
+  novelty: 'confirmed-new' | 'known' | 'unknown';
+  seenAt: string;
+}
+
+/** Ordinal policy, not probability: supplied fit/value judgments plus actual Corpus membership. */
+export function contextualize(
+  items: SearchItem[],
+  saved: Set<string>,
+  personal: Record<string, PersonalState> = {},
+) {
+  return items.map((item) => {
+    if (!item.priority) return item;
+    const known = saved.has(item.entity.id),
+      feedback = personal[item.entity.id]?.feedback ?? 'none';
+    const fit = { direct: 60, partial: 30, incompatible: 0, unknown: 0 }[
+      item.priority.applicability
+    ];
+    const value = { high: 30, medium: 20, low: 10, unknown: 0 }[item.priority.value];
+    const inspected = item.entity.evidence.some(
+      (source) => item.priority!.evidenceIds.includes(source.id) && source.state === 'fetched',
+    );
+    const score =
+      !inspected || item.priority.applicability === 'unknown'
+        ? null
+        : Math.max(
+            0,
+            fit +
+              value +
+              (known ? 0 : 10) -
+              (feedback === 'mute' ? 100 : feedback === 'skip' ? 20 : 0),
+          );
+    return {
+      ...item,
+      priority: {
+        ...item.priority,
+        policy: 'contextual-priority-v1' as const,
+        score,
+        novelty: known ? ('known-in-corpus' as const) : ('new-to-corpus' as const),
+        personalNovelty: personal[item.entity.id]?.novelty ?? 'unknown',
+        feedback,
+      },
+    };
+  });
+}
+export function rankContextual(items: SearchItem[]) {
+  return [...items].sort((a, b) => {
+    const muted = (item: SearchItem) => (item.priority?.feedback === 'mute' ? 1 : 0);
+    const fit = (item: SearchItem) =>
+      item.priority?.applicability === 'incompatible' || item.match.level === 'out-of-scope'
+        ? 1
+        : 0;
+    return (
+      muted(a) - muted(b) ||
+      fit(a) - fit(b) ||
+      (b.priority?.score ?? -1) - (a.priority?.score ?? -1) ||
+      a.entity.id.localeCompare(b.entity.id)
+    );
+  });
+}
+
+export function entityDelta(before: SearchItem['entity'], after: SearchItem['entity']) {
+  const project = (entity: SearchItem['entity']) =>
+    JSON.stringify({
+      kind: entity.kind,
+      uri: entity.uri,
+      licenses: [...entity.facets.licenses].sort(),
+      claims: entity.observations
+        .filter(
+          (o) => o.verified && !entity.observations.some((next) => next.supersedes.includes(o.id)),
+        )
+        .map((o) => `${o.feature}:${o.indicator}:${o.status}:${o.statement}`)
+        .sort(),
+    });
+  return project(before) === project(after)
+    ? 'unchanged'
+    : 'supported-description-or-status-changed';
+}

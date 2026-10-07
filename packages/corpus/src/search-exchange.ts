@@ -66,6 +66,24 @@ export function searchEvidenceBundle(result: SearchResult, commit: string): Evid
       'Native signal strength is an evidence policy index. Legacy confidence/fit ratings are unmeasured. Only precise publication timestamps populate legacy observed_at; original partial dates and fetch times remain distinct in extensions. No adoption or execution authority.',
     ],
     extensions: {
+      'signals-ai.contextual-priority': {
+        schema_version: 1,
+        query: result.query,
+        items: result.items
+          .filter((item) => item.priority)
+          .map((item) => ({
+            id: item.entity.id,
+            policy: item.priority!.policy,
+            score: item.priority!.score,
+            applicability: item.priority!.applicability,
+            value: item.priority!.value,
+            action: item.priority!.action,
+            reason: item.priority!.reason,
+            constraints: item.priority!.constraints,
+            evidence_ids: item.priority!.evidenceIds,
+            relations: item.priority!.relations ?? [],
+          })),
+      },
       'signals-ai.native-assessments': result.items.map((item) => ({
         id: item.entity.id,
         assessment: item.entity.assessment,
