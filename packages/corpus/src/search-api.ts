@@ -169,7 +169,7 @@ export function searchApi(root = process.cwd(), search = signalSearch, locate = 
         });
         pruneRuns();
         json(200, { id });
-      } else if ((route === 'search' || route === 'refresh') && mutation) {
+      } else if ((route === 'search' || route === 'capture' || route === 'refresh') && mutation) {
         if (active) {
           json(409, { code: 'runner_busy' });
           return true;
@@ -211,6 +211,8 @@ export function searchApi(root = process.cwd(), search = signalSearch, locate = 
           input = refreshRequest(record.entity, settings);
         }
         const rawQuery = parseRequest(input);
+        if (route === 'capture' && !rawQuery.captureUrls?.length)
+          throw new Error('capture_url_required');
         const query = parseRequest({
           ...rawQuery,
           supplementalSites: [

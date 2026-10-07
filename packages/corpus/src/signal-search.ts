@@ -281,7 +281,12 @@ export async function acceptDiscovery(
           verified,
         };
       });
-    const evidenceIds = new Set(observations.map((item) => item.evidenceId));
+    const evidenceIds = new Set([
+      ...observations.map((item) => item.evidenceId),
+      ...candidate.match.sources
+        .map((index) => sources[index]?.id)
+        .filter((id): id is string => !!id),
+    ]);
     const evidence = [
       ...new Map(
         sources.filter((source) => evidenceIds.has(source.id)).map((source) => [source.id, source]),

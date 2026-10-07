@@ -22,6 +22,7 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
   const [settings, setSettings] = useState<SearchSettings | null>(null);
   const [query, setQuery] = useState(''),
     [result, setResult] = useState<SearchResult | null>(null);
+  const [captureUrl, setCaptureUrl] = useState('');
   const [run, setRun] = useState(''),
     [events, setEvents] = useState<string[]>([]),
     [busy, setBusy] = useState(false);
@@ -195,15 +196,17 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
     question = query,
     supplementalSites?: string[],
     context?: string,
+    captureUrls?: string[],
   ) {
     setSourceResult(null);
     const started = await api<{ id: string }>(
-      refreshId ? 'refresh' : 'search',
+      refreshId ? 'refresh' : captureUrls ? 'capture' : 'search',
       refreshId
         ? { id: refreshId }
         : {
             query: question,
             context,
+            captureUrls,
             supplementalSites,
             profile: settings?.profile ?? 'wide',
             save: 'never',
@@ -823,6 +826,33 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                   />
                 </label>
                 <p>{ready}</p>
+                <label>
+                  Capture a public URL
+                  <input
+                    type="url"
+                    value={captureUrl}
+                    onChange={(event) => setCaptureUrl(event.target.value)}
+                    placeholder="https://…"
+                  />
+                </label>
+                <button
+                  type="button"
+                  disabled={busy || sourceBusy || !token || !captureUrl.trim()}
+                  onClick={() =>
+                    void action(() =>
+                      start(
+                        undefined,
+                        query.trim() ||
+                          'Capture this resource and describe its supported uses and limits.',
+                        undefined,
+                        undefined,
+                        [captureUrl],
+                      ),
+                    )
+                  }
+                >
+                  Capture URL
+                </button>
                 <p>
                   {settings?.profile ?? 'wide'} budget:{' '}
                   {JSON.stringify(budgets[settings?.profile ?? 'wide'])}. Review before saving;

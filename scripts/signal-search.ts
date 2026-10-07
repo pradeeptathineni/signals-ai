@@ -16,6 +16,7 @@ const { values } = parseArgs({
     save: { type: 'string' },
     cache: { type: 'string' },
     site: { type: 'string', multiple: true },
+    url: { type: 'string', multiple: true },
     threshold: { type: 'string' },
     model: { type: 'string' },
     effort: { type: 'string' },
@@ -42,6 +43,7 @@ try {
       save: values.save ?? 'never',
       cache: values.cache ?? 'memory',
       supplementalSites: values.site,
+      captureUrls: values.url,
       threshold: Number(values.threshold ?? 75),
     });
     const controller = new AbortController();
@@ -90,7 +92,8 @@ try {
       // Native acquisition is owned by the caller; family counts can overlap.
       // This helper performs no search tool calls and cannot infer the host's usage.
       result.usage.elapsedMs = Date.now() - started;
-      if (result.sources.some((source) => source.state !== 'fetched')) result.status = 'partial';
+      if (result.gaps.length || result.sources.some((source) => source.state !== 'fetched'))
+        result.status = 'partial';
       if (controller.signal.aborted) result.status = 'cancelled';
     }
     if (values.accept && request.save === 'eligible' && result.status !== 'cancelled') {

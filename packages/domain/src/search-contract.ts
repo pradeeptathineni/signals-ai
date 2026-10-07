@@ -152,6 +152,9 @@ const requestSchema = Type.Object(
   {
     query: Type.String({ minLength: 1, maxLength: 2000 }),
     context: Type.Optional(Type.String({ maxLength: 4000 })),
+    captureUrls: Type.Optional(
+      Type.Array(Type.String({ maxLength: 2048 }), { maxItems: 10, uniqueItems: true }),
+    ),
     supplementalSites: Type.Optional(
       Type.Array(Type.String({ maxLength: 2048 }), { maxItems: 20, uniqueItems: true }),
     ),
@@ -256,7 +259,12 @@ export function parseRequest(input: unknown): SearchRequest {
     if (original.search || original.hash) throw new Error('invalid_supplemental_site');
     return normalizeConsiderUrl(site).normalizedUrl;
   });
-  return { ...input, supplementalSites: [...new Set(sites)] };
+  const captureUrls = input.captureUrls?.map((uri) => normalizeConsiderUrl(uri).normalizedUrl);
+  return {
+    ...input,
+    supplementalSites: [...new Set(sites)],
+    ...(captureUrls ? { captureUrls: [...new Set(captureUrls)] } : {}),
+  };
 }
 export function parseProposal(input: unknown): Proposal {
   if (!Value.Check(proposalSchema, input)) throw new Error('invalid_model_output');
