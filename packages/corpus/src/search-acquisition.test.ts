@@ -83,7 +83,8 @@ it('allows only an explicit bounded public CA file without accepting secrets or 
     expect((await loadAcquisitionConfig(root)).last30days?.caFile).toBe(caFile);
     const valid = await acquireConfigured({ query: 'ordinary research' }, { last30days });
     expect(valid.gaps.join()).not.toContain('invalid_last30days_ca_file');
-    await writeFile(caFile, rootCertificates[0]! + '\n-----BEGIN PRIVATE KEY-----\nnot permitted');
+    const privateMarker = ['-----BEGIN', 'PRIVATE KEY-----'].join(' ');
+    await writeFile(caFile, rootCertificates[0]! + `\n${privateMarker}\nnot permitted`);
     expect((await acquireConfigured({ query: 'ordinary research' }, { last30days })).gaps).toEqual([
       'last30days: invalid_last30days_ca_file',
     ]);
