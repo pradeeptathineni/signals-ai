@@ -653,6 +653,18 @@ export async function retainRun(result: SearchResult, root = process.cwd()) {
   if (!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(result.runId))
     throw new Error('invalid_run_identity');
   const path = resolve(root, '.signals/runs', `${result.runId}.json`);
+  const stat = await lstat(path).catch((failure: NodeJS.ErrnoException) => {
+    if (failure.code !== 'ENOENT') throw failure;
+    return null;
+  });
+  if (
+    stat &&
+    (!stat.isFile() ||
+      stat.isSymbolicLink() ||
+      stat.size > 2000000 ||
+      (await realpath(path)) !== path)
+  )
+    throw new Error('unsafe_run_snapshot');
   const prior = await readFile(path, 'utf8').catch((failure: NodeJS.ErrnoException) => {
     if (failure.code !== 'ENOENT') throw failure;
     return null;
@@ -672,7 +684,13 @@ export async function loadRun(
   if (!/^[a-f0-9-]{36}$/.test(runId)) throw new Error('invalid_run_identity');
   const path = resolve(root, '.signals/runs', `${runId}.json`);
   const stat = await lstat(path);
-  if (stat.isSymbolicLink() || stat.size > 2000000) throw new Error('unsafe_run_snapshot');
+  if (
+    !stat.isFile() ||
+    stat.isSymbolicLink() ||
+    stat.size > 2000000 ||
+    (await realpath(path)) !== path
+  )
+    throw new Error('unsafe_run_snapshot');
   const result = JSON.parse(await readFile(path, 'utf8')) as SearchResult;
   if (
     result.schemaVersion !== 2 ||

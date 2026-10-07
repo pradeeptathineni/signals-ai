@@ -6,6 +6,9 @@ import { loadAcquisitionConfig, acquireConfigured } from './search-acquisition.j
 import { loadPersonal } from './search-personal.js';
 import { privateCacheFetch } from './search-cache.js';
 import { cachedMaterial } from './search-document.js';
+import { loadRun, retainRun } from './search-store.js';
+import { digest } from './search-fetch.js';
+import type { SearchResult } from '../../domain/src/search-contract.js';
 
 it('never creates no-save state, rejects malformed configuration and every private symlink component', async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'private-read-')));
@@ -21,6 +24,26 @@ it('never creates no-save state, rejects malformed configuration and every priva
     await writeFile(resolve(other, 'providers.json'), '{}');
     await symlink(other, resolve(root, '.signals'));
     await expect(loadAcquisitionConfig(root)).rejects.toThrow('unsafe_private_state');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+    await rm(other, { recursive: true, force: true });
+  }
+});
+it('rejects a symlinked parent before reading or retaining private cache and history bytes', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'private-parent-')));
+  const other = await realpath(await mkdtemp(join(tmpdir(), 'private-target-')));
+  const uri = 'https://example.com/resource';
+  const runId = '00000000-0000-0000-0000-000000000000';
+  try {
+    await mkdir(resolve(root, '.signals'));
+    await writeFile(resolve(other, `${digest(uri)}.json`), '{}');
+    await writeFile(resolve(other, `${runId}.json`), '{}');
+    await symlink(other, resolve(root, '.signals/source-cache'));
+    await symlink(other, resolve(root, '.signals/runs'));
+    await expect(privateCacheFetch(root)(uri)).rejects.toThrow('symlink_source_cache');
+    await expect(loadRun(runId, root)).rejects.toThrow('unsafe_run_snapshot');
+    await expect(retainRun({ runId } as SearchResult, root)).rejects.toThrow('unsafe_run_snapshot');
+    expect(await readdir(other)).toHaveLength(2);
   } finally {
     await rm(root, { recursive: true, force: true });
     await rm(other, { recursive: true, force: true });

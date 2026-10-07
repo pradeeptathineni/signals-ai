@@ -1,4 +1,4 @@
-import { readFile, lstat } from 'node:fs/promises';
+import { readFile, lstat, realpath } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { atomicJson } from './search-store.js';
 import { fetchEvidence, digest } from './search-fetch.js';
@@ -15,7 +15,8 @@ export function privateCacheFetch(
     const normalized = normalizeConsiderUrl(uri).normalizedUrl;
     const path = resolve(root, '.signals/source-cache', `${digest(normalized)}.json`);
     const stat = await lstat(path).catch(() => null);
-    if (stat?.isSymbolicLink()) throw new Error('symlink_source_cache');
+    if (stat && (!stat.isFile() || stat.isSymbolicLink() || (await realpath(path)) !== path))
+      throw new Error('symlink_source_cache');
     if (stat && Date.now() - stat.mtimeMs < 3600000 && stat.size < 2200000) {
       const cached: unknown = JSON.parse(await readFile(path, 'utf8'));
       if (
