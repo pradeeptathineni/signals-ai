@@ -28,7 +28,12 @@ export function searchEvidenceBundle(result: SearchResult, commit: string): Evid
   const bundle: EvidenceBundle = {
     schema_version: 1,
     bundle_id: `search-${result.runId}`,
-    mode: 'agent-assisted',
+    mode: result.items.some((item) => item.entity.acquisition === 'fixture')
+      ? 'fixture'
+      : result.items.length &&
+          result.items.every((item) => item.entity.acquisition === 'configured-live')
+        ? 'model-led'
+        : 'agent-assisted',
     created_at: new Date().toISOString(),
     producer: {
       repository: 'pradeeptathineni/signals-ai',
@@ -76,7 +81,9 @@ export function searchEvidenceBundle(result: SearchResult, commit: string): Evid
           const claimIds = activeObservations(item.entity, item.entity.assessment.policy)
             .filter(
               (observation) =>
-                observation.verified && priority?.evidenceIds.includes(observation.evidenceId),
+                observation.verified &&
+                observation.status === 'supported' &&
+                priority?.evidenceIds.includes(observation.evidenceId),
             )
             .map((observation) => observation.id);
           if (!priority || !capability || !claimIds.length) return [];
@@ -126,6 +133,7 @@ export function searchEvidenceBundle(result: SearchResult, commit: string): Evid
       })),
     },
   };
+  if (bundle.mode === 'fixture') bundle.extensions!['signals.acquisition'] = { fixture: true };
   const raw = JSON.stringify(bundle);
-  return parseEvidenceBundle(raw, digest(raw));
+  return parseEvidenceBundle(raw, digest(raw), { allowFixture: bundle.mode === 'fixture' });
 }

@@ -143,6 +143,12 @@ it('keeps user notes/feedback private and ignores fetch timestamps when detectin
     const extension = exchange.extensions!['signals-ai.contextual-priority'];
     expect(parseContextualExchange(extension)).toEqual(extension);
     expect(JSON.stringify(exchange)).not.toContain('My own edited annotation');
+    const uncertain = structuredClone(result);
+    for (const item of uncertain.items)
+      for (const observation of item.entity.observations) observation.status = 'uncertain';
+    expect(
+      searchEvidenceBundle(uncertain, 'b'.repeat(40)).extensions!['signals.recommendations'],
+    ).toMatchObject({ items: [] });
     expect(() => parseContextualExchange({ ...(extension as object), schema_version: 2 })).toThrow(
       'unsupported_or_invalid_contextual_exchange',
     );

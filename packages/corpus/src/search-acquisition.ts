@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, lstat, readFile, realpath } from 'node:fs/promises';
+import { X509Certificate } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
@@ -25,7 +26,7 @@ export interface AcquisitionConfig {
     billingAuthorized: boolean;
     keyEnv: string[];
   };
-  last30days?: { checkout: string; python: string; discovery?: boolean };
+  last30days?: { checkout: string; python: string; discovery?: boolean; caFile?: string };
 }
 interface AcquisitionHit {
   provider: string;
@@ -48,7 +49,15 @@ const configSchema = Type.Object(
     jina: Type.Optional(Type.Boolean()),
     searxng: Type.Optional(path),
     last30days: Type.Optional(
-      Type.Object({ checkout: path, python, discovery: Type.Optional(Type.Boolean()) }, closed),
+      Type.Object(
+        {
+          checkout: path,
+          python,
+          discovery: Type.Optional(Type.Boolean()),
+          caFile: Type.Optional(Type.String({ pattern: '^/[^\\n\\r]+$', maxLength: 2048 })),
+        },
+        closed,
+      ),
     ),
     gptResearcher: Type.Optional(
       Type.Object(
@@ -130,6 +139,12 @@ export function normalizeAcquisition(
   for (const [source, state] of Object.entries(object(body.source_status)))
     if (!['ok', 'success', 'available', 'completed'].includes(String(state)))
       gaps.push(`${provider}/${source}: ${String(state).slice(0, 100)}`);
+  if (provider === 'searxng' && Array.isArray(body.unresponsive_engines))
+    for (const failure of body.unresponsive_engines.slice(0, 20)) {
+      if (Array.isArray(failure) && typeof failure[0] === 'string')
+        gaps.push(`searxng/${text(failure[0], 80)}: ${text(failure[1], 100) || 'unresponsive'}`);
+      else gaps.push('searxng: malformed engine failure');
+    }
   return { hits, gaps };
 }
 
@@ -150,12 +165,12 @@ export function acquisitionReadiness(config: AcquisitionConfig) {
     {
       provider: 'searxng',
       configured: !!config.searxng,
-      state: config.searxng ? 'configured-not-probed' : 'disabled',
+      state: config.searxng ? 'configured-not-probed' : 'unconfigured',
     },
     {
       provider: 'last30days',
       configured: !!config.last30days,
-      state: config.last30days ? 'configured-pin-and-runtime-checked-at-use' : 'disabled',
+      state: config.last30days ? 'configured-pin-and-runtime-checked-at-use' : 'unconfigured',
     },
     {
       provider: 'jina-reader',
@@ -166,7 +181,7 @@ export function acquisitionReadiness(config: AcquisitionConfig) {
       provider: 'docling',
       configured: !!config.docling,
       state: !config.docling
-        ? 'disabled'
+        ? 'unconfigured'
         : config.docling.modelsAuthorized
           ? 'configured-local-artifacts-not-probed'
           : 'blocked-model-authorization',
@@ -175,12 +190,32 @@ export function acquisitionReadiness(config: AcquisitionConfig) {
       provider: 'gpt-researcher',
       configured: !!config.gptResearcher,
       state: !config.gptResearcher
-        ? 'disabled'
+        ? 'unconfigured'
         : config.gptResearcher.billingAuthorized
           ? 'configured-not-probed'
           : 'blocked-api-budget',
     },
   ];
+}
+
+/** Only an explicit public CA bundle may enter the isolated Python environment. */
+async function publicCaFile(path: string) {
+  try {
+    const stat = await lstat(path);
+    if (!path.startsWith('/') || !stat.isFile() || stat.isSymbolicLink() || stat.size > 1000000)
+      throw new Error();
+    if ((await realpath(path)) !== path) throw new Error();
+    const pem = await readFile(path, 'utf8');
+    if (/PRIVATE KEY/.test(pem)) throw new Error();
+    const certificates = [
+      ...pem.matchAll(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g),
+    ];
+    if (!certificates.length) throw new Error();
+    for (const [certificate] of certificates) new X509Certificate(certificate);
+    return path;
+  } catch {
+    throw new Error('invalid_last30days_ca_file');
+  }
 }
 
 export async function acquireConfigured(
@@ -223,10 +258,10 @@ export async function acquireConfigured(
     }
   }
   if (config.searxng && (!request.sources || request.sources.includes('open-web'))) {
-    const endpoint = new URL(config.searxng);
-    endpoint.searchParams.set('q', request.query);
-    endpoint.searchParams.set('format', 'json');
     try {
+      const endpoint = new URL(normalizeConsiderUrl(config.searxng).normalizedUrl);
+      endpoint.searchParams.set('q', request.query);
+      endpoint.searchParams.set('format', 'json');
       searches++;
       const result = normalizeAcquisition(
         (await fetch(endpoint.toString(), signal)).json,
@@ -242,6 +277,9 @@ export async function acquireConfigured(
     const home = await mkdtemp(join(tmpdir(), 'signals-acquisition-'));
     try {
       signal?.throwIfAborted();
+      const caFile = config.last30days.caFile
+        ? await publicCaFile(config.last30days.caFile)
+        : undefined;
       const pin = (
         await exec('git', ['-C', config.last30days.checkout, 'rev-parse', 'HEAD'], {
           timeout: 5000,
@@ -273,11 +311,16 @@ export async function acquireConfigured(
           HOME: home,
           LAST30DAYS_CONFIG_DIR: '',
           LAST30DAYS_SKIP_KEYCHAIN: '1',
+          ...(caFile ? { SSL_CERT_FILE: caFile } : {}),
         },
       });
       const parsed = normalizeAcquisition(JSON.parse(result.stdout), 'last30days');
       hits.push(...parsed.hits);
       gaps.push(...parsed.gaps);
+      if (/CERTIFICATE_VERIFY_FAILED/.test(result.stderr))
+        gaps.push(
+          'last30days: tls_certificate_verify_failed; configure an explicit reviewed public CA bundle for this Python runtime',
+        );
     } catch (e) {
       gaps.push(`last30days: ${e instanceof Error ? e.message.slice(0, 240) : 'failed'}`);
     } finally {

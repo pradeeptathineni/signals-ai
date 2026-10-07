@@ -66,6 +66,9 @@ test('server-owned replay supports evidence, private notes, manual saves, inbox 
 test('source settings and owned cancellation remain usable', async ({ page }) => {
   await page.goto('');
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByText('Configured acquisition and extraction providers', { exact: true }).click();
+  await expect(page.getByText('searxng: unconfigured', { exact: true })).toBeVisible();
+  await expect(page.getByText('last30days: unconfigured', { exact: true })).toBeVisible();
   await page.getByLabel('Source URL', { exact: true }).fill('https://example.com/feed');
   await page.getByLabel('Source name', { exact: true }).fill('Private followed feed');
   await page.getByRole('button', { name: 'Add followed source', exact: true }).click();

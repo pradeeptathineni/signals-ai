@@ -43,6 +43,10 @@ Optional acquisition/extraction is configured in ignored `.signals/providers.jso
 
 Extra grounded assessment is optional: `--review`, or **Request an additional grounded assessment pass** in Settings. It uses another bounded no-web inference over fetched material. `--save never --cache memory` preserves the no-state behavior of both routes.
 
+Optional provider readiness distinguishes **unconfigured** from configured-but-unprobed and blocked. A SearXNG JSON endpoint may deny access or report unresponsive engines even with HTTP200; those remain gaps, without automatic retry. The pinned last30days HN wrapper can use an explicitly selected public CA bundle through `last30days.caFile` in private `.signals/providers.json`. This fixes Python installations missing a default trust store; it never disables TLS verification or imports ambient credentials. Select an absolute, regular, reviewed PEM certificate file with no private keys. A successful locator lookup is not proof of topic relevance.
+
+Native exchange exports retain publication/fetch dates and assessments separately. Configured-live research is `model-led`; native invoking-host research is `agent-assisted`; fixture results stay fixture-labelled and cannot enter real evidence admission. Re-exporting a retained result changes its export time/code revision, not its original observations or discovery time.
+
 ```sh
 npm run discovery -- setup
 npm run discovery -- status

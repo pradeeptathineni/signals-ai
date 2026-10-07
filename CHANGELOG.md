@@ -1,5 +1,7 @@
 # Changelog
 
+Closeout corrections after the fixed 286bf7c review snapshot: explicit public CA selection for isolated last30days Python, distinct unconfigured provider readiness and SearXNG engine failures, accurate live/fixture exchange modes with supported-only recommendation provenance, and a bounded context map of current governing architecture. Historical evidence and the reviewer snapshot remain unchanged.
+
 ## Unreleased
 
 - Native-first intent-derived discovery, explicit URL capture, optional reviewed acquisition/extraction and separate search/read budgets. Readability/RSS retain original outlinks; denied providers remain gaps.

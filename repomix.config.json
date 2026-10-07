@@ -4,7 +4,7 @@
     "style": "xml",
     "filePathStyle": "target-relative",
     "parsableStyle": true,
-    "headerText": "Disposable map for Signals. Source files and tests remain authoritative. Git JSON is the public Corpus database; private .signals files are never included.",
+    "headerText": "Disposable map for Signals. Source files and tests remain authoritative. Current architecture and governing ADRs are included; historical ADRs and phase reports are retrieved explicitly. Git JSON is the public Corpus database; private .signals files are never included.",
     "fileSummary": true,
     "directoryStructure": true,
     "compress": true,
@@ -35,12 +35,17 @@
   "include": [
     "AGENTS.md",
     "README.md",
+    "ARCHITECTURE.md",
     "package.json",
     "apps/**/*.ts",
     "apps/**/*.tsx",
     "packages/**/*.ts",
     "scripts/**/*",
-    "docs/architecture/**/*.md"
+    "docs/architecture/ADR-001-*.md",
+    "docs/architecture/ADR-009-*.md",
+    "docs/architecture/ADR-011-*.md",
+    "docs/architecture/ADR-012-*.md",
+    "docs/architecture/schema.md"
   ],
   "ignore": {
     "useGitignore": false,
