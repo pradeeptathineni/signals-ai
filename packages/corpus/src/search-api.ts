@@ -62,7 +62,12 @@ interface ActiveRun {
   error?: string;
   batch?: QueryBatch;
 }
-export function searchApi(root = process.cwd(), search = signalSearch, locate = directSearch) {
+export function searchApi(
+  root = process.cwd(),
+  search = signalSearch,
+  locate = directSearch,
+  follow = answerFromEvidence,
+) {
   const token = randomBytes(32).toString('hex');
   const runs = new Map<string, ActiveRun>();
   const pruneRuns = () => {
@@ -451,7 +456,7 @@ export function searchApi(root = process.cwd(), search = signalSearch, locate = 
         try {
           json(
             200,
-            await answerFromEvidence(
+            await follow(
               result,
               question.question,
               question.ids,
