@@ -1284,7 +1284,7 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                           query.trim() ||
                             'Capture this resource and describe its supported uses and limits.',
                           undefined,
-                          undefined,
+                          context,
                           [captureUrl],
                         ),
                       )

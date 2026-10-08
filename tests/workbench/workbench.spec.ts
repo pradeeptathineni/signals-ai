@@ -10,6 +10,51 @@ async function replayDuplicateIdentity(page: Page) {
   return record;
 }
 
+test('source scans and result exposures retain distinct denominators', async ({ page }) => {
+  await page.route('**/__signals/api/source-scan', async (route) => {
+    await route.fulfill({
+      json: {
+        sources: [
+          {
+            uri: 'https://example.com/feed',
+            label: 'Followed source',
+            state: 'unchanged',
+            delta: 'No new links',
+            newLinks: [],
+            health: { scans: 2, resultExposures: 1, exposures: 1, opportunities: 0 },
+          },
+        ],
+      },
+    });
+  });
+  await page.goto('');
+  await page.getByRole('button', { name: 'Sources', exact: true }).click();
+  await page.getByRole('button', { name: 'Scan followed sources without AI', exact: true }).click();
+  await expect(page.getByText(/2 scans; 1 result exposures/)).toBeVisible();
+});
+
+test('Search capture carries explicit question constraints to the research boundary', async ({
+  page,
+}) => {
+  let submitted: unknown;
+  await page.route('**/__signals/api/capture', async (route) => {
+    submitted = route.request().postDataJSON();
+    await route.fulfill({ status: 400, json: { code: 'capture_payload_fixture_stopped' } });
+  });
+  await page.goto('');
+  await page.getByLabel('Research question').fill('Inspect this learning resource');
+  await page.getByText('Project context and constraints', { exact: true }).click();
+  await page.getByLabel('Context for this question').fill('Read only; no containers or installs.');
+  await page.getByLabel('Capture a public URL').fill('https://example.com/learning');
+  await page.getByRole('button', { name: 'Capture URL', exact: true }).click();
+  await expect(page.getByText('capture_payload_fixture_stopped', { exact: true })).toBeVisible();
+  expect(submitted).toMatchObject({
+    query: 'Inspect this learning resource',
+    context: 'Read only; no containers or installs.',
+    captureUrls: ['https://example.com/learning'],
+  });
+});
+
 test('duplicate Corpus identities send the selected store for check and refresh', async ({
   page,
 }) => {

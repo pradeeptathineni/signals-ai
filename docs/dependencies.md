@@ -1,5 +1,15 @@
 # Dependency baseline
 
+The 2026-10-08 gate identified Handlebars JavaScript-injection advisories
+[GHSA-8r5x-fm3f-whwj](https://github.com/advisories/GHSA-8r5x-fm3f-whwj),
+[GHSA-p8wg-vrv2-v86f](https://github.com/advisories/GHSA-p8wg-vrv2-v86f) and
+[GHSA-xw65-4hp5-5hc7](https://github.com/advisories/GHSA-xw65-4hp5-5hc7) in the development-only
+`repomix@1.18.1 -> handlebars` path. The lockfile pins the patched
+`handlebars@4.7.10` (MIT), within Repomix's existing compatible range; direct versions remain
+unchanged. Two advisories are critical and one is moderate. The shipped application does not
+include this template compiler. The original exact Repomix/braces exception and its rejection of
+additional advisories remain unchanged; this patched dependency receives no waiver.
+
 The 2026-10-05 gate identified [GHSA-68fv-2mgg-jv7q](https://github.com/advisories/GHSA-68fv-2mgg-jv7q) in the development path `Vite -> PostCSS -> source-map-js`. The lockfile now pins the patched `source-map-js@1.2.2` (BSD-3-Clause); direct versions remain unchanged. The existing exact Repomix exception was not broadened. Build/browser checks and the audit policy verify the updated tree.
 
 The reset adds exact `@mozilla/readability@0.6.0` (Apache-2.0), `linkedom@0.18.13` (ISC) and `rss-parser@3.13.0` (MIT). Linkedom supplies an inert DOM with no page script/resource execution; original outlinks are harvested before Readability. RSS/Atom uses `parseString` on safe fetched bytes, with entity declarations rejected. Live MDN/GitHub/RSS trials and negative fixtures passed; transport/DNS ownership remains in Signals.

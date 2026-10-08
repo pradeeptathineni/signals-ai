@@ -116,9 +116,11 @@ export function SourceManager({
             <li key={source.uri}>
               <strong>{source.label}</strong>: {source.state} · {source.delta ?? source.reason}
               <p>
-                {source.health?.exposures ?? 0} scans; {source.health?.opportunities ?? 0} new-link
-                opportunities; feedback {source.health?.feedback ?? 'unknown'}. This measures
-                exposure, not usefulness.
+                {source.health?.scans ?? 'unknown'} scans;{' '}
+                {source.health?.resultExposures ?? source.health?.exposures ?? 'unknown'} result
+                exposures; {source.health?.opportunities ?? 0} new-link opportunities; feedback{' '}
+                {source.health?.feedback ?? 'unknown'}. Historical denominators may be unknown.
+                These counts do not establish usefulness.
               </p>
               <ul>
                 {source.newLinks.map((link) => (
