@@ -1,6 +1,7 @@
 import { fetchEvidence, normalizeText } from './search-fetch.js';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
 import { parseRequest, type SearchRequest } from '../../domain/src/search-contract.js';
+import { githubSearch, type GitHubPlan, type GitHubCache } from './search-github.js';
 
 interface DirectHit {
   provider: 'github' | 'hacker-news' | 'wikipedia';
@@ -11,6 +12,16 @@ interface DirectHit {
   evidenceUri: string;
   popularity: { stars?: number; points?: number; comments?: number };
 }
+export interface DirectSearchResult {
+  schemaVersion: number;
+  query: string;
+  kind: string;
+  hits: DirectHit[];
+  gaps: string[];
+  searches: number;
+  modelCalls: number;
+  pages?: Awaited<ReturnType<typeof githubSearch>>['pages'];
+}
 const object = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -19,12 +30,13 @@ const text = (value: unknown) => (typeof value === 'string' ? value.slice(0, 800
 const count = (value: unknown) =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 
-/** Ranked locators, never assessed entities. No credentials, pagination, retries or crawling. */
+/** Ranked locators, never assessed entities. Explicit GitHub plans add bounded recipe pages. */
 export async function directSearch(
   input: SearchRequest,
   signal?: AbortSignal,
   fetch = fetchEvidence,
-) {
+  github?: { plans: GitHubPlan[]; cache?: GitHubCache },
+): Promise<DirectSearchResult> {
   const request = parseRequest(input);
   const choices = request.supplementalSites ?? [
     'https://github.com',
@@ -33,7 +45,17 @@ export async function directSearch(
   const hits: DirectHit[] = [],
     gaps: string[] = [];
   let searches = 0;
+  const selectedGithub =
+    github && (!request.sources || request.sources.includes('github'))
+      ? await githubSearch(github.plans, { signal, fetch, cache: github.cache })
+      : null;
+  if (selectedGithub) {
+    hits.push(...selectedGithub.hits.map((hit, index) => ({ ...hit, rank: index + 1 })));
+    gaps.push(...selectedGithub.gaps);
+    searches += selectedGithub.searches;
+  }
   for (const provider of ['github', 'hacker-news'] as const) {
+    if (provider === 'github' && github) continue;
     if (request.sources && !request.sources.includes(provider)) continue;
     const scopes = choices.filter(
       (uri) =>
@@ -188,8 +210,7 @@ export async function directSearch(
     hits,
     gaps,
     searches,
+    pages: selectedGithub?.pages ?? [],
     modelCalls: 0,
   };
 }
-
-export type DirectSearchResult = Awaited<ReturnType<typeof directSearch>>;
