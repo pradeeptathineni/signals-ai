@@ -10,7 +10,7 @@ test('duplicate Corpus identities send the selected store for check and refresh'
   // Frontend boundary fixture; backend scope/storage guards have separate HTTP regressions.
   await page.route('**/__signals/api/corpus', (route) => route.fulfill({ json: [record] }));
   await page.route('**/__signals/api/private-corpus', (route) => route.fulfill({ json: [record] }));
-  const selections: { id: string; destination: string }[] = [];
+  const selections: unknown[] = [];
   await page.route('**/__signals/api/primary-check', async (route) => {
     selections.push(route.request().postDataJSON());
     await route.fulfill({ json: { status: 'unchanged', reason: 'Scope boundary fixture.' } });
