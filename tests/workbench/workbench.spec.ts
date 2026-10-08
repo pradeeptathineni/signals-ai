@@ -29,6 +29,13 @@ test('duplicate Corpus identities send the selected store for check and refresh'
     .filter({ has: page.getByText('Public Corpus', { exact: true }) });
   await expect(privateCard).toHaveCount(1);
   await expect(publicCard).toHaveCount(1);
+  await privateCard.getByRole('checkbox').check();
+  await expect(publicCard.getByRole('checkbox')).not.toBeChecked();
+  await expect(page.getByRole('region', { name: 'Compare entities' })).not.toBeVisible();
+  await publicCard.getByRole('checkbox').check();
+  await expect(
+    page.getByRole('region', { name: 'Compare entities' }).locator('article'),
+  ).toHaveCount(2);
   await privateCard.getByRole('button', { name: 'Check primary source without AI' }).click();
   await expect(page.getByText(/Scope boundary fixture/)).toBeVisible();
   await privateCard

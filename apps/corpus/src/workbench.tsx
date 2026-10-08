@@ -67,6 +67,7 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
     [saved, setSaved] = useState(new Set<string>());
   const [selected, setSelected] = useState<string[]>([]),
     [filters, setFilters] = useState<SearchFilters>({});
+  const [corpusSelection, setCorpusSelection] = useState<string[]>([]);
   const [followup, setFollowup] = useState(''),
     [answer, setAnswer] = useState<null | {
       answer: string;
@@ -229,7 +230,8 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
   );
   const all = tab === 'Search' ? (result?.items ?? []) : corpusItems;
   const items = useMemo(() => filterSearchItems(all, filters, saved), [all, filters, saved]);
-  const compared = all.filter((item) => selected.includes(item.entity.id)).slice(0, 2);
+  const selection = tab === 'Corpus' ? corpusSelection : selected;
+  const compared = all.filter((item) => selection.includes(entityAnchor(item.entity))).slice(0, 2);
   function entityAnchor(entity: SearchItem['entity']) {
     return `${tab === 'Corpus' ? `${corpusDestinations.get(entity)}-` : ''}${entity.id}`;
   }
@@ -237,7 +239,8 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
     setFilters((current) => ({ ...current, [key]: value }));
   }
   function toggle(id: string) {
-    setSelected((current) =>
+    const update = tab === 'Corpus' ? setCorpusSelection : setSelected;
+    update((current) =>
       current.includes(id) ? current.filter((value) => value !== id) : [...current, id],
     );
   }
@@ -1437,7 +1440,7 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                 <h2>Compare</h2>
                 <div className="entity-grid">
                   {compared.map((item) => (
-                    <article key={item.entity.id}>
+                    <article key={entityAnchor(item.entity)}>
                       <h3>{item.entity.name}</h3>
                       <p>{item.match.reason}</p>
                       <p>
@@ -1464,8 +1467,8 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                   <label className="check">
                     <input
                       type="checkbox"
-                      checked={selected.includes(item.entity.id)}
-                      onChange={() => toggle(item.entity.id)}
+                      checked={selection.includes(entityAnchor(item.entity))}
+                      onChange={() => toggle(entityAnchor(item.entity))}
                     />
                     Select {item.entity.name}
                   </label>

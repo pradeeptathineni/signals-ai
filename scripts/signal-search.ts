@@ -62,7 +62,7 @@ try {
     );
   else {
     const request = parseRequest({
-      query: values.query,
+      query: values.query ?? (values['check-primary'] ? 'Check saved primary source' : undefined),
       profile: values.profile ?? 'wide',
       route: values.route ?? (values.accept ? 'assessed' : 'native'),
       save: values.save ?? 'never',

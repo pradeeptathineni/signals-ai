@@ -1,7 +1,8 @@
 import { createServer } from 'node:http';
+import { spawnSync } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { expect, it, vi } from 'vitest';
 import { searchApi } from './search-api.js';
@@ -19,6 +20,30 @@ vi.mock('./search-runner.js', () => ({
     }),
   }),
 }));
+
+it('checks a scoped CLI identity without a query while ordinary retrieval still requires one', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-check-cli-')));
+  const script = resolve('scripts/signal-search.ts');
+  const run = (args: string[]) =>
+    spawnSync(process.execPath, ['--import', import.meta.resolve('tsx'), script, ...args], {
+      cwd: root,
+      encoding: 'utf8',
+    });
+  try {
+    const checked = run([
+      '--check-primary',
+      'entity-000000000000000000000000',
+      '--destination',
+      'private',
+    ]);
+    expect(checked.status).toBe(1);
+    expect(JSON.parse(checked.stdout)).toEqual({ status: 'failed', code: 'unknown_entity' });
+    const retrieval = run(['--corpus-only']);
+    expect(JSON.parse(retrieval.stdout)).toEqual({ status: 'failed', code: 'invalid_request' });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 it('requires scope for duplicate saved identities and checks/refreshes the selected private copy', async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-store-selection-')));
