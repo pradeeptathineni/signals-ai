@@ -104,6 +104,19 @@ const entitySchema = Type.Object(
           normalizer: Type.Optional(Type.Literal('text-v2')),
           finalUri: Type.Optional(Type.String({ maxLength: 2048 })),
           extractor: Type.Optional(Type.String({ maxLength: 100 })),
+          transport: Type.Optional(
+            Type.Object(
+              {
+                etag: Type.Optional(
+                  Type.String({ minLength: 1, maxLength: 4096, pattern: '^[^\\r\\n]+$' }),
+                ),
+                lastModified: Type.Optional(
+                  Type.String({ minLength: 1, maxLength: 4096, pattern: '^[^\\r\\n]+$' }),
+                ),
+              },
+              { additionalProperties: false, minProperties: 1 },
+            ),
+          ),
           state: Type.Enum(['fetched', 'failed', 'denied']),
           reason: Type.String(),
           excerpt: Type.String({ maxLength: 12000 }),

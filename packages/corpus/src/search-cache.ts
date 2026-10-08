@@ -4,6 +4,22 @@ import { atomicJson } from './search-store.js';
 import { fetchEvidence, digest } from './search-fetch.js';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
 import { cachedMaterial } from './search-document.js';
+import { Type } from 'typebox';
+import { Value } from 'typebox/value';
+
+const header = Type.Optional(Type.String({ maxLength: 4096, pattern: '^[^\\r\\n]*$' }));
+const cachedResponseSchema = Type.Object(
+  {
+    status: Type.Integer({ minimum: 100, maximum: 599 }),
+    etag: header,
+    lastModified: header,
+    link: header,
+    retryAfter: header,
+    rateRemaining: header,
+    rateReset: header,
+  },
+  { additionalProperties: false },
+);
 
 /** Explicit private caching retains bounded fetched text; memory/no-save never calls this. */
 export function privateCacheFetch(
@@ -34,6 +50,9 @@ export function privateCacheFetch(
         /^[a-f0-9]{64}$/.test(cached.digest)
       ) {
         signal?.throwIfAborted();
+        const response = 'response' in cached ? cached.response : undefined;
+        if (response !== undefined && !Value.Check(cachedResponseSchema, response))
+          throw new Error('invalid_source_cache');
         progress?.(`Private cache hit: ${new URL(normalized).hostname}`);
         return {
           uri:
@@ -43,6 +62,15 @@ export function privateCacheFetch(
           text: cached.text,
           digest: cached.digest,
           normalizer: 'text-v2' as const,
+          ...(response
+            ? {
+                response: {
+                  status: response.status,
+                  etag: response.etag,
+                  lastModified: response.lastModified,
+                },
+              }
+            : {}),
           material: cachedMaterial('material' in cached ? cached.material : undefined),
           identityUnverified: 'identityUnverified' in cached && cached.identityUnverified === true,
           truncated: 'truncated' in cached && cached.truncated === true,
