@@ -73,6 +73,28 @@ select {
 .entity-card h2 {
   font-size: 1.3rem;
 }
+.research-brief {
+  margin: 2rem 0;
+  padding: 1.6rem;
+  background: #fff;
+  border-left: 4px solid #205c44;
+  overflow-wrap: anywhere;
+}
+.brief-text {
+  max-width: 78ch;
+  white-space: pre-wrap;
+}
+.brief-text h3 {
+  margin-top: 1.4rem;
+}
+.inbox-list {
+  list-style: none;
+  padding: 0;
+}
+.inbox-list > li {
+  padding: 1rem 0;
+  border-bottom: 1px solid #c4cdc1;
+}
 .check,
 .actions {
   display: flex;

@@ -22,6 +22,10 @@ const api = searchApi(root, async (input, dependencies) => {
   const request = parseRequest(input);
   dependencies?.progress?.('Replaying approved public evidence for UI verification.');
   if (request.query === 'cancellation fixture') {
+    dependencies?.brief?.({
+      format: 'markdown',
+      text: 'This original answer is ready before source checks finish.',
+    });
     dependencies?.provisional?.(
       approved.map(({ entity }) => ({
         uri: entity.uri,
@@ -72,6 +76,10 @@ const api = searchApi(root, async (input, dependencies) => {
     schemaVersion: 2,
     runId: randomUUID(),
     query: request.query,
+    brief: {
+      format: 'markdown',
+      text: '## A practical next step\n\nInspect the retained public examples and compare their uses before choosing what to study.\n\n- [Inspect a public source](https://example.com/reference)\n- No new discovery was performed in this browser replay.',
+    },
     status: dependencies?.signal?.aborted ? 'cancelled' : 'partial',
     items: contextualize(items, new Set()),
     sources: approved.flatMap(({ entity }) => entity.evidence),
@@ -88,6 +96,21 @@ const api = searchApi(root, async (input, dependencies) => {
     counts: { leads: 2, distinct: 2, duplicates: 0, omitted: 0 },
     limits: budgets.quick,
   };
+  if (request.query === 'partial metadata fixture') {
+    result.items = [];
+    result.brief = {
+      format: 'markdown',
+      text: 'The original answer is retained despite a record gap.\n\n<script>window.__briefExecuted = true</script>\n\n[Unsafe action](javascript:alert(1))',
+    };
+    result.provisionalLeads = [
+      {
+        name: 'Incomplete lead',
+        uri: 'https://example.com/lead',
+        description: 'A learning possibility awaiting source metadata.',
+        limits: ['Missing supported defining evidence.'],
+      },
+    ];
+  }
   return result;
 });
 const server = await createServer({

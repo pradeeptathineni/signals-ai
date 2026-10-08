@@ -50,7 +50,7 @@ export default defineConfig({
         '**/.git/**',
         '**/.signals/**',
         '**/.context-ai/lock.json',
-        '**/.codex/**',
+        `${fileURLToPath(new URL('../../.codex', import.meta.url)).replaceAll('\\', '/')}/**`,
         `${queryDirectory}/**`,
       ],
     },

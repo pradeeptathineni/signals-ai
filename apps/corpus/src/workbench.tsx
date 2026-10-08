@@ -20,10 +20,12 @@ import { PersonalEditor } from './workbench-personal.js';
 import { SourceManager } from './workbench-sources.js';
 import type { PersonalState } from '../../../packages/domain/src/search-priority.js';
 import type { InboxEntry } from '../../../packages/corpus/src/search-inbox.js';
+import type { runDueOnce } from '../../../packages/corpus/src/search-scheduler.js';
 import { rejectedNativeLeads } from '../../../packages/domain/src/search-rejected.js';
 
 const local = (window as Window & { __SIGNALS_LOCAL__?: boolean }).__SIGNALS_LOCAL__ === true;
 const base = import.meta.env.BASE_URL;
+const settingsTabs = ['Settings', 'Interests', 'Sources', 'Jobs'];
 export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
   const [tab, setTab] = useState(local ? 'Search' : 'Corpus');
   const [token, setToken] = useState(''),
@@ -34,7 +36,10 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
   >([]);
   const [query, setQuery] = useState(''),
     [result, setResult] = useState<SearchResult | null>(null);
+  const [earlyBrief, setEarlyBrief] = useState<SearchResult['brief']>();
   const [captureUrl, setCaptureUrl] = useState('');
+  const [context, setContext] = useState('');
+  const [groupPlan, setGroupPlan] = useState('[]');
   const [personal, setPersonal] = useState<Record<string, PersonalState>>({});
   const [inbox, setInbox] = useState<InboxEntry[]>([]);
   const [preview, setPreview] = useState<{
@@ -44,6 +49,7 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
     uri: string;
   } | null>(null);
   const evidenceDialog = useRef<HTMLDialogElement>(null);
+  const reopening = useRef(false);
   useEffect(() => {
     if (preview && evidenceDialog.current && !evidenceDialog.current.open)
       evidenceDialog.current.showModal();
@@ -159,7 +165,10 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
         })
         .catch(() => setReady('Local bridge unavailable.'));
       void api<SearchSettings>('settings')
-        .then(setSettings)
+        .then((value) => {
+          setSettings(value);
+          setGroupPlan(JSON.stringify(value.acquisitionGroups ?? [], null, 2));
+        })
         .catch((failure: unknown) => setError(String(failure)));
       void api<Record<string, PersonalState>>('personal')
         .then(setPersonal)
@@ -180,11 +189,24 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
           result: SearchResult | null;
           error: string | null;
           batch: QueryBatch | null;
+          due?: Awaited<ReturnType<typeof runDueOnce>>;
+          brief?: SearchResult['brief'] | null;
         }>(`runs/${run}`);
         if (state.error) throw new Error(state.error);
         if (stopped) return;
         setEvents(state.events);
+        if (state.brief) setEarlyBrief(state.brief);
         setProvisional(state.provisional ?? []);
+        if (state.due) {
+          setBusy(false);
+          setHistory(JSON.stringify(state.due, null, 2));
+          setMessage(
+            state.due.enabled
+              ? `Due activation finished; ${state.due.jobs.length} jobs recorded. Inspect statuses below. Recurrence stays as configured.`
+              : 'Recurring research modes are off. No due jobs activated.',
+          );
+          void reloadCorpus();
+        }
         if (state.batch) {
           setBatch(state.batch);
           setBusy(false);
@@ -195,6 +217,10 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
         }
         if (state.result) {
           setResult(state.result);
+          if (reopening.current) {
+            setQuery(state.result.query);
+            reopening.current = false;
+          }
           setBusy(false);
           setMessage(`Research ${state.result.status}; ${state.result.items.length} candidates.`);
         }
@@ -260,6 +286,7 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
     captureUrls?: string[],
     destination?: 'public' | 'private',
   ) {
+    reopening.current = false;
     setSourceResult(null);
     setProvisional([]);
     const started = await api<{ id: string }>(
@@ -279,6 +306,7 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
     setRun(started.id);
     setBusy(true);
     setResult(null);
+    setEarlyBrief(undefined);
     setSelected([]);
     setAnswer(null);
     setEvents(['Starting research…']);
@@ -305,11 +333,46 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
   async function openRun(runId: string) {
     const opened = await api<{ id: string }>('history/open', { runId });
     setRun(opened.id);
+    reopening.current = true;
     setBusy(true);
     setResult(null);
+    setEarlyBrief(undefined);
     setTab('Search');
     setSelected([]);
     setEvents(['Opening frozen evidence…']);
+  }
+  async function loadHistory() {
+    const recent = await api<{
+      runs: typeof recentRuns;
+      selections: typeof selections;
+      discovery: unknown;
+      batches: typeof batchHistory;
+    }>('history');
+    setRecentRuns(recent.runs);
+    setSelections(recent.selections);
+    setBatchHistory(recent.batches);
+    setHistory(JSON.stringify(recent.discovery, null, 2));
+  }
+  async function askEvidence(question = followup) {
+    setAnswerBusy(true);
+    try {
+      if (tab === 'Corpus') {
+        const chosen = corpus.filter((record) =>
+          corpusSelection.includes(`${record.destination}-${record.entity.id}`),
+        );
+        setAnswer(
+          await api('followup', {
+            ids: chosen.map((record) => record.entity.id),
+            destinations: chosen.map((record) => record.destination),
+            question,
+          }),
+        );
+      } else if (result) {
+        setAnswer(await api('followup', { runId: result.runId, ids: selected, question }));
+      }
+    } finally {
+      setAnswerBusy(false);
+    }
   }
   const Container = tab === 'Corpus' ? 'section' : 'main';
   return (
@@ -321,7 +384,10 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
         <a href={base} className="brand">
           Signals
         </a>
-        {(local ? ['Search', 'Corpus', 'Settings'] : ['Corpus']).map((destination) => (
+        {(local
+          ? ['Search', 'Inbox', 'Corpus', 'Interests', 'Sources', 'Jobs', 'Settings']
+          : ['Corpus']
+        ).map((destination) => (
           <button
             key={destination}
             aria-current={tab === destination ? 'page' : undefined}
@@ -329,9 +395,11 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
               setTab(destination);
               setFilters({});
               setSelected([]);
+              setAnswer(null);
+              if (destination === 'Jobs') void action(loadHistory);
             }}
           >
-            {destination}
+            {destination === 'Search' ? 'Search Signals' : destination}
           </button>
         ))}
         <span>{local ? 'Local workbench' : 'Public corpus · read only'}</span>
@@ -355,466 +423,535 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
         </dialog>
         {error && <p role="alert">{error}</p>}
         {message && <p role="status">{message}</p>}
-        {tab === 'Settings' && settings ? (
+        {settingsTabs.includes(tab) && settings ? (
           <section aria-labelledby="settings-title">
-            <h1 id="settings-title">Settings</h1>
-            <p>{ready}</p>
-            <p>
-              Your Codex credentials stay with Codex. Saved questions and settings stay private.
-              Publication: {settings.publication}.
-            </p>
-            <div className="filters">
-              <label>
-                Model reference (blank uses installed configuration)
-                <input
-                  value={settings.model}
-                  onChange={(event) => setSettings({ ...settings, model: event.target.value })}
-                />
-              </label>
-              <label>
-                Reasoning effort reference
-                <input
-                  value={settings.effort}
-                  onChange={(event) => setSettings({ ...settings, effort: event.target.value })}
-                />
-              </label>
-              <label>
-                Depth
-                <select
-                  value={settings.profile}
-                  onChange={(event) =>
-                    setSettings({ ...settings, profile: event.target.value as 'quick' | 'wide' })
-                  }
-                >
-                  <option>quick</option>
-                  <option>wide</option>
-                </select>
-              </label>
-              <fieldset>
-                <legend>Research intent</legend>
+            <h1 id="settings-title">{tab}</h1>
+            {tab === 'Jobs' && busy && (
+              <section aria-label="Active job">
+                <h2>Activation in progress</h2>
+                <ol aria-live="polite">
+                  {events.slice(-8).map((event, index) => (
+                    <li key={index}>{event}</li>
+                  ))}
+                </ol>
                 <button
                   onClick={() =>
-                    setSettings({
-                      ...settings,
-                      profile: 'quick',
-                      route: 'native',
-                      model: 'gpt-6.1-sol',
-                      effort: 'low',
-                      groundedReview: false,
+                    void action(async () => {
+                      await api(`cancel/${run}`, {});
+                      setMessage('Cancellation requested. Completed work remains retained.');
                     })
                   }
                 >
-                  Fast
+                  Cancel active job
                 </button>
-                <button
-                  onClick={() =>
-                    setSettings({
-                      ...settings,
-                      profile: 'wide',
-                      route: 'native',
-                      model: 'gpt-6.1-sol',
-                      effort: 'low',
-                      groundedReview: false,
-                    })
-                  }
-                >
-                  Balanced
-                </button>
-                <button
-                  onClick={() =>
-                    setSettings({
-                      ...settings,
-                      profile: 'wide',
-                      route: 'assessed',
-                      model: 'gpt-6.1-sol',
-                      effort: 'high',
-                      groundedReview: true,
-                    })
-                  }
-                >
-                  Deep
-                </button>
-                <p>
-                  Fast allows {budgets.quick.searches} searches, {budgets.quick.documents} reads and{' '}
-                  {budgets.quick.seconds} seconds. Balanced allows {budgets.wide.searches} searches,{' '}
-                  {budgets.wide.documents} reads and {budgets.wide.seconds} seconds. Both use one
-                  native research session with Sol low. Deep uses Sol high and requests an
-                  additional grounded assessment. Each may return partial findings. Save settings to
-                  apply this selection.
-                </p>
-              </fieldset>
-              <label>
-                Research route
-                <select
-                  value={settings.route ?? 'assessed'}
-                  onChange={(event) =>
-                    setSettings({ ...settings, route: event.target.value as 'native' | 'assessed' })
-                  }
-                >
-                  <option value="native">Native brief (selective evidence)</option>
-                  <option value="assessed">Full assessment</option>
-                </select>
-              </label>
-              <label>
-                Evidence extraction model reference (blank inherits discovery)
-                <input
-                  value={settings.extractionModel ?? ''}
-                  onChange={(event) =>
-                    setSettings({ ...settings, extractionModel: event.target.value })
-                  }
-                />
-              </label>
-              <label>
-                Evidence extraction effort reference (blank inherits discovery)
-                <input
-                  value={settings.extractionEffort ?? ''}
-                  onChange={(event) =>
-                    setSettings({ ...settings, extractionEffort: event.target.value })
-                  }
-                />
-              </label>
-              <label>
-                Save threshold
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={settings.threshold}
-                  onChange={(event) =>
-                    setSettings({ ...settings, threshold: Number(event.target.value) })
-                  }
-                />
-              </label>
-              <label>
-                Retain temporary results (days)
-                <input
-                  type="number"
-                  min="1"
-                  max="90"
-                  value={settings.retentionDays}
-                  onChange={(event) =>
-                    setSettings({ ...settings, retentionDays: Number(event.target.value) })
-                  }
-                />
-              </label>
-              <label>
-                Corpus destination
-                <select
-                  value={settings.destination}
-                  onChange={(event) =>
-                    setSettings({
-                      ...settings,
-                      destination: event.target.value as 'public' | 'private',
-                    })
-                  }
-                >
-                  <option value="public">Git-visible local files</option>
-                  <option value="private">Private corpus</option>
-                </select>
-              </label>
-              <label>
-                Publication policy
-                <select
-                  value={settings.publication}
-                  onChange={(event) =>
-                    setSettings({
-                      ...settings,
-                      publication: event.target.value as SearchSettings['publication'],
-                    })
-                  }
-                >
-                  <option value="local-only">Local only</option>
-                  <option value="reviewed-push">Reviewed CLI push</option>
-                  <option value="unattended">Unattended Git push</option>
-                </select>
-              </label>
-            </div>
-            <fieldset>
-              <legend>Source families</legend>
+              </section>
+            )}
+            <div hidden={tab !== 'Settings'}>
+              <p>{ready}</p>
               <p>
-                Search through the host's available public tools. Disabled or inaccessible families
-                remain explicit gaps.
+                Your Codex credentials stay with Codex. Saved questions and settings stay private.
+                Publication: {settings.publication}.
               </p>
-              {channels.map((channel) => (
-                <label className="check" key={channel}>
+              <div className="filters">
+                <label>
+                  Model reference (blank uses installed configuration)
                   <input
-                    type="checkbox"
-                    checked={settings.sources.includes(channel)}
-                    onChange={(event) =>
-                      setSettings({
-                        ...settings,
-                        sources: event.target.checked
-                          ? [...settings.sources, channel]
-                          : settings.sources.filter((value) => value !== channel),
-                      })
-                    }
+                    value={settings.model}
+                    onChange={(event) => setSettings({ ...settings, model: event.target.value })}
                   />
-                  {channel}
                 </label>
-              ))}
-            </fieldset>
-            <h2>Discovery</h2>
-            <SourceManager
-              settings={settings}
-              onChange={setSettings}
-              scan={() => api('source-scan', {})}
-            />
-            <details>
-              <summary>Configured acquisition and extraction providers</summary>
-              <p>
-                Optional providers are selected in private .signals/providers.json. Configuration is
-                separate from a successful runtime probe; failures appear as research gaps.
-              </p>
-              <ul>
-                {providers.map((provider) => (
-                  <li key={provider.provider}>
-                    {provider.provider}: {provider.state}
-                  </li>
-                ))}
-              </ul>
-            </details>
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={settings.groundedReview ?? false}
-                onChange={(event) =>
-                  setSettings({ ...settings, groundedReview: event.target.checked })
-                }
-              />
-              Request an additional grounded assessment pass
-            </label>
-            <p>
-              Discovery already returns source-bound observations. An extra review uses more time
-              and inference.
-            </p>
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={settings.promisingInbox?.enabled ?? false}
-                onChange={(event) =>
-                  setSettings({
-                    ...settings,
-                    promisingInbox: {
-                      enabled: event.target.checked,
-                      minimumPriority: settings.promisingInbox?.minimumPriority ?? 70,
-                    },
-                  })
-                }
-              />
-              Keep promising results in a private inbox
-            </label>
-            <label>
-              Minimum contextual priority for inbox
-              <input
-                type="number"
-                min={0}
-                max={100}
-                value={settings.promisingInbox?.minimumPriority ?? 70}
-                onChange={(event) =>
-                  setSettings({
-                    ...settings,
-                    promisingInbox: {
-                      enabled: settings.promisingInbox?.enabled ?? false,
-                      minimumPriority: Number(event.target.value),
-                    },
-                  })
-                }
-              />
-            </label>
-            <label>
-              Supplemental websites and paths (one public HTTPS URL per line)
-              <textarea
-                defaultValue={(settings.supplementalSites ?? []).join('\n')}
-                onBlur={(event) =>
-                  setSettings({
-                    ...settings,
-                    supplementalSites: [
-                      ...new Set(event.target.value.split(/\s+/).filter(Boolean)),
-                    ],
-                  })
-                }
-              />
-            </label>
-            <p>
-              These add direct site/path searches when relevant, within the same budget. Public
-              social posts may be inaccessible. A mirror or repeated recommendation earns no extra
-              independence.
-            </p>
-            <p>
-              Enabling a mode permits recurring inference while the local timer runs. Runner: Codex;
-              UTC; one job at a time; {JSON.stringify(budgets[settings.profile])}; threshold{' '}
-              {settings.threshold}; {settings.retentionDays} days temporary retention;{' '}
-              {settings.destination} destination; {settings.publication} publication.
-            </p>
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={settings.queryDiscovery}
-                onChange={(event) =>
-                  setSettings({ ...settings, queryDiscovery: event.target.checked })
-                }
-              />
-              Enable query discovery
-            </label>
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={settings.corpusDiscovery}
-                onChange={(event) =>
-                  setSettings({ ...settings, corpusDiscovery: event.target.checked })
-                }
-              />
-              Enable corpus discovery
-            </label>
-            <label>
-              Corpus cadence (days)
-              <input
-                type="number"
-                min="1"
-                value={settings.corpusEveryDays}
-                onChange={(event) =>
-                  setSettings({ ...settings, corpusEveryDays: Number(event.target.value) })
-                }
-              />
-            </label>
-            <h3>Saved questions</h3>
-            <label>
-              Find saved questions
-              <input
-                value={interestFilter}
-                onChange={(event) => setInterestFilter(event.target.value)}
-              />
-            </label>
-            <p>
-              {settings.queries.length} saved questions. Showing up to 20 matching questions; filter
-              by name or wording to edit more.
-            </p>
-            {settings.queries
-              .map((entry, index) => ({ entry, index }))
-              .filter(({ entry }) =>
-                `${entry.id} ${entry.query}`.toLowerCase().includes(interestFilter.toLowerCase()),
-              )
-              .slice(0, 20)
-              .map(({ entry, index }) => (
-                <fieldset key={entry.id}>
-                  <legend>{entry.id}</legend>
-                  <label className="check">
-                    <input
-                      type="checkbox"
-                      checked={entry.enabled}
-                      onChange={(event) =>
-                        setSettings({
-                          ...settings,
-                          queries: settings.queries.map((value, i) =>
-                            i === index ? { ...value, enabled: event.target.checked } : value,
-                          ),
-                        })
-                      }
-                    />
-                    Participate
-                  </label>
-                  <label>
-                    Question
-                    <textarea
-                      value={entry.query}
-                      onChange={(event) =>
-                        setSettings({
-                          ...settings,
-                          queries: settings.queries.map((value, i) =>
-                            i === index ? { ...value, query: event.target.value } : value,
-                          ),
-                        })
-                      }
-                    />
-                  </label>
-                  <label>
-                    Every (days)
-                    <input
-                      type="number"
-                      min="1"
-                      value={entry.everyDays}
-                      onChange={(event) =>
-                        setSettings({
-                          ...settings,
-                          queries: settings.queries.map((value, i) =>
-                            i === index
-                              ? { ...value, everyDays: Number(event.target.value) }
-                              : value,
-                          ),
-                        })
-                      }
-                    />
-                  </label>
-                  <label>
-                    Supplemental paths for {entry.id} (one URL per line)
-                    <textarea
-                      defaultValue={(entry.supplementalSites ?? []).join('\n')}
-                      onBlur={(event) =>
-                        setSettings({
-                          ...settings,
-                          queries: settings.queries.map((value, i) =>
-                            i === index
-                              ? {
-                                  ...value,
-                                  supplementalSites: [
-                                    ...new Set(event.target.value.split(/\s+/).filter(Boolean)),
-                                  ],
-                                }
-                              : value,
-                          ),
-                        })
-                      }
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => {
-                      void action(() =>
-                        start(undefined, entry.query, entry.supplementalSites, entry.context),
-                      );
-                    }}
+                <label>
+                  Reasoning effort reference
+                  <input
+                    value={settings.effort}
+                    onChange={(event) => setSettings({ ...settings, effort: event.target.value })}
+                  />
+                </label>
+                <label>
+                  Depth
+                  <select
+                    value={settings.profile}
+                    onChange={(event) =>
+                      setSettings({ ...settings, profile: event.target.value as 'quick' | 'wide' })
+                    }
                   >
-                    Search {entry.id} now
-                  </button>
+                    <option>quick</option>
+                    <option>wide</option>
+                  </select>
+                </label>
+                <fieldset>
+                  <legend>Research intent</legend>
                   <button
-                    type="button"
                     onClick={() =>
                       setSettings({
                         ...settings,
-                        queries: settings.queries.filter((value) => value.id !== entry.id),
+                        profile: 'quick',
+                        route: 'native',
+                        model: 'gpt-6.1-sol',
+                        effort: 'low',
+                        groundedReview: false,
                       })
                     }
                   >
-                    Remove {entry.id}
+                    Fast
                   </button>
+                  <button
+                    onClick={() =>
+                      setSettings({
+                        ...settings,
+                        profile: 'wide',
+                        route: 'native',
+                        model: 'gpt-6.1-sol',
+                        effort: 'low',
+                        groundedReview: false,
+                      })
+                    }
+                  >
+                    Balanced
+                  </button>
+                  <button
+                    onClick={() =>
+                      setSettings({
+                        ...settings,
+                        profile: 'wide',
+                        route: 'native',
+                        model: 'gpt-6.1-sol',
+                        effort: 'high',
+                        groundedReview: false,
+                      })
+                    }
+                  >
+                    Deep
+                  </button>
+                  <p>
+                    Fast allows {budgets.quick.searches} searches, {budgets.quick.documents} reads
+                    and {budgets.quick.seconds} seconds. Balanced allows {budgets.wide.searches}{' '}
+                    searches, {budgets.wide.documents} reads and {budgets.wide.seconds} seconds.
+                    Both use one native research session with Sol low. Deep uses the same native
+                    session with Sol high. Each may return partial findings. Save settings to apply
+                    this selection.
+                  </p>
                 </fieldset>
-              ))}
-            <button
-              onClick={() => {
-                setSettings({
-                  ...settings,
-                  queries: [
-                    ...settings.queries,
-                    {
-                      id: `query-${Date.now()}`,
-                      query: 'My discovery question',
-                      everyDays: 14,
-                      offsetMinutes: 0,
-                      enabled: true,
-                      concepts: [],
-                    },
-                  ],
-                });
-              }}
-            >
-              Add question
-            </button>
+                <label>
+                  Save threshold
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={settings.threshold}
+                    onChange={(event) =>
+                      setSettings({ ...settings, threshold: Number(event.target.value) })
+                    }
+                  />
+                </label>
+                <label>
+                  Retain temporary results (days)
+                  <input
+                    type="number"
+                    min="1"
+                    max="90"
+                    value={settings.retentionDays}
+                    onChange={(event) =>
+                      setSettings({ ...settings, retentionDays: Number(event.target.value) })
+                    }
+                  />
+                </label>
+                <label>
+                  Corpus destination
+                  <select
+                    value={settings.destination}
+                    onChange={(event) =>
+                      setSettings({
+                        ...settings,
+                        destination: event.target.value as 'public' | 'private',
+                      })
+                    }
+                  >
+                    <option value="public">Git-visible local files</option>
+                    <option value="private">Private corpus</option>
+                  </select>
+                </label>
+                <label>
+                  Publication policy
+                  <select
+                    value={settings.publication}
+                    onChange={(event) =>
+                      setSettings({
+                        ...settings,
+                        publication: event.target.value as SearchSettings['publication'],
+                      })
+                    }
+                  >
+                    <option value="local-only">Local only</option>
+                    <option value="reviewed-push">Reviewed CLI push</option>
+                    <option value="unattended">Unattended Git push</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div hidden={tab !== 'Sources'}>
+              <fieldset>
+                <legend>Source families</legend>
+                <p>
+                  Search through the host's available public tools. Disabled or inaccessible
+                  families remain explicit gaps.
+                </p>
+                {channels.map((channel) => (
+                  <label className="check" key={channel}>
+                    <input
+                      type="checkbox"
+                      checked={settings.sources.includes(channel)}
+                      onChange={(event) =>
+                        setSettings({
+                          ...settings,
+                          sources: event.target.checked
+                            ? [...settings.sources, channel]
+                            : settings.sources.filter((value) => value !== channel),
+                        })
+                      }
+                    />
+                    {channel}
+                  </label>
+                ))}
+              </fieldset>
+              <h2>Discovery</h2>
+              <SourceManager
+                settings={settings}
+                onChange={setSettings}
+                scan={() => api('source-scan', {})}
+              />
+              <details>
+                <summary>Configured acquisition and extraction providers</summary>
+                <p>
+                  Optional providers are selected in private .signals/providers.json. Configuration
+                  is separate from a successful runtime probe; failures appear as research gaps.
+                </p>
+                <ul>
+                  {providers.map((provider) => (
+                    <li key={provider.provider}>
+                      {provider.provider}: {provider.state}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            </div>
+            <div hidden={tab !== 'Settings'}>
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={settings.promisingInbox?.enabled ?? false}
+                  onChange={(event) =>
+                    setSettings({
+                      ...settings,
+                      promisingInbox: {
+                        enabled: event.target.checked,
+                        minimumPriority: settings.promisingInbox?.minimumPriority ?? 70,
+                      },
+                    })
+                  }
+                />
+                Keep promising results in a private inbox
+              </label>
+              <label>
+                Minimum contextual priority for inbox
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={settings.promisingInbox?.minimumPriority ?? 70}
+                  onChange={(event) =>
+                    setSettings({
+                      ...settings,
+                      promisingInbox: {
+                        enabled: settings.promisingInbox?.enabled ?? false,
+                        minimumPriority: Number(event.target.value),
+                      },
+                    })
+                  }
+                />
+              </label>
+            </div>
+            <div hidden={tab !== 'Sources'}>
+              <label>
+                Supplemental websites and paths (one public HTTPS URL per line)
+                <textarea
+                  defaultValue={(settings.supplementalSites ?? []).join('\n')}
+                  onBlur={(event) =>
+                    setSettings({
+                      ...settings,
+                      supplementalSites: [
+                        ...new Set(event.target.value.split(/\s+/).filter(Boolean)),
+                      ],
+                    })
+                  }
+                />
+              </label>
+              <p>
+                These add direct site/path searches when relevant, within the same budget. Public
+                social posts may be inaccessible. A mirror or repeated recommendation earns no extra
+                independence.
+              </p>
+            </div>
+            <div hidden={tab !== 'Interests' && tab !== 'Jobs'}>
+              <p>
+                Enabling a mode permits recurring inference while the local timer runs. Runner:
+                Codex; UTC; one job at a time; {JSON.stringify(budgets[settings.profile])};
+                threshold {settings.threshold}; {settings.retentionDays} days temporary retention;{' '}
+                {settings.destination} destination; {settings.publication} publication.
+              </p>
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={settings.queryDiscovery}
+                  onChange={(event) =>
+                    setSettings({ ...settings, queryDiscovery: event.target.checked })
+                  }
+                />
+                Enable query discovery
+              </label>
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={settings.corpusDiscovery}
+                  onChange={(event) =>
+                    setSettings({ ...settings, corpusDiscovery: event.target.checked })
+                  }
+                />
+                Enable corpus discovery
+              </label>
+              <label>
+                Corpus cadence (days)
+                <input
+                  type="number"
+                  min="1"
+                  value={settings.corpusEveryDays}
+                  onChange={(event) =>
+                    setSettings({ ...settings, corpusEveryDays: Number(event.target.value) })
+                  }
+                />
+              </label>
+              <label>
+                Interests per activation
+                <input
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={settings.batchSize}
+                  onChange={(event) =>
+                    setSettings({ ...settings, batchSize: Number(event.target.value) })
+                  }
+                />
+              </label>
+            </div>
+            <div hidden={tab !== 'Interests'}>
+              <h3>Saved questions</h3>
+              <label>
+                Find saved questions
+                <input
+                  value={interestFilter}
+                  onChange={(event) => setInterestFilter(event.target.value)}
+                />
+              </label>
+              <p>
+                {settings.queries.length} saved questions. Showing up to 20 matching questions;
+                filter by name or wording to edit more.
+              </p>
+              {settings.queries
+                .map((entry, index) => ({ entry, index }))
+                .filter(({ entry }) =>
+                  `${entry.id} ${entry.query}`.toLowerCase().includes(interestFilter.toLowerCase()),
+                )
+                .slice(0, 20)
+                .map(({ entry, index }) => (
+                  <fieldset key={entry.id}>
+                    <legend>{entry.id}</legend>
+                    <label className="check">
+                      <input
+                        type="checkbox"
+                        checked={entry.enabled}
+                        onChange={(event) =>
+                          setSettings({
+                            ...settings,
+                            queries: settings.queries.map((value, i) =>
+                              i === index ? { ...value, enabled: event.target.checked } : value,
+                            ),
+                          })
+                        }
+                      />
+                      Participate
+                    </label>
+                    <label>
+                      Context and constraints for {entry.id}
+                      <textarea
+                        maxLength={5000}
+                        value={entry.context ?? ''}
+                        onChange={(event) =>
+                          setSettings({
+                            ...settings,
+                            queries: settings.queries.map((value, i) =>
+                              i === index ? { ...value, context: event.target.value } : value,
+                            ),
+                          })
+                        }
+                      />
+                    </label>
+                    <label className="check">
+                      <input
+                        type="checkbox"
+                        checked={entry.shareAcquisition !== false}
+                        onChange={(event) =>
+                          setSettings({
+                            ...settings,
+                            queries: settings.queries.map((value, i) =>
+                              i === index
+                                ? { ...value, shareAcquisition: event.target.checked }
+                                : value,
+                            ),
+                          })
+                        }
+                      />
+                      Allow shared source acquisition for {entry.id}
+                    </label>
+                    <label>
+                      Question
+                      <textarea
+                        value={entry.query}
+                        onChange={(event) =>
+                          setSettings({
+                            ...settings,
+                            queries: settings.queries.map((value, i) =>
+                              i === index ? { ...value, query: event.target.value } : value,
+                            ),
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      Every (days)
+                      <input
+                        type="number"
+                        min="1"
+                        value={entry.everyDays}
+                        onChange={(event) =>
+                          setSettings({
+                            ...settings,
+                            queries: settings.queries.map((value, i) =>
+                              i === index
+                                ? { ...value, everyDays: Number(event.target.value) }
+                                : value,
+                            ),
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      Supplemental paths for {entry.id} (one URL per line)
+                      <textarea
+                        defaultValue={(entry.supplementalSites ?? []).join('\n')}
+                        onBlur={(event) =>
+                          setSettings({
+                            ...settings,
+                            queries: settings.queries.map((value, i) =>
+                              i === index
+                                ? {
+                                    ...value,
+                                    supplementalSites: [
+                                      ...new Set(event.target.value.split(/\s+/).filter(Boolean)),
+                                    ],
+                                  }
+                                : value,
+                            ),
+                          })
+                        }
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        void action(() =>
+                          start(undefined, entry.query, entry.supplementalSites, entry.context),
+                        );
+                      }}
+                    >
+                      Search {entry.id} now
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSettings({
+                          ...settings,
+                          queries: settings.queries.filter((value) => value.id !== entry.id),
+                        })
+                      }
+                    >
+                      Remove {entry.id}
+                    </button>
+                  </fieldset>
+                ))}
+              <button
+                onClick={() => {
+                  setSettings({
+                    ...settings,
+                    queries: [
+                      ...settings.queries,
+                      {
+                        id: `query-${Date.now()}`,
+                        query: 'My discovery question',
+                        everyDays: 14,
+                        offsetMinutes: 0,
+                        enabled: true,
+                        concepts: [],
+                      },
+                    ],
+                  });
+                }}
+              >
+                Add question
+              </button>
+              <details>
+                <summary>Shared acquisition plan</summary>
+                <p>
+                  A native agent may propose compatible interest groups. Paste its plan and inspect
+                  the query, members and reason before saving. Groups share source acquisition only;
+                  each interest keeps separate reasoning and delivery. Unchecked interests opt out.
+                </p>
+                <label>
+                  Native-proposed acquisition groups (JSON)
+                  <textarea
+                    aria-label="Native-proposed acquisition groups (JSON)"
+                    spellCheck={false}
+                    value={groupPlan}
+                    onChange={(event) => setGroupPlan(event.target.value)}
+                  />
+                </label>
+                <p>
+                  Use an array of groups with id, members (interest IDs), query, reason and
+                  proposedBy: "native". Empty [] disables grouping. Saving validates the complete
+                  plan and compatible scopes are checked during activation.
+                </p>
+              </details>
+            </div>
             <div className="actions">
               <button
                 onClick={() => {
                   void action(async () => {
-                    const validated = await api<SearchSettings>('settings', settings);
+                    let acquisitionGroups: unknown;
+                    try {
+                      acquisitionGroups = JSON.parse(groupPlan);
+                    } catch {
+                      throw new Error(
+                        'Shared acquisition plan must be valid JSON. Your edits are still here.',
+                      );
+                    }
+                    const validated = await api<SearchSettings>('settings', {
+                      ...settings,
+                      acquisitionGroups,
+                      route: 'native',
+                      groundedReview: false,
+                      extractionModel: '',
+                      extractionEffort: '',
+                    });
                     setSettings(validated);
                     setMessage(
                       'Settings saved. Start npm run discovery -- timer to run enabled modes while the laptop is awake.',
@@ -824,237 +961,284 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
               >
                 Save settings
               </button>
-              <button
-                onClick={() => {
-                  void action(async () => {
-                    const status = await api<unknown>('run-due', {});
-                    setHistory(JSON.stringify(status, null, 2));
-                    await reloadCorpus();
-                  });
-                }}
-              >
-                Run due once
-              </button>
-              <button
-                disabled={busy}
-                onClick={() => {
-                  void action(async () => {
-                    const ids = settings.queries
-                      .filter(
-                        (entry) =>
-                          entry.enabled &&
-                          `${entry.id} ${entry.query}`
-                            .toLowerCase()
-                            .includes(interestFilter.toLowerCase()),
-                      )
-                      .map((entry) => entry.id);
-                    const started = await api<{ id: string }>('run-list', { ids });
-                    setRun(started.id);
-                    setBusy(true);
-                    setTab('Search');
-                  });
-                }}
-              >
-                Run matching enabled interests once
-              </button>
-              <p>
-                One-shot research runs up to {settings.batchSize} interests per activation and saves
-                eligible matches. It does not enable recurring discovery.
-              </p>
-              {batch && (
-                <div>
-                  <p>
-                    {batch.jobs.filter((job) => job.status !== 'pending').length} of{' '}
-                    {batch.jobs.length} interests processed.
-                  </p>
-                  <button
-                    disabled={busy || !batch.jobs.some((job) => job.status === 'pending')}
-                    onClick={() => {
-                      void action(async () => {
-                        const started = await api<{ id: string }>('run-list', { resume: batch.id });
-                        setRun(started.id);
-                        setBusy(true);
-                        setTab('Search');
-                      });
-                    }}
-                  >
-                    Continue pending interests
-                  </button>
-                  <details>
-                    <summary>Review processed interests</summary>
-                    <ul>
-                      {batch.jobs
-                        .filter((job) => job.status !== 'pending')
-                        .map((job) => (
-                          <li key={job.id}>
-                            {job.query}: {job.status}; {job.saved.length} saved.{' '}
-                            {job.gaps.slice(-1).join(' ')}
-                            {job.runId && (
-                              <button
-                                onClick={() => {
-                                  void action(async () => {
-                                    const opened = await api<{ id: string }>('history/open', {
-                                      runId: job.runId,
-                                    });
-                                    setRun(opened.id);
-                                    setBusy(true);
-                                    setTab('Search');
-                                  });
-                                }}
-                              >
-                                Review {job.query}
-                              </button>
-                            )}
-                          </li>
-                        ))}
-                    </ul>
-                  </details>
-                </div>
-              )}
-              <button
-                onClick={() => {
-                  void action(async () => {
-                    const recent = await api<{
-                      runs: typeof recentRuns;
-                      selections: typeof selections;
-                      discovery: unknown;
-                      batches: typeof batchHistory;
-                    }>('history');
-                    setRecentRuns(recent.runs);
-                    setSelections(recent.selections);
-                    setBatchHistory(recent.batches);
-                    setHistory(JSON.stringify(recent.discovery, null, 2));
-                  });
-                }}
-              >
-                Show history
-              </button>
-              <button
-                onClick={() => {
-                  void action(async () => {
-                    await api('cleanup', {});
-                    setMessage(
-                      'Expired temporary runs removed. Retained historical snapshots preserved.',
-                    );
-                  });
-                }}
-              >
-                Clean expired results
-              </button>
-            </div>
-            {history && <pre>{history}</pre>}
-            {batchHistory.length > 0 && (
-              <section aria-label="Query list history">
-                <h2>Query list history</h2>
-                {batchHistory.map((savedBatch) => (
-                  <article key={savedBatch.id}>
-                    <p>
-                      {savedBatch.createdAt}: {savedBatch.total} interests, {savedBatch.pending}{' '}
-                      pending, {savedBatch.uncertain} interrupted or uncertain.
-                    </p>
-                    <button
-                      disabled={busy}
-                      onClick={() => {
-                        void action(async () => {
-                          setBatch(await api<QueryBatch>(`batches/${savedBatch.id}`));
-                        });
-                      }}
-                    >
-                      Open query list
-                    </button>
-                  </article>
-                ))}
-              </section>
-            )}
-            {selections.length > 0 && (
-              <section aria-label="Saved interest ledger">
-                <h2>Saved interest ledger</h2>
+              <div hidden={tab !== 'Jobs'}>
+                <button
+                  disabled={busy}
+                  onClick={() => {
+                    void action(async () => {
+                      const started = await api<{ id: string }>('run-due', {});
+                      setRun(started.id);
+                      setEvents(['Starting finite due-interest and maintenance activation…']);
+                      setBusy(true);
+                    });
+                  }}
+                >
+                  Run due once
+                </button>
+              </div>
+              <div hidden={tab !== 'Interests' && tab !== 'Jobs'}>
+                <button
+                  disabled={busy}
+                  onClick={() => {
+                    void action(async () => {
+                      const ids = settings.queries
+                        .filter(
+                          (entry) =>
+                            entry.enabled &&
+                            `${entry.id} ${entry.query}`
+                              .toLowerCase()
+                              .includes(interestFilter.toLowerCase()),
+                        )
+                        .map((entry) => entry.id);
+                      const started = await api<{ id: string }>('run-list', { ids });
+                      setRun(started.id);
+                      setBusy(true);
+                      setTab('Jobs');
+                    });
+                  }}
+                >
+                  Run matching enabled interests once
+                </button>
                 <p>
-                  Private query and save provenance. Public entities keep reusable evidence; saving
-                  and publication are separate.
+                  One-shot research runs up to {settings.batchSize} interests per activation and
+                  saves eligible matches. It does not enable recurring discovery.
                 </p>
-                <ul>
-                  {selections.map((selection) => (
-                    <li key={selection.id}>
-                      {selection.query} · {selection.kind}
-                      {selection.queryId ? ` (${selection.queryId})` : ''} ·{' '}
-                      {selection.selected.length} selected, {selection.changed.length} changed ·{' '}
-                      {selection.at}
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
-            {recentRuns.length > 0 && (
-              <section aria-label="Recent research">
-                <h2>Recent research</h2>
-                {recentRuns.map((recent) => (
-                  <article key={recent.runId}>
-                    <p>{recent.query}</p>
+                {batch && (
+                  <div>
                     <p>
-                      {recent.status} · {recent.candidates} candidates
+                      {batch.jobs.filter((job) => job.status !== 'pending').length} of{' '}
+                      {batch.jobs.length} interests processed.
                     </p>
                     <button
+                      disabled={busy || !batch.jobs.some((job) => job.status === 'pending')}
                       onClick={() => {
                         void action(async () => {
-                          const opened = await api<{ id: string }>('history/open', {
-                            runId: recent.runId,
+                          const started = await api<{ id: string }>('run-list', {
+                            resume: batch.id,
                           });
-                          setRun(opened.id);
+                          setRun(started.id);
                           setBusy(true);
-                          setSelected([]);
-                          setFilters({});
-                          setAnswer(null);
-                          setTab('Search');
+                          setTab('Jobs');
                         });
                       }}
                     >
-                      Open result
+                      Continue pending interests
                     </button>
-                  </article>
+                    <details>
+                      <summary>Review processed interests</summary>
+                      <ul>
+                        {batch.jobs
+                          .filter((job) => job.status !== 'pending')
+                          .map((job) => (
+                            <li key={job.id}>
+                              {job.query}: {job.status}; {job.saved.length} saved.{' '}
+                              {job.gaps.slice(-1).join(' ')}
+                              {job.runId && (
+                                <button
+                                  onClick={() => {
+                                    void action(() => openRun(job.runId!));
+                                  }}
+                                >
+                                  Review {job.query}
+                                </button>
+                              )}
+                            </li>
+                          ))}
+                      </ul>
+                    </details>
+                    {batch.acquisitionPlan && batch.acquisitionPlan.length > 0 && (
+                      <details>
+                        <summary>Applied shared acquisition plan</summary>
+                        <ul>
+                          {batch.acquisitionPlan.map((group) => (
+                            <li key={group.id}>
+                              <strong>{group.query}</strong>
+                              <p>{group.reason}</p>
+                              <p>Interests: {group.members.join(', ')}.</p>
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div hidden={tab !== 'Jobs'}>
+                <button
+                  onClick={() => {
+                    void action(async () => {
+                      await loadHistory();
+                    });
+                  }}
+                >
+                  Show history
+                </button>
+                <button
+                  onClick={() => {
+                    void action(async () => {
+                      await api('cleanup', {});
+                      setMessage(
+                        'Expired temporary runs removed. Retained historical snapshots preserved.',
+                      );
+                    });
+                  }}
+                >
+                  Clean expired results
+                </button>
+              </div>
+            </div>
+            <div hidden={tab !== 'Jobs'}>
+              {history && <pre>{history}</pre>}
+              {batchHistory.length > 0 && (
+                <section aria-label="Query list history">
+                  <h2>Query list history</h2>
+                  {batchHistory.map((savedBatch) => (
+                    <article key={savedBatch.id}>
+                      <p>
+                        {savedBatch.createdAt}: {savedBatch.total} interests, {savedBatch.pending}{' '}
+                        pending, {savedBatch.uncertain} interrupted or uncertain.
+                      </p>
+                      <button
+                        disabled={busy}
+                        onClick={() => {
+                          void action(async () => {
+                            setBatch(await api<QueryBatch>(`batches/${savedBatch.id}`));
+                          });
+                        }}
+                      >
+                        Open query list
+                      </button>
+                    </article>
+                  ))}
+                </section>
+              )}
+              {selections.length > 0 && (
+                <section aria-label="Saved interest ledger">
+                  <h2>Saved interest ledger</h2>
+                  <p>
+                    Private query and save provenance. Public entities keep reusable evidence;
+                    saving and publication are separate.
+                  </p>
+                  <ul>
+                    {selections.map((selection) => (
+                      <li key={selection.id}>
+                        {selection.query} · {selection.kind}
+                        {selection.queryId ? ` (${selection.queryId})` : ''} ·{' '}
+                        {selection.selected.length} selected, {selection.changed.length} changed ·{' '}
+                        {selection.at}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+              {recentRuns.length > 0 && (
+                <section aria-label="Recent research">
+                  <h2>Recent research</h2>
+                  {recentRuns.map((recent) => (
+                    <article key={recent.runId}>
+                      <p>{recent.query}</p>
+                      <p>
+                        {recent.status} · {recent.candidates} candidates
+                      </p>
+                      <button
+                        onClick={() => {
+                          void action(() => openRun(recent.runId));
+                        }}
+                      >
+                        Open result
+                      </button>
+                    </article>
+                  ))}
+                </section>
+              )}
+            </div>
+          </section>
+        ) : settingsTabs.includes(tab) ? (
+          <p role="status">Loading settings…</p>
+        ) : tab === 'Inbox' ? (
+          <section aria-labelledby="inbox-title">
+            <div className="intro">
+              <h1 id="inbox-title">Capture & inbox</h1>
+              <p>
+                Keep promising leads privately, inspect their evidence, and choose what to save.
+              </p>
+            </div>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void action(() =>
+                  start(
+                    undefined,
+                    'Capture this resource and describe its supported uses and limits.',
+                    undefined,
+                    undefined,
+                    [captureUrl],
+                  ),
+                );
+              }}
+            >
+              <label>
+                Capture a public URL
+                <input
+                  type="url"
+                  required
+                  value={captureUrl}
+                  onChange={(event) => setCaptureUrl(event.target.value)}
+                  placeholder="https://…"
+                />
+              </label>
+              <button disabled={busy || !captureUrl.trim()}>Capture URL</button>
+            </form>
+            {inbox.length === 0 ? (
+              <p>No pending leads. Capture a URL or keep selected search results in your inbox.</p>
+            ) : (
+              <ul className="inbox-list">
+                {inbox.map((entry) => (
+                  <li key={entry.id}>
+                    <a href={entry.uri} rel="noreferrer">
+                      {entry.name}
+                    </a>
+                    <div className="actions">
+                      <button onClick={() => void action(() => openRun(entry.runId))}>
+                        Reopen {entry.name}
+                      </button>
+                      <button
+                        onClick={() =>
+                          void action(async () => {
+                            setInbox(await api<InboxEntry[]>('inbox', { remove: [entry.id] }));
+                            setMessage(
+                              'Lead removed from inbox. Its original research and saved evidence remain available.',
+                            );
+                          })
+                        }
+                      >
+                        Remove {entry.name} from inbox
+                      </button>
+                    </div>
+                  </li>
                 ))}
-              </section>
+              </ul>
             )}
           </section>
-        ) : tab === 'Settings' ? (
-          <p role="status">Loading settings…</p>
         ) : (
           <>
             <section className="intro">
-              <h1>{tab === 'Search' ? 'Find useful knowledge.' : 'Your saved knowledge.'}</h1>
+              <h1>{tab === 'Search' ? 'Search Signals' : 'Your saved knowledge.'}</h1>
               <p>
                 {tab === 'Search'
-                  ? 'Ask your AI to discover sources, compare alternatives, and return evidence you can inspect.'
-                  : 'Canonical entities preserve evidence and score history through Git.'}
+                  ? 'Find worthwhile possibilities for your question, with a practical brief and evidence you can inspect.'
+                  : 'Search, compare and follow up on retained findings. Filtering works without AI.'}
               </p>
             </section>
             {tab === 'Search' && (
               <>
                 {inbox.length > 0 && (
-                  <details>
-                    <summary>Promising inbox ({inbox.length})</summary>
-                    <p>
-                      Provisional candidates retained privately. They have not been admitted to your
-                      Corpus.
-                    </p>
-                    <ul>
-                      {inbox.map((entry) => (
-                        <li key={entry.id}>
-                          <a href={entry.uri} rel="noreferrer">
-                            {entry.name}
-                          </a>{' '}
-                          <button onClick={() => void action(() => openRun(entry.runId))}>
-                            Reopen {entry.name}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </details>
+                  <button onClick={() => setTab('Inbox')}>Promising inbox ({inbox.length})</button>
                 )}
                 <form
                   onSubmit={(event) => {
                     event.preventDefault();
-                    void action(() => start());
+                    void action(() => start(undefined, query, undefined, context));
                   }}
                 >
                   <label>
@@ -1067,6 +1251,19 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                       placeholder="What do you want to understand or find?"
                     />
                   </label>
+                  <details>
+                    <summary>Project context and constraints</summary>
+                    <label>
+                      Context for this question
+                      <textarea
+                        maxLength={4000}
+                        value={context}
+                        onChange={(event) => setContext(event.target.value)}
+                        placeholder="What should these findings help you do? Include requirements, exclusions and operating constraints."
+                      />
+                    </label>
+                    <p>This context stays in private research history.</p>
+                  </details>
                   <p>{ready}</p>
                   <label>
                     Capture a public URL
@@ -1108,7 +1305,7 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                       disabled={busy || sourceBusy || !result}
                       type="button"
                       onClick={() => {
-                        void action(() => start());
+                        void action(() => start(undefined, query, undefined, context));
                       }}
                     >
                       Search further
@@ -1188,6 +1385,37 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                 </ol>
               </details>
             )}
+            {tab === 'Search' && (result?.brief ?? earlyBrief)?.text && (
+              <section className="research-brief" aria-label="Research brief">
+                <h2>What this could help you do</h2>
+                <Brief text={(result?.brief ?? earlyBrief)!.text} />
+                <p>
+                  {busy
+                    ? 'Original answer ready; source checks and saved-record preparation are pending. '
+                    : 'Retained from this research session. '}
+                  Inspect supporting evidence and limitations before acting.
+                </p>
+              </section>
+            )}
+            {tab === 'Search' && result?.provisionalLeads && result.provisionalLeads.length > 0 && (
+              <section aria-label="Leads with metadata gaps">
+                <h2>Leads with metadata gaps</h2>
+                <p>
+                  The brief remains readable. These leads need the listed record corrections before
+                  saving.
+                </p>
+                <ul>
+                  {result.provisionalLeads.map((lead, index) => (
+                    <li key={index}>
+                      <strong>{lead.name}</strong>
+                      <p>{lead.description}</p>
+                      <p>{lead.uri}</p>
+                      <p>{lead.limits.join(' ')}</p>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
             <section className="controls" aria-label="Entity filters">
               {tab === 'Search' &&
                 result?.status === 'failed' &&
@@ -1226,151 +1454,156 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                   </ul>
                 </section>
               )}
-              <div className="filters">
-                <label>
-                  Filter results
-                  <input
-                    type="search"
-                    value={filters.text ?? ''}
-                    onChange={(event) => change('text', event.target.value)}
-                  />
-                </label>
-                <label>
-                  Kind
-                  <select
-                    value={filters.kind ?? ''}
-                    onChange={(event) => change('kind', event.target.value)}
-                  >
-                    <option value="">All kinds</option>
-                    {kinds.map((kind) => (
-                      <option key={kind}>{kind}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Facet
-                  <select
-                    value={filters.facet ?? ''}
-                    onChange={(event) => change('facet', event.target.value)}
-                  >
-                    <option value="">All facets</option>
-                    {[...new Set(all.flatMap((item) => Object.values(item.entity.facets).flat()))]
-                      .sort()
-                      .map((facet) => (
-                        <option key={facet}>{facet}</option>
+              <details open={tab === 'Corpus'}>
+                <summary>Filter and sort findings</summary>
+                <div className="filters">
+                  <label>
+                    Filter results
+                    <input
+                      type="search"
+                      value={filters.text ?? ''}
+                      onChange={(event) => change('text', event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Kind
+                    <select
+                      value={filters.kind ?? ''}
+                      onChange={(event) => change('kind', event.target.value)}
+                    >
+                      <option value="">All kinds</option>
+                      {kinds.map((kind) => (
+                        <option key={kind}>{kind}</option>
                       ))}
-                  </select>
-                </label>
-                <label>
-                  Source host
-                  <select
-                    value={filters.host ?? ''}
-                    onChange={(event) => change('host', event.target.value)}
-                  >
-                    <option value="">All hosts</option>
-                    {[
-                      ...new Set(
-                        all.flatMap((item) =>
-                          item.entity.evidence.map((source) => sourceHost(source.uri)),
+                    </select>
+                  </label>
+                  <label>
+                    Facet
+                    <select
+                      value={filters.facet ?? ''}
+                      onChange={(event) => change('facet', event.target.value)}
+                    >
+                      <option value="">All facets</option>
+                      {[...new Set(all.flatMap((item) => Object.values(item.entity.facets).flat()))]
+                        .sort()
+                        .map((facet) => (
+                          <option key={facet}>{facet}</option>
+                        ))}
+                    </select>
+                  </label>
+                  <label>
+                    Source host
+                    <select
+                      value={filters.host ?? ''}
+                      onChange={(event) => change('host', event.target.value)}
+                    >
+                      <option value="">All hosts</option>
+                      {[
+                        ...new Set(
+                          all.flatMap((item) =>
+                            item.entity.evidence.map((source) => sourceHost(source.uri)),
+                          ),
                         ),
-                      ),
-                    ]
-                      .sort()
-                      .map((host) => (
-                        <option key={host}>{host}</option>
+                      ]
+                        .sort()
+                        .map((host) => (
+                          <option key={host}>{host}</option>
+                        ))}
+                    </select>
+                  </label>
+                  <label>
+                    Source family
+                    <select
+                      value={filters.family ?? ''}
+                      onChange={(event) => change('family', event.target.value)}
+                    >
+                      <option value="">All families</option>
+                      {[
+                        ...new Set(
+                          all.flatMap((item) =>
+                            item.entity.evidence.map((source) => source.family),
+                          ),
+                        ),
+                      ]
+                        .sort()
+                        .map((family) => (
+                          <option key={family}>{family}</option>
+                        ))}
+                    </select>
+                  </label>
+                  <label>
+                    Minimum score (unknown stays visible)
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={filters.min ?? ''}
+                      onChange={(event) =>
+                        change('min', event.target.value ? Number(event.target.value) : undefined)
+                      }
+                    />
+                  </label>
+                  <label>
+                    Match
+                    <select
+                      value={filters.match ?? ''}
+                      onChange={(event) => change('match', event.target.value)}
+                    >
+                      <option value="">All matches</option>
+                      {['direct', 'related', 'unknown', 'out-of-scope'].map((value) => (
+                        <option key={value}>{value}</option>
                       ))}
-                  </select>
-                </label>
-                <label>
-                  Source family
-                  <select
-                    value={filters.family ?? ''}
-                    onChange={(event) => change('family', event.target.value)}
-                  >
-                    <option value="">All families</option>
-                    {[
-                      ...new Set(
-                        all.flatMap((item) => item.entity.evidence.map((source) => source.family)),
-                      ),
-                    ]
-                      .sort()
-                      .map((family) => (
-                        <option key={family}>{family}</option>
+                    </select>
+                  </label>
+                  <label>
+                    Maximum score (unknown stays visible)
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={filters.max ?? ''}
+                      onChange={(event) =>
+                        change('max', event.target.value ? Number(event.target.value) : undefined)
+                      }
+                    />
+                  </label>
+                  <label>
+                    Evidence state
+                    <select
+                      value={filters.state ?? ''}
+                      onChange={(event) => change('state', event.target.value)}
+                    >
+                      <option value="">All states</option>
+                      {['assessed', 'provisional', 'unassessed'].map((value) => (
+                        <option key={value}>{value}</option>
                       ))}
-                  </select>
-                </label>
-                <label>
-                  Minimum score (unknown stays visible)
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={filters.min ?? ''}
-                    onChange={(event) =>
-                      change('min', event.target.value ? Number(event.target.value) : undefined)
-                    }
-                  />
-                </label>
-                <label>
-                  Match
-                  <select
-                    value={filters.match ?? ''}
-                    onChange={(event) => change('match', event.target.value)}
-                  >
-                    <option value="">All matches</option>
-                    {['direct', 'related', 'unknown', 'out-of-scope'].map((value) => (
-                      <option key={value}>{value}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Maximum score (unknown stays visible)
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={filters.max ?? ''}
-                    onChange={(event) =>
-                      change('max', event.target.value ? Number(event.target.value) : undefined)
-                    }
-                  />
-                </label>
-                <label>
-                  Evidence state
-                  <select
-                    value={filters.state ?? ''}
-                    onChange={(event) => change('state', event.target.value)}
-                  >
-                    <option value="">All states</option>
-                    {['assessed', 'provisional', 'unassessed'].map((value) => (
-                      <option key={value}>{value}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Saved
-                  <select
-                    value={filters.saved ?? ''}
-                    onChange={(event) => change('saved', event.target.value)}
-                  >
-                    <option value="">All</option>
-                    <option>saved</option>
-                    <option>unsaved</option>
-                  </select>
-                </label>
-                <label>
-                  Sort
-                  <select
-                    value={filters.sort ?? 'match'}
-                    onChange={(event) => change('sort', event.target.value)}
-                  >
-                    {['priority', 'match', 'score', 'newest', 'type'].map((value) => (
-                      <option key={value}>{value}</option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <button onClick={() => setFilters({})}>Reset filters</button>
+                    </select>
+                  </label>
+                  <label>
+                    Saved
+                    <select
+                      value={filters.saved ?? ''}
+                      onChange={(event) => change('saved', event.target.value)}
+                    >
+                      <option value="">All</option>
+                      <option>saved</option>
+                      <option>unsaved</option>
+                    </select>
+                  </label>
+                  <label>
+                    Sort
+                    <select
+                      value={filters.sort ?? 'match'}
+                      onChange={(event) => change('sort', event.target.value)}
+                    >
+                      {['priority', 'match', 'score', 'newest', 'type'].map((value) => (
+                        <option key={value}>{value}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <button onClick={() => setFilters({})}>Reset filters</button>
+              </details>
               <p aria-live="polite">
                 {items.length} of {all.length} entities
               </p>
@@ -1455,6 +1688,20 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                     </article>
                   ))}
                 </div>
+                {local && (
+                  <button
+                    disabled={answerBusy || busy}
+                    onClick={() =>
+                      void action(() => {
+                        const question = `Compare ${compared.map((item) => item.entity.name).join(' and ')} for practical uses, alternatives, trade-offs, evidence gaps and the next action, using retained evidence only.`;
+                        setFollowup(question);
+                        return askEvidence(question);
+                      })
+                    }
+                  >
+                    Explain this comparison from evidence
+                  </button>
+                )}
               </section>
             )}
             <section aria-label="Entity results" className="entity-grid">
@@ -1485,18 +1732,14 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                     </p>
                   )}
                   <p>
-                    {item.entity.kind} · Signal {item.entity.assessment.score ?? 'unknown'} ·{' '}
-                    {item.match.level} · {saved.has(item.entity.id) ? 'Saved' : 'Unsaved'}
+                    {item.entity.kind} · {saved.has(item.entity.id) ? 'Saved' : 'Unsaved'}
                   </p>
                   <p>{item.match.reason}</p>
                   {item.change && <p>Compared with saved evidence: {item.change}.</p>}
                   {item.priority && (
                     <section aria-label={`Why ${item.entity.name} matters`}>
                       <p>
-                        <strong>
-                          Contextual priority {item.priority.score ?? 'unknown'} ·{' '}
-                          {item.priority.action}
-                        </strong>
+                        <strong>Suggested next action: {item.priority.action}</strong>
                       </p>
                       <p>{item.priority.reason}</p>
                       {item.priority.proposedAction &&
@@ -1592,8 +1835,8 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                             { uri, label: source.title, enabled: true, interests: [] },
                           ],
                         });
-                        setTab('Settings');
-                        setMessage('Source added to Settings; save to follow it.');
+                        setTab('Sources');
+                        setMessage('Source added. Save settings to follow it.');
                       }}
                     >
                       Follow introducing source
@@ -1601,6 +1844,11 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                   )}
                   <details>
                     <summary>Score, limits and sources</summary>
+                    <p>
+                      Signal strength {item.entity.assessment.score ?? 'unknown'} ·{' '}
+                      {item.entity.assessment.state}. Query fit: {item.match.level}. Contextual
+                      priority: {item.priority?.score ?? 'unknown'}.
+                    </p>
                     <p>
                       {item.entity.assessment.policy}: evidence strength, not probability.{' '}
                       {Math.round(item.entity.assessment.coverage * 100)}% feature coverage.
@@ -1774,39 +2022,34 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                     {(result.usage.elapsedMs / 1000).toFixed(1)} seconds. Subscription cost unknown.
                   </p>
                 </details>
+              </>
+            )}
+            {local && ((result && tab === 'Search') || tab === 'Corpus') && (
+              <>
                 <form
                   onSubmit={(event) => {
                     event.preventDefault();
-                    void action(async () => {
-                      setAnswerBusy(true);
-                      try {
-                        setAnswer(
-                          await api('followup', {
-                            runId: result.runId,
-                            ids: selected,
-                            question: followup,
-                          }),
-                        );
-                      } finally {
-                        setAnswerBusy(false);
-                      }
-                    });
+                    void action(() => askEvidence());
                   }}
                 >
                   <label>
-                    Ask the frozen evidence
+                    {tab === 'Corpus' ? 'Ask selected corpus evidence' : 'Ask the frozen evidence'}
                     <textarea
                       value={followup}
                       required
                       onChange={(event) => setFollowup(event.target.value)}
                     />
                   </label>
-                  <button disabled={answerBusy || busy}>
+                  <button
+                    disabled={answerBusy || busy || (tab === 'Corpus' && !corpusSelection.length)}
+                  >
                     {answerBusy ? 'Reading frozen evidence…' : 'Answer from evidence'}
                   </button>
                   <p>
-                    A bounded no-web AI call uses only this run and selected items. Search further
-                    explicitly to acquire new evidence.
+                    {tab === 'Corpus'
+                      ? 'Select saved findings to ask or compare their retained evidence. '
+                      : 'A bounded no-web AI call uses only this run and selected items. '}
+                    Search further explicitly to acquire new evidence.
                   </p>
                 </form>
                 {answer && (
@@ -1821,7 +2064,7 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                     </p>
                     <ol aria-label="Evidence used in answer">
                       {answer.statements.map((statement) => {
-                        const entity = result.items.find(
+                        const entity = all.find(
                           (item) => item.entity.id === statement.entityId,
                         )?.entity;
                         const source = entity?.evidence.find(
@@ -1845,13 +2088,15 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                     </ol>
                   </section>
                 )}
-                <a
-                  href={`data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(result))}`}
-                  download="signal-search.json"
-                >
-                  Download JSON
-                </a>
               </>
+            )}
+            {result && tab === 'Search' && (
+              <a
+                href={`data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(result))}`}
+                download="signal-search.json"
+              >
+                Download JSON
+              </a>
             )}
           </>
         )}
@@ -1866,5 +2111,40 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
         <a href={`${base}entities.json`}>Native entity download</a>
       </nav>
     </>
+  );
+}
+
+function inlineBrief(text: string): ReactNode[] {
+  return text.split(/(\[[^\]]+\]\([^\s)]+\))/g).map((part, index) => {
+    const link = /^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/.exec(part);
+    return link ? (
+      <a key={index} href={link[2]} target="_blank" rel="noreferrer">
+        {link[1]}
+      </a>
+    ) : (
+      part
+    );
+  });
+}
+
+function Brief({ text }: { text: string }) {
+  return (
+    <div className="brief-text">
+      {text.split(/\n\s*\n/).map((block, index) => {
+        const lines = block.split('\n');
+        if (lines.every((line) => /^\s*[-*]\s+/.test(line))) {
+          return (
+            <ul key={index}>
+              {lines.map((line, i) => (
+                <li key={i}>{inlineBrief(line.replace(/^\s*[-*]\s+/, ''))}</li>
+              ))}
+            </ul>
+          );
+        }
+        if (lines.length === 1 && /^#{1,6}\s+/.test(block))
+          return <h3 key={index}>{inlineBrief(block.replace(/^#{1,6}\s+/, ''))}</h3>;
+        return <p key={index}>{inlineBrief(block)}</p>;
+      })}
+    </div>
   );
 }
