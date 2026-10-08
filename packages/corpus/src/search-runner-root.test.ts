@@ -5,9 +5,10 @@ import { join, resolve } from 'node:path';
 import { atomicJson } from './search-store.js';
 import { signalSearch } from './signal-search.js';
 import { codexRunner } from './search-runner.js';
+import type * as RunnerModule from './search-runner.js';
 
 vi.mock('./search-runner.js', async (original) => {
-  const actual = await original<typeof import('./search-runner.js')>();
+  const actual = await original<typeof RunnerModule>();
   return {
     ...actual,
     codexRunner: vi.fn(() => ({
