@@ -22,6 +22,19 @@ export async function loadInbox(root: string): Promise<InboxEntry[]> {
   if (!Value.Check(schema, parsed)) throw new Error('invalid_inbox');
   return parsed;
 }
+/** Dismiss persisted inbox entries without reopening or re-researching their run. */
+export async function removeInbox(root: string, ids: string[]) {
+  if (!ids.length || ids.some((id) => !/^entity-[a-f0-9]{24}$/.test(id)))
+    throw new Error('invalid_inbox_selection');
+  return withWriter(root, async () => {
+    const entries = await loadInbox(root);
+    if (ids.some((id) => !entries.some((entry) => entry.id === id)))
+      throw new Error('unknown_inbox_identity');
+    const next = entries.filter((entry) => !ids.includes(entry.id));
+    await atomicJson(resolve(root, '.signals/inbox.json'), next);
+    return next;
+  });
+}
 export async function updateInbox(
   root: string,
   result: SearchResult,

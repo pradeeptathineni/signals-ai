@@ -309,6 +309,8 @@ export interface SearchItem {
   };
 }
 export interface SearchResult {
+  brief?: { format: 'markdown'; text: string };
+  provisionalLeads?: ProvisionalLead[];
   schemaVersion: 2;
   runId: string;
   query: string;

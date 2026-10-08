@@ -26,6 +26,8 @@ import { loadPersonal } from './search-personal.js';
 import { loadSettings } from './search-settings.js';
 import { updateInbox } from './search-inbox.js';
 import { recordSourceResultExposures } from './search-sources.js';
+import { decodeNativeResearch } from '../../domain/src/search-native.js';
+import type { AcquisitionHints } from './search-runner.js';
 
 function entityUri(uri: string) {
   return `${normalizeConsiderUrl(uri).normalizedUrl}${new URL(uri).hash}`;
@@ -137,19 +139,39 @@ export async function acceptDiscovery(
     ) => Promise<Proposal>;
   } = {},
 ) {
-  let proposal = structuredClone(parseProposal(input));
+  const research = decodeNativeResearch(input);
+  let proposal = structuredClone(research.proposal);
   let asOf = dependencies.asOf ?? new Date().toISOString();
   const limits = budgets[request.profile ?? 'wide'];
+  const compact = research.brief !== undefined;
   if (
-    proposal.coverage.some((item) => item.searches > limits.searches) ||
-    proposal.sources.length > limits.documents ||
-    proposal.candidates.length > limits.entities
+    !compact &&
+    (proposal.coverage.some((item) => item.searches > limits.searches) ||
+      proposal.sources.length > limits.documents ||
+      proposal.candidates.length > limits.entities)
   )
     throw new Error('budget_exhausted');
   const gaps = [...proposal.gaps];
+  if (compact && proposal.coverage.some((item) => item.searches > limits.searches))
+    gaps.push(
+      'Reported search coverage exceeded the selected budget; acquisition counts are unverified.',
+    );
+  if (compact && proposal.candidates.length > limits.entities) {
+    research.provisionalLeads.push(
+      ...proposal.candidates.slice(limits.entities).map(({ uri, name, description, limits }) => ({
+        uri,
+        name,
+        description,
+        limits: [...limits, 'Candidate inspection budget exhausted; retained without admission.'],
+      })),
+    );
+    proposal.candidates = proposal.candidates.slice(0, limits.entities);
+    gaps.push('Candidate inspection budget exhausted; remaining leads are unassessed.');
+  }
   const acquisitionGapCount = gaps.length;
   const sources: Source[] = [];
   const documents = new Map<string, Awaited<ReturnType<typeof fetchEvidence>>>();
+  let documentActions = 0;
   const inspect = new Set<number>();
   if (request.route === 'native') {
     for (const candidate of proposal.candidates) {
@@ -207,6 +229,9 @@ export async function acceptDiscovery(
         sources.push(accepted);
         continue;
       }
+      if (!documents.has(uri) && documentActions >= limits.documents)
+        throw new Error('document_inspection_budget_exhausted');
+      if (!documents.has(uri)) documentActions++;
       dependencies.progress?.(`Fetching ${new URL(uri).hostname}`);
       const fetched =
         documents.get(uri) ??
@@ -342,10 +367,7 @@ export async function acceptDiscovery(
       gaps.push(
         `Grounded extraction unavailable: ${failure instanceof Error ? failure.message : 'failed'}`,
       );
-      proposal = {
-        ...proposal,
-        candidates: proposal.candidates.map((candidate) => ({ ...candidate, observations: [] })),
-      };
+      // A requested second assessment cannot erase the original source-bound research.
     }
   }
   // An immutable evidence projection includes its selected spans. The same raw document
@@ -561,15 +583,17 @@ export async function acceptDiscovery(
       },
   );
   return {
+    ...(research.brief ? { brief: research.brief } : {}),
+    ...(research.provisionalLeads.length ? { provisionalLeads: research.provisionalLeads } : {}),
     items,
     sources,
     coverage,
     gaps,
     counts: {
-      leads: proposal.candidates.length,
+      leads: proposal.candidates.length + research.provisionalLeads.length,
       distinct: items.length,
       duplicates,
-      omitted,
+      omitted: omitted + research.provisionalLeads.length,
     },
   };
 }
@@ -581,11 +605,13 @@ export async function signalSearch(
     signal?: AbortSignal;
     progress?: (event: string) => void;
     provisional?: (leads: ProvisionalLead[]) => void;
+    brief?: (brief: { format: 'markdown'; text: string }) => void;
     fetch?: typeof fetchEvidence;
     root?: string;
+    acquisitionHints?: AcquisitionHints;
   } = {},
 ): Promise<SearchResult> {
-  const request = parseRequest(input);
+  const request = { ...parseRequest(input), route: 'native' as const };
   const started = Date.now();
   const limits = budgets[request.profile ?? 'wide'];
   const controller = new AbortController();
@@ -635,19 +661,37 @@ export async function signalSearch(
       request,
       controller.signal,
       dependencies.progress ?? (() => {}),
+      dependencies.acquisitionHints,
     );
     base.usage.searches = discovery.searches;
     base.usage.providerUsage = discovery.usage;
     const answerReadyMs = Date.now() - started;
-    const provisional = parseProposal(discovery.proposal);
-    dependencies.provisional?.(
-      provisional.candidates.map(({ uri, name, description, limits }) => ({
+    if (
+      discovery.proposal &&
+      typeof discovery.proposal === 'object' &&
+      'answer' in discovery.proposal &&
+      typeof discovery.proposal.answer === 'string' &&
+      discovery.proposal.answer.trim()
+    ) {
+      base.brief = { format: 'markdown', text: discovery.proposal.answer.slice(0, 24000) };
+      dependencies.brief?.(base.brief);
+    }
+    const research = decodeNativeResearch(discovery.proposal);
+    if (research.brief && !base.brief) {
+      base.brief = research.brief;
+      dependencies.brief?.(research.brief);
+    }
+    if (research.provisionalLeads.length) base.provisionalLeads = research.provisionalLeads;
+    const provisional = research.proposal;
+    dependencies.provisional?.([
+      ...provisional.candidates.map(({ uri, name, description, limits }) => ({
         uri,
         name,
         description,
         limits,
       })),
-    );
+      ...research.provisionalLeads,
+    ]);
     if (discovery.searches > limits.searches) throw new Error('budget_exhausted');
     if (request.cache === 'private')
       await atomicJson(
@@ -676,9 +720,7 @@ export async function signalSearch(
           : configuredDocumentFetch(acquisitionConfig.jina, undefined, acquisitionConfig.docling)),
       progress: dependencies.progress,
       enrich:
-        runner.enrich &&
-        (request.route !== 'native' || request.review === true) &&
-        request.review !== false
+        runner.enrich && request.review === true
           ? async (proposal, material) => {
               base.usage.modelCalls++;
               let recorded = false;
@@ -773,6 +815,7 @@ export async function signalSearch(
     if (failure instanceof RunnerFailure) {
       base.usage.searches = failure.searches;
       base.usage.providerUsage = failure.providerUsage;
+      if (failure.brief) base.brief = failure.brief;
     }
     base.status = controller.signal.aborted ? 'cancelled' : 'failed';
     base.gaps.push(failure instanceof Error ? failure.message : 'search_failed');

@@ -3,7 +3,12 @@ import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { runQueryListOnce, loadQueryBatch, queryBatchHistory } from './search-query-list.js';
+import {
+  runQueryListOnce,
+  loadQueryBatch,
+  queryBatchHistory,
+  planQueryAcquisition,
+} from './search-query-list.js';
 import { defaultSettings, type SearchSettings } from './search-settings.js';
 import { selectionHistory, atomicJson, saveEntities } from './search-store.js';
 import { budgets, parseRequest, type SearchResult } from '../../domain/src/search-contract.js';
@@ -282,5 +287,102 @@ it('preserves a historical receipt ID and appends distinct scope-aware successor
     expect(rows[0]).toEqual(original);
     expect(rows).toHaveLength(3);
     expect(new Set(rows.map((row) => row.id)).size).toBe(3);
+  });
+});
+
+it('shares native-suggested acquisition while retaining separate reasoning, delivery and status', async () => {
+  await fixture(async (root) => {
+    const settings = interests();
+    settings.queries[1]!.query = 'drainage for indoor containers';
+    settings.queries[1]!.context = 'Indoor plants';
+    settings.acquisitionGroups = [
+      {
+        id: 'drainage',
+        members: ['first', 'second'],
+        query: 'drainage',
+        reason:
+          'Native planner suggested shared source acquisition; garden and container fit differ.',
+        proposedBy: 'native',
+      },
+    ];
+    expect(planQueryAcquisition(settings).groups[0]!.members).toEqual(['first', 'second']);
+    let acquired = 0;
+    const requests: string[] = [];
+    const counted: number[] = [];
+    const batch = await runQueryListOnce({
+      root,
+      settings,
+      acquire: async (input) => {
+        acquired++;
+        expect(input.query).toBe('drainage');
+        return {
+          schemaVersion: 1,
+          query: input.query,
+          kind: 'unassessed-source-hits',
+          modelCalls: 0,
+          searches: 2,
+          gaps: ['Fixture route limitation'],
+          hits: [
+            {
+              provider: 'github',
+              rank: 1,
+              uri: 'https://github.com/example/drainage',
+              evidenceUri: 'https://api.github.com/repos/example/drainage',
+              title: 'A locator',
+              summary: 'Unassessed description',
+              popularity: {},
+            },
+          ],
+        };
+      },
+      search: async (input, dependencies) => {
+        const request = parseRequest(input);
+        requests.push(request.query);
+        counted.push(dependencies?.acquisitionHints?.searches ?? -1);
+        expect(dependencies?.acquisitionHints?.hits[0]!.title).toBe('A locator');
+        if (requests.length === 1) throw new Error('Fixture first-interest failure');
+        return result(input);
+      },
+    });
+    expect(acquired).toBe(1);
+    expect(requests).toEqual(['wet soil drainage', 'drainage for indoor containers']);
+    expect(counted).toEqual([2, 0]);
+    expect(batch.jobs.map((job) => job.status)).toEqual(['failed', 'completed']);
+    expect(batch.jobs.every((job) => !job.reusedFromJobId)).toBe(true);
+    expect((await loadQueryBatch(batch.id, root)).acquisitionPlan).toEqual(batch.acquisitionPlan);
+  });
+});
+
+it('rejects incompatible semantic acquisition scopes and honors explicit opt-out before any acquisition', async () => {
+  await fixture(async (root) => {
+    const settings = interests();
+    settings.queries[1]!.query = 'container drainage';
+    settings.acquisitionGroups = [
+      {
+        id: 'drainage',
+        members: ['first', 'second'],
+        query: 'drainage',
+        reason: 'Native proposal',
+        proposedBy: 'native',
+      },
+    ];
+    settings.queries[1]!.supplementalSites = ['https://example.org/indoor'];
+    let calls = 0;
+    const acquire = async () => {
+      throw new Error('acquisition_must_not_run');
+    };
+    const search = async (input: unknown) => {
+      calls++;
+      return result(input);
+    };
+    await expect(runQueryListOnce({ root, settings, search, acquire })).rejects.toThrow(
+      'incompatible_acquisition_scopes',
+    );
+    expect(calls).toBe(0);
+    settings.queries[1]!.shareAcquisition = false;
+    expect(planQueryAcquisition(settings)).toMatchObject({ groups: [], optedOut: ['second'] });
+    const batch = await runQueryListOnce({ root, settings, search, acquire });
+    expect(calls).toBe(2);
+    expect(batch.acquisitionPlan).toEqual([]);
   });
 });

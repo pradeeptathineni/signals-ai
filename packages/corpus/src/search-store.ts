@@ -735,6 +735,27 @@ export async function loadRun(
     result.items.length > 60
   )
     throw new Error('invalid_run_snapshot');
+  if (
+    result.brief &&
+    (result.brief.format !== 'markdown' ||
+      typeof result.brief.text !== 'string' ||
+      result.brief.text.length > 24000)
+  )
+    throw new Error('invalid_run_brief');
+  if (
+    result.provisionalLeads &&
+    (!Array.isArray(result.provisionalLeads) ||
+      result.provisionalLeads.length > 60 ||
+      result.provisionalLeads.some(
+        (lead) =>
+          typeof lead.name !== 'string' ||
+          typeof lead.uri !== 'string' ||
+          typeof lead.description !== 'string' ||
+          !Array.isArray(lead.limits) ||
+          lead.limits.some((limit) => typeof limit !== 'string'),
+      ))
+  )
+    throw new Error('invalid_run_leads');
   for (const item of result.items) {
     const checks = Object.entries(item.entity.currentChecks ?? {});
     const late = checks.filter(

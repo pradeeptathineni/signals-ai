@@ -37,6 +37,35 @@ const reply = (uri: string, json: unknown, link?: string) => ({
   response: { status: 200, ...(link ? { link } : {}) },
 });
 
+it('narrows explicit lanes to the request scope and excludes unexpected returned repositories', async () => {
+  const calls: URL[] = [];
+  const result = await directSearch(
+    {
+      query: 'documents',
+      sources: ['github'],
+      supplementalSites: ['https://github.com/example/resource-1'],
+    },
+    undefined,
+    async (uri) => {
+      calls.push(new URL(uri));
+      return reply(uri, body([1, 2]));
+    },
+    { plans: [{ lane: 'topic-established', topic: 'documents', maxPages: 1 }] },
+  );
+  expect(calls[0]!.searchParams.get('q')).toContain('repo:example/resource-1');
+  expect(result.hits.map((hit) => hit.uri)).toEqual(['https://github.com/example/resource-1']);
+  expect(result.gaps).toContain('github/topic-established: out-of-scope repository omitted');
+  expect(() =>
+    parseGitHubPlans([
+      {
+        lane: 'topic-established',
+        topic: 'documents',
+        scope: 'https://github.com/example/tool/tree/main',
+      },
+    ]),
+  ).toThrow('unsupported_github_scope');
+});
+
 it('executes explicit star-sorted topic pages and deduplicates stable repository identities', async () => {
   const calls: URL[] = [];
   const result = await githubSearch(

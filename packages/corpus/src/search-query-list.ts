@@ -10,11 +10,26 @@ import { codexRunner } from './search-runner.js';
 import { loadAcquisitionConfig } from './search-acquisition.js';
 import { parseRequest, budgets } from '../../domain/src/search-contract.js';
 import { digest } from './search-fetch.js';
+import { directSearch } from './search-direct.js';
+import { acquireResearchLease } from './search-scheduler.js';
+
+const acquisitionPlanSchema = Type.Object(
+  {
+    id: Type.String({ pattern: '^[a-z0-9-]{1,80}$' }),
+    members: Type.Array(Type.String(), { minItems: 2, maxItems: 30, uniqueItems: true }),
+    query: Type.String({ minLength: 1, maxLength: 120 }),
+    reason: Type.String({ minLength: 1, maxLength: 1000 }),
+    proposedBy: Type.Literal('native'),
+    scopeDigest: Type.String({ pattern: '^[a-f0-9]{64}$' }),
+  },
+  { additionalProperties: false },
+);
 
 const batchSchema = Type.Object(
   {
     id: Type.String({ pattern: '^[a-f0-9-]{36}$' }),
     createdAt: Type.String(),
+    acquisitionPlan: Type.Optional(Type.Array(acquisitionPlanSchema, { maxItems: 32 })),
     jobs: Type.Array(
       Type.Object(
         {
@@ -45,6 +60,55 @@ const batchSchema = Type.Object(
   { additionalProperties: false },
 );
 export type QueryBatch = Static<typeof batchSchema>;
+/** Validate a model-authored acquisition proposal without interpreting or merging interests. */
+export function planQueryAcquisition(settings: SearchSettings, ids?: string[]) {
+  const chosen = settings.queries.filter((query) => (ids ? ids.includes(query.id) : query.enabled));
+  const groups: NonNullable<QueryBatch['acquisitionPlan']> = [];
+  const seen = new Set<string>();
+  for (const group of settings.acquisitionGroups ?? []) {
+    const members = chosen.filter(
+      (query) => group.members.includes(query.id) && query.shareAcquisition !== false,
+    );
+    if (members.length < 2) continue;
+    const scopes = members.map((query) =>
+      JSON.stringify(
+        [
+          ...(parseRequest({
+            query: query.query,
+            supplementalSites: [
+              ...new Set([
+                ...(settings.supplementalSites ?? []),
+                ...(query.supplementalSites ?? []),
+              ]),
+            ],
+          }).supplementalSites ?? []),
+        ].sort(),
+      ),
+    );
+    if (new Set(scopes).size > 1) throw new Error('incompatible_acquisition_scopes');
+    for (const member of members) {
+      if (seen.has(member.id)) throw new Error('overlapping_acquisition_groups');
+      seen.add(member.id);
+    }
+    groups.push({
+      ...group,
+      members: members.map((query) => query.id),
+      scopeDigest: digest(
+        JSON.stringify({
+          sources: settings.sources,
+          sites: scopes[0],
+          destination: settings.destination,
+        }),
+      ),
+    });
+  }
+  return {
+    groups,
+    optedOut: chosen.filter((query) => query.shareAcquisition === false).map((query) => query.id),
+    explanation:
+      'Native-suggested groups share only unassessed acquisition. Original constraints, reasoning, delivery and run status remain separate. Exact-request deduplication is a different mechanism.',
+  };
+}
 export async function loadQueryBatch(id: string, root = process.cwd()) {
   if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error('invalid_batch_id');
   const path = resolve(root, '.signals/query-batches', `${id}.json`);
@@ -75,6 +139,20 @@ export async function loadQueryBatch(id: string, root = process.cwd()) {
       if (!owner || owner.id === job.id || owner.reusedFromJobId)
         throw new Error('invalid_query_batch_reuse');
     }
+  }
+  const grouped = new Set<string>();
+  for (const group of raw.acquisitionPlan ?? []) {
+    parseRequest({ query: group.query });
+    const scopes: string[] = [];
+    for (const id of group.members) {
+      if (!raw.jobs.some((job) => job.id === id) || grouped.has(id))
+        throw new Error('invalid_batch_acquisition_plan');
+      grouped.add(id);
+      scopes.push(
+        JSON.stringify([...raw.jobs.find((job) => job.id === id)!.supplementalSites].sort()),
+      );
+    }
+    if (new Set(scopes).size !== 1) throw new Error('incompatible_acquisition_scopes');
   }
   return raw;
 }
@@ -116,35 +194,49 @@ type BatchOptions = {
   signal?: AbortSignal;
   progress?: (event: string) => void;
   search?: typeof signalSearch;
+  acquire?: typeof directSearch;
 };
 export async function runQueryListOnce(options: BatchOptions = {}) {
   const root = options.root ?? process.cwd();
   const id = options.resume ?? randomUUID();
   if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error('invalid_batch_id');
   const lease = resolve(root, '.signals/query-batches', `${id}.lease.json`);
-  await withWriter(root, async () => {
-    const owner = JSON.parse(
-      await readFile(lease, 'utf8').catch((error) => {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-        return 'null';
-      }),
-    ) as { pid: number } | null;
-    if (owner) {
-      if (!Number.isInteger(owner.pid) || owner.pid < 1) throw new Error('invalid_batch_lease');
-      let alive = true;
-      try {
-        process.kill(owner.pid, 0);
-      } catch {
-        alive = false;
-      }
-      if (alive) throw new Error('query_batch_busy');
-    }
-    await atomicJson(lease, { pid: process.pid });
-  });
+  const release = await acquireResearchLease(root);
+  if (!release) throw new Error('research_busy');
   try {
-    return await executeBatch(options, id);
+    await withWriter(root, async () => {
+      const stat = await lstat(lease).catch((error) => {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        return null;
+      });
+      if (
+        stat &&
+        (!stat.isFile() ||
+          stat.isSymbolicLink() ||
+          stat.size > 10000 ||
+          (await realpath(lease)) !== lease)
+      )
+        throw new Error('unsafe_batch_lease');
+      const owner = stat ? (JSON.parse(await readFile(lease, 'utf8')) as { pid: number }) : null;
+      if (owner) {
+        if (!Number.isInteger(owner.pid) || owner.pid < 1) throw new Error('invalid_batch_lease');
+        let alive = true;
+        try {
+          process.kill(owner.pid, 0);
+        } catch (error) {
+          alive = (error as NodeJS.ErrnoException).code !== 'ESRCH';
+        }
+        if (alive) throw new Error('query_batch_busy');
+      }
+      await atomicJson(lease, { pid: process.pid });
+    });
+    try {
+      return await executeBatch(options, id);
+    } finally {
+      await unlink(lease);
+    }
   } finally {
-    await unlink(lease);
+    await release();
   }
 }
 async function executeBatch(options: BatchOptions, batchId: string) {
@@ -192,6 +284,10 @@ async function executeBatch(options: BatchOptions, batchId: string) {
         supplementalSites: job.supplementalSites,
       }),
     );
+    batch.acquisitionPlan = planQueryAcquisition(
+      settings,
+      chosen.map((query) => query.id),
+    ).groups;
   }
   await atomicJson(path, batch);
   options.progress?.(
@@ -219,6 +315,8 @@ async function executeBatch(options: BatchOptions, batchId: string) {
     string,
     { request: ReturnType<typeof parseRequest>; jobs: QueryBatch['jobs'] }
   >();
+  const shared = new Map<string, Awaited<ReturnType<typeof directSearch>>>();
+  const acquisitionCounted = new Set<string>();
   for (const job of selected) {
     const request = parseRequest({
       query: job.query,
@@ -237,8 +335,9 @@ async function executeBatch(options: BatchOptions, batchId: string) {
     if (group) group.jobs.push(job);
     else groups.set(key, { request, jobs: [job] });
   }
+  const started = Date.now();
   for (const [needDigest, group] of groups) {
-    if (options.signal?.aborted) break;
+    if (options.signal?.aborted || Date.now() - started >= 1200000) break;
     const owner = group.jobs[0]!;
     // Persist the uncertainty boundary before invoking AI. Do not hold the corpus writer during research.
     await withWriter(root, async () => {
@@ -260,17 +359,59 @@ async function executeBatch(options: BatchOptions, batchId: string) {
       `Research ${owner.id}: ${owner.query}; ${group.jobs.length} exact interest(s).`,
     );
     try {
+      let acquisitionHints;
+      const plan = batch.acquisitionPlan?.find(
+        (candidate) =>
+          candidate.members.includes(owner.id) &&
+          candidate.members.filter((id) => selected.some((job) => job.id === id)).length > 1,
+      );
+      if (plan) {
+        let pool = shared.get(plan.id);
+        if (!pool) {
+          options.progress?.(
+            `Shared acquisition ${plan.id}: ${plan.query}; independent reasoning for each interest.`,
+          );
+          pool = await (options.acquire ?? directSearch)(
+            {
+              query: plan.query,
+              sources: settings.sources,
+              supplementalSites: owner.supplementalSites,
+            },
+            options.signal,
+          );
+          shared.set(plan.id, pool);
+        }
+        acquisitionHints = {
+          groupId: plan.id,
+          query: plan.query,
+          reason: plan.reason,
+          hits: pool.hits.map(({ uri, title, summary, evidenceUri }) => ({
+            uri,
+            title,
+            summary,
+            evidenceUri,
+          })),
+          gaps: pool.gaps,
+          searches: acquisitionCounted.has(plan.id) ? 0 : pool.searches,
+        };
+        acquisitionCounted.add(plan.id);
+      }
       const result = await (options.search ?? signalSearch)(group.request, {
         root,
         runner,
         signal: options.signal,
         progress: options.progress,
+        acquisitionHints,
       });
       await retainRun(result, root);
       for (const job of group.jobs) {
         job.runId = result.runId;
         job.gaps = [...result.gaps];
-        job.status = result.status === 'not_configured' ? 'failed' : result.status;
+        job.status = options.signal?.aborted
+          ? 'cancelled'
+          : result.status === 'not_configured'
+            ? 'failed'
+            : result.status;
         if (['completed', 'partial'].includes(result.status) && !options.signal?.aborted) {
           try {
             const saved = await saveEntities(

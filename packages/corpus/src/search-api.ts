@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { Type } from 'typebox';
@@ -8,6 +8,7 @@ import {
   parseRequest,
   type SearchResult,
   type ProvisionalLead,
+  budgets,
 } from '../../domain/src/search-contract.js';
 import { signalSearch } from './signal-search.js';
 import { directSearch } from './search-direct.js';
@@ -15,7 +16,7 @@ import { codexRunner } from './search-runner.js';
 import { loadAcquisitionConfig, acquisitionReadiness } from './search-acquisition.js';
 import { scanSources } from './search-sources.js';
 import { loadPersonal, updatePersonal } from './search-personal.js';
-import { loadInbox, updateInbox } from './search-inbox.js';
+import { loadInbox, updateInbox, removeInbox } from './search-inbox.js';
 import { loadSettings, saveSettings } from './search-settings.js';
 import {
   loadEntities,
@@ -55,8 +56,9 @@ const idsSchema = Type.Object(
 );
 const followupSchema = Type.Object(
   {
-    runId: selection.properties.runId,
+    runId: Type.Optional(selection.properties.runId),
     ids: selection.properties.ids,
+    destinations: Type.Optional(Type.Array(Type.Enum(['public', 'private']), { maxItems: 60 })),
     question: Type.String({ minLength: 1, maxLength: 2000 }),
   },
   { additionalProperties: false },
@@ -75,6 +77,8 @@ interface ActiveRun {
   provisional?: ProvisionalLead[];
   error?: string;
   batch?: QueryBatch;
+  due?: Awaited<ReturnType<typeof runDueOnce>>;
+  brief?: SearchResult['brief'];
 }
 export function searchApi(
   root = process.cwd(),
@@ -88,7 +92,7 @@ export function searchApi(
   const pruneRuns = () => {
     for (const [key, run] of runs) {
       if (runs.size <= 30) break;
-      if (run.result || run.error || run.batch) runs.delete(key);
+      if (run.result || run.error || run.batch || run.due) runs.delete(key);
     }
   };
   let active = false;
@@ -221,7 +225,14 @@ export function searchApi(
         }
       } else if (route === 'inbox') {
         if (!mutation) json(200, await loadInbox(root));
-        else {
+        else if (
+          Value.Check(
+            Type.Object({ remove: selection.properties.ids }, { additionalProperties: false }),
+            body,
+          )
+        ) {
+          json(200, await removeInbox(root, body.remove));
+        } else {
           if (
             !Value.Check(
               Type.Object(
@@ -365,6 +376,9 @@ export function searchApi(
             provisional: (leads) => {
               run.provisional = leads;
             },
+            brief: (brief) => {
+              run.brief = brief;
+            },
             progress: (event) => {
               run.events.push(event);
               if (run.events.length > 100) run.events.shift();
@@ -419,6 +433,8 @@ export function searchApi(
                 provisional: run.result ? [] : (run.provisional ?? []),
                 error: run.error ?? null,
                 batch: run.batch ?? null,
+                due: run.due ?? null,
+                brief: run.brief ?? null,
               }
             : { code: 'unknown_run' },
         );
@@ -471,9 +487,45 @@ export function searchApi(
       } else if (route === 'followup' && mutation) {
         if (!Value.Check(followupSchema, body)) throw new Error('invalid_followup');
         const question = body;
-        const result = [...runs.values()].find(
-          (run) => run.result?.runId === question.runId,
-        )?.result;
+        let result = [...runs.values()].find((run) => run.result?.runId === question.runId)?.result;
+        if (!question.runId) {
+          if (
+            !question.ids.length ||
+            !question.destinations ||
+            question.destinations.length !== question.ids.length
+          )
+            throw new Error('saved_followup_destination_required');
+          const records = await Promise.all(
+            question.ids.map((id, index) =>
+              selectSavedEntity(id, root, question.destinations![index]),
+            ),
+          );
+          result = {
+            schemaVersion: 2,
+            runId: randomUUID(),
+            query: question.question,
+            status: 'completed',
+            items: records.map(({ record }) => ({
+              entity: record.entity,
+              match: { level: 'related', reason: 'User selected retained knowledge', sources: [] },
+              eligible: false,
+              reasons: ['retained_context_only'],
+            })),
+            sources: [],
+            coverage: [],
+            gaps: ['Frozen retained evidence; no current access or independent change check.'],
+            usage: {
+              searches: 0,
+              documents: 0,
+              elapsedMs: 0,
+              modelCalls: 0,
+              providerUsage: null,
+              cost: null,
+            },
+            counts: { leads: records.length, distinct: records.length, duplicates: 0, omitted: 0 },
+            limits: budgets.quick,
+          };
+        } else if (question.destinations) throw new Error('followup_scope_conflict');
         if (
           !result ||
           question.ids.some((id) => !result.items.some((item) => item.entity.id === id))
@@ -544,16 +596,37 @@ export function searchApi(
           });
         json(202, { id });
       } else if (route === 'run-due' && mutation) {
+        if (!Value.Check(Type.Object({}, { additionalProperties: false }), body))
+          throw new Error('invalid_due_activation');
         if (active) {
           json(409, { code: 'runner_busy' });
           return true;
         }
+        const controller = new AbortController(),
+          id = randomBytes(16).toString('hex');
+        const run: ActiveRun = { controller, events: ['Starting finite due activation…'] };
+        runs.set(id, run);
         active = true;
-        try {
-          json(200, await runDueOnce({ root, search }));
-        } finally {
-          active = false;
-        }
+        void runDueOnce({
+          root,
+          search,
+          signal: controller.signal,
+          progress: (event) => {
+            run.events.push(event);
+            if (run.events.length > 100) run.events.shift();
+          },
+        })
+          .then((due) => {
+            run.due = due;
+          })
+          .catch((failure: unknown) => {
+            run.error = failure instanceof Error ? failure.message : 'due_activation_failed';
+          })
+          .finally(() => {
+            active = false;
+            pruneRuns();
+          });
+        json(202, { id });
       } else if (route === 'cleanup' && mutation) {
         const settings = await loadSettings(root);
         await cleanRuns(root, settings.retentionDays);

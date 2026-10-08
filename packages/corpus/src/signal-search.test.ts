@@ -27,6 +27,7 @@ import { normalizeText, normalizeSpan, digest } from './search-fetch.js';
 import { parseEvidenceBundle } from '../../domain/src/evidence-exchange.js';
 import { RunnerFailure, type SearchRunner } from './search-runner.js';
 import { searchEvidenceBundle } from './search-exchange.js';
+import { checkPrimaryMaterial } from './search-reuse.js';
 
 const date = '2026-10-05T00:00:00.000Z';
 function proposal(): Proposal {
@@ -225,7 +226,7 @@ describe('live search contract and evidence policy', () => {
     ).toBe(false);
     expect(onlyAmbiguous.items[0]!.entity.assessment.score).toBeNull();
   });
-  it('retains a rejected extraction and its usage privately while withholding all preliminary credit', async () => {
+  it('retains a rejected explicit reassessment and its usage without erasing original verified observations', async () => {
     const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-extraction-receipt-')));
     const raw = {
       candidates: [{ uri: 'https://example.com/changed-identity', observations: [] }],
@@ -233,7 +234,7 @@ describe('live search contract and evidence policy', () => {
     };
     try {
       const result = await signalSearch(
-        { query: 'research', cache: 'private', save: 'never' },
+        { query: 'research', cache: 'private', save: 'never', review: true },
         {
           root,
           fetch,
@@ -251,7 +252,7 @@ describe('live search contract and evidence policy', () => {
           await readFile(join(root, '.signals/extractions', `${result.runId}.json`), 'utf8'),
         ),
       ).toEqual({ proposal: raw, usage: { output_tokens: 123 } });
-      expect(result.items[0]!.entity.assessment.score).toBeNull();
+      expect(result.items[0]!.entity.observations[0]!.verified).toBe(true);
       expect(result.gaps).toContain('Grounded extraction unavailable: extraction_identity_change');
       expect(result.usage.providerUsage).toEqual({
         discovery: null,
@@ -1162,6 +1163,11 @@ describe('canonical saving and scheduling', () => {
           root,
           now: Date.parse(date),
           settings,
+          check: (entity, options) =>
+            checkPrimaryMaterial(entity, {
+              ...options,
+              fetch: async (uri) => ({ ...(await fetch(uri)), digest: 'b'.repeat(64) }),
+            }),
           search: async () => ({
             ...(await signalSearch({ query: 'refresh' }, { runner: runner(proposal()), fetch })),
             items: [returned],

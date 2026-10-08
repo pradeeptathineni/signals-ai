@@ -1,12 +1,15 @@
-import { readFile, writeFile, unlink } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { loadSettings, saveSettings } from '../packages/corpus/src/search-settings.js';
-import { runDueOnce } from '../packages/corpus/src/search-scheduler.js';
+import { runDueOnce, acquireResearchLease } from '../packages/corpus/src/search-scheduler.js';
 import { budgets, type SearchResult } from '../packages/domain/src/search-contract.js';
-import { saveEntities, atomicJson } from '../packages/corpus/src/search-store.js';
+import { saveEntities, atomicJson, readPrivateJson } from '../packages/corpus/src/search-store.js';
 import { randomUUID } from 'node:crypto';
 import { publishCorpus } from '../packages/corpus/src/search-publish.js';
-import { runQueryListOnce } from '../packages/corpus/src/search-query-list.js';
+import {
+  runQueryListOnce,
+  planQueryAcquisition,
+} from '../packages/corpus/src/search-query-list.js';
 import { parseArgs } from 'node:util';
 
 const [operation, ...args] = process.argv.slice(2);
@@ -30,6 +33,8 @@ try {
       ...queries.filter((query) => !settings.queries.some((item) => item.id === query.id)),
     );
     console.log(JSON.stringify(await saveSettings(settings)));
+  } else if (operation === 'plan-list') {
+    console.log(JSON.stringify(planQueryAcquisition(settings, args.length ? args : undefined)));
   } else if (operation === 'run-list' && args[0] === '--once') {
     const controller = new AbortController();
     process.once('SIGINT', () => controller.abort());
@@ -45,6 +50,7 @@ try {
         profile: { type: 'string' },
         'extract-model': { type: 'string' },
         'extract-effort': { type: 'string' },
+        'no-share': { type: 'boolean' },
       },
     });
     if (values.profile && !['quick', 'wide'].includes(values.profile))
@@ -56,6 +62,7 @@ try {
           resume: values.resume,
           settings: {
             ...settings,
+            ...(values['no-share'] ? { acquisitionGroups: [] } : {}),
             model: values.model ?? settings.model,
             effort: values.effort ?? settings.effort,
             profile: (values.profile as 'quick' | 'wide') ?? settings.profile,
@@ -104,17 +111,16 @@ try {
   } else if (operation === 'publish') console.log(JSON.stringify(await publishCorpus()));
   else if (operation === 'retry') {
     if (args.length !== 1 || args[0]!.length > 300) throw new Error('retry JOB_KEY');
-    const lease = resolve('.signals/discovery-lease.json');
-    await writeFile(lease, JSON.stringify({ pid: process.pid, expires: Date.now() + 60000 }), {
-      flag: 'wx',
-      mode: 0o600,
-    });
+    const release = await acquireResearchLease(process.cwd());
+    if (!release) throw new Error('research_busy');
     try {
       const path = resolve('.signals/discovery-state.json');
-      const state = JSON.parse(await readFile(path, 'utf8')) as Record<
-        string,
-        { slot: number; status: string }
-      >;
+      const state = (await readPrivateJson(
+        process.cwd(),
+        'discovery-state.json',
+        {},
+        8000000,
+      )) as Record<string, { slot: number; status: string }>;
       const prior = state[args[0]!];
       if (!prior || !['failed', 'uncertain'].includes(prior.status))
         throw new Error('retry_requires_failed_or_uncertain_slot');
@@ -133,7 +139,7 @@ try {
         }),
       );
     } finally {
-      await unlink(lease);
+      await release();
     }
   } else if (operation === 'status')
     console.log(
@@ -153,11 +159,19 @@ try {
       `Codex recurring inference: ${settings.profile}, ${JSON.stringify(budgets[settings.profile])}, UTC, threshold ${settings.threshold}, retention ${settings.retentionDays} days, ${settings.destination} corpus, ${settings.publication} publication.\n`,
     );
     console.log(JSON.stringify(await saveSettings(settings)));
-  } else if (operation === 'run-due' && args[0] === '--once')
+  } else if (operation === 'run-due' && args[0] === '--once') {
+    const controller = new AbortController();
+    process.once('SIGINT', () => controller.abort());
+    process.once('SIGTERM', () => controller.abort());
     console.log(
-      JSON.stringify(await runDueOnce({ progress: (event) => process.stderr.write(`${event}\n`) })),
+      JSON.stringify(
+        await runDueOnce({
+          signal: controller.signal,
+          progress: (event) => process.stderr.write(`${event}\n`),
+        }),
+      ),
     );
-  else if (operation === 'timer') {
+  } else if (operation === 'timer') {
     process.stderr.write(
       'Local discovery timer. Enabled modes run only while this process is open and the laptop is awake. Ctrl-C stops it.\n',
     );
@@ -208,7 +222,7 @@ try {
     );
   } else
     throw new Error(
-      'discovery setup | status | enable/disable query/corpus/both | run-due --once | timer | retry JOB_KEY | save-run RUN_ID [ENTITY_ID...] | publish',
+      'discovery setup | setup-concepts | status | plan-list [INTEREST_ID...] | run-list --once [--no-share] [INTEREST_ID...] | enable/disable query/corpus/both | run-due --once | timer | retry JOB_KEY | save-run RUN_ID [ENTITY_ID...] | publish',
     );
 } catch (failure) {
   console.log(

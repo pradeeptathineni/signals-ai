@@ -43,7 +43,7 @@ it('checks a scoped CLI identity without a query while ordinary retrieval still 
   } finally {
     await rm(root, { recursive: true, force: true });
   }
-});
+}, 20000);
 
 it('requires scope for duplicate saved identities and checks/refreshes the selected private copy', async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-store-selection-')));

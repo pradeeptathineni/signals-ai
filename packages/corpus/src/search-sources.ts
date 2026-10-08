@@ -26,6 +26,28 @@ const sourceStateSchema = Type.Record(
       ),
       resultExposures: Type.Optional(Type.Integer({ minimum: 0 })),
       scans: Type.Optional(Type.Integer({ minimum: 0 })),
+      seenLinks: Type.Optional(
+        Type.Array(Type.String({ maxLength: 2048 }), { maxItems: 10000, uniqueItems: true }),
+      ),
+      transport: Type.Optional(
+        Type.Object(
+          {
+            etag: Type.Optional(Type.String({ maxLength: 4096, pattern: '^[^\r\n]*$' })),
+            lastModified: Type.Optional(Type.String({ maxLength: 4096, pattern: '^[^\r\n]*$' })),
+          },
+          { additionalProperties: false },
+        ),
+      ),
+      lastAttempt: Type.Optional(
+        Type.Object(
+          {
+            checkedAt: Type.String({ maxLength: 40 }),
+            status: Type.Enum(['fetched', 'not-modified', 'failed']),
+            reason: Type.Union([Type.String({ maxLength: 500 }), Type.Null()]),
+          },
+          { additionalProperties: false },
+        ),
+      ),
     },
     { additionalProperties: false },
   ),
@@ -103,7 +125,7 @@ export async function scanSources(
       'Still available; followed sources are supplemental, never an implicit allowlist.',
   });
   if (!selected.length) return result();
-  if (options.persist) await loadSourceState(root);
+  const before = options.persist ? await loadSourceState(root) : {};
   // Transport never owns the writer lock. Merge against current state only after acquisition.
   const acquired: {
     source: (typeof selected)[number];
@@ -115,7 +137,11 @@ export async function scanSources(
     try {
       acquired.push({
         source,
-        document: await (options.fetch ?? fetchEvidence)(source.uri, options.signal),
+        document: await (options.fetch ?? fetchEvidence)(source.uri, options.signal, 0, false, {
+          conditional:
+            before[source.uri]?.state === 'fetched' ? before[source.uri]?.transport : undefined,
+          allowNotModified: before[source.uri]?.state === 'fetched',
+        }),
         error: null,
       });
     } catch (error) {
@@ -134,10 +160,30 @@ export async function scanSources(
       try {
         if (!acquisition.document) throw acquisition.error;
         const document = acquisition.document;
+        const checkedAt = new Date().toISOString();
+        if (document.response?.status === 304) {
+          if (!prior || prior.state !== 'fetched')
+            throw new Error('source_not_modified_without_snapshot');
+          state[source.uri] = {
+            ...prior,
+            scans: (prior.scans ?? 0) + 1,
+            lastAttempt: { checkedAt, status: 'not-modified', reason: null },
+          };
+          sources.push({
+            uri: source.uri,
+            label: source.label,
+            state: 'fetched',
+            delta: 'unchanged',
+            newLinks: [],
+            health: state[source.uri],
+          });
+          continue;
+        }
         const links = document.material?.links ?? [];
         const urls = links.map((link) => link.uri).sort();
         const hash = digest(JSON.stringify({ text: document.text, urls }));
-        const newLinks = links.filter((link) => !prior?.links.includes(link.uri));
+        const seenLinks = prior?.seenLinks ?? prior?.links ?? [];
+        const newLinks = links.filter((link) => !seenLinks.includes(link.uri));
         state[source.uri] = {
           ...prior,
           exposures:
@@ -155,30 +201,55 @@ export async function scanSources(
             ]),
           ],
           links: urls,
+          seenLinks: [...new Set([...seenLinks, ...urls])].slice(-10000),
           digest: hash,
-          fetchedAt: new Date().toISOString(),
+          fetchedAt: checkedAt,
           state: 'fetched',
           feedback: prior?.feedback ?? null,
+          transport: {
+            ...(document.response?.etag ? { etag: document.response.etag } : {}),
+            ...(document.response?.lastModified
+              ? { lastModified: document.response.lastModified }
+              : {}),
+          },
+          lastAttempt: { checkedAt, status: 'fetched', reason: null },
         };
         sources.push({
           uri: source.uri,
           label: source.label,
           state: 'fetched',
-          delta: !prior
-            ? 'first-inspection'
-            : prior.digest === hash
-              ? 'unchanged'
-              : 'content-changed-meaning-unassessed',
+          delta:
+            !prior || prior.state !== 'fetched'
+              ? 'first-inspection'
+              : prior.digest === hash
+                ? 'unchanged'
+                : 'content-changed-meaning-unassessed',
           newLinks,
           health: state[source.uri],
         });
       } catch (e) {
+        const reason = e instanceof Error ? e.message.slice(0, 500) : 'source_failed';
+        state[source.uri] = {
+          ...(prior ?? {
+            exposures: 0,
+            opportunities: 0,
+            distinctOrigins: [],
+            links: [],
+            digest: digest(''),
+            fetchedAt: '',
+            state: 'never-fetched',
+            feedback: null,
+          }),
+          scans: (prior?.scans ?? 0) + 1,
+          lastAttempt: { checkedAt: new Date().toISOString(), status: 'failed', reason },
+        };
         sources.push({
           uri: source.uri,
           label: source.label,
           state: 'failed',
-          reason: e instanceof Error ? e.message : 'source_failed',
+          reason,
           newLinks: [],
+          health: state[source.uri],
         });
       }
     }

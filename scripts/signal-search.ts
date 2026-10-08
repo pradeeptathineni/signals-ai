@@ -4,9 +4,9 @@ import {
   signalSearch,
   contextualizeResult,
 } from '../packages/corpus/src/signal-search.js';
-import { discoverySchema, parseRequest, budgets } from '../packages/domain/src/search-contract.js';
-import { nativeBriefSchema, nativeProposal } from '../packages/domain/src/search-native.js';
-import { codexRunner } from '../packages/corpus/src/search-runner.js';
+import { parseRequest, budgets } from '../packages/domain/src/search-contract.js';
+import { nativeBriefSchema } from '../packages/domain/src/search-native.js';
+import { codexRunner, decodeNativeOutput } from '../packages/corpus/src/search-runner.js';
 import { execFileSync } from 'node:child_process';
 import { searchEvidenceBundle } from '../packages/corpus/src/search-exchange.js';
 import { retainRun, saveEntities } from '../packages/corpus/src/search-store.js';
@@ -52,10 +52,7 @@ const { values } = parseArgs({
   },
 });
 try {
-  if (values.schema)
-    process.stdout.write(
-      `${JSON.stringify(values.route === 'native' ? nativeBriefSchema : discoverySchema)}\n`,
-    );
+  if (values.schema) process.stdout.write(`${JSON.stringify(nativeBriefSchema)}\n`);
   else if (values.capability)
     process.stdout.write(
       `${JSON.stringify({ ...(await codexRunner().readiness()), limits: budgets, persistence: 'none unless selected', unattended: false })}\n`,
@@ -64,7 +61,7 @@ try {
     const request = parseRequest({
       query: values.query ?? (values['check-primary'] ? 'Check saved primary source' : undefined),
       profile: values.profile ?? 'wide',
-      route: values.route ?? (values.accept ? 'assessed' : 'native'),
+      route: values.route === 'assessed' ? 'native' : (values.route ?? 'native'),
       save: values.save ?? 'never',
       cache: values.cache ?? 'memory',
       supplementalSites: values.site,
@@ -120,16 +117,12 @@ try {
           runId: randomUUID(),
           query: request.query,
           status: 'completed',
-          ...(await acceptDiscovery(
-            values.route === 'native' ? nativeProposal(JSON.parse(input)) : JSON.parse(input),
-            request,
-            {
-              signal: controller.signal,
-              followedSources: (await loadSettings(process.cwd())).followedSources
-                ?.filter((source) => source.enabled)
-                .map((source) => source.uri),
-            },
-          )),
+          ...(await acceptDiscovery(decodeNativeOutput(input), request, {
+            signal: controller.signal,
+            followedSources: (await loadSettings(process.cwd())).followedSources
+              ?.filter((source) => source.enabled)
+              .map((source) => source.uri),
+          })),
           usage: {
             searches: 0,
             documents: 0,

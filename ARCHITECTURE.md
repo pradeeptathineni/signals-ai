@@ -1,5 +1,7 @@
 # Architecture
 
+[ADR-015](docs/architecture/ADR-015-native-research-replacement.md) makes one native research task the shared engine. Native brief v3 retains the readable answer before per-item source/record validation. Legacy brief/proposal formats are historical ingestion decoders. Explicit frozen reassessment is a specialist; ordinary research has no second interpretation stage. Native-authored query groups share compatible unassessed acquisition while keeping separate per-interest reasoning. Due maintenance checks unchanged/denied primary material before inference.
+
 [ADR-013](docs/architecture/ADR-013-grounded-priority-and-discovery-provenance.md) corrects recommendation grounding and qualifies discovery labels. Contextual priority v2 holds ungrounded use/wrap/adapt proposals at study without hiding the lead or changing intrinsic admission. Source transport happens outside the writer lock; optional state failures remain gaps. Private source feedback binds explicit entity votes to verified configured introducing parents.
 
 [ADR-012](docs/architecture/ADR-012-refreshed-acquisition-and-priority.md) adds reviewed optional acquisition and extraction behind one live kernel. The document parser preserves original outlinks and heading/table addresses behind pinned safe HTTPS transport. Private source-health, annotations and inbox use the existing writer; query-only priority/delta/relations never become canonical evidence. A repeated source scan is not a new discovery, and a changed source page is not automatically a meaningful claim change.

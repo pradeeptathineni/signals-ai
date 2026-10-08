@@ -18,6 +18,7 @@ const planSchema = Type.Object(
     lane: Type.Enum(lanes),
     topic: Type.Optional(Type.String({ pattern: '^[a-z0-9][a-z0-9-]{0,49}$' })),
     terms: Type.Optional(Type.String({ minLength: 1, maxLength: 120, pattern: '^[^\r\n]+$' })),
+    scope: Type.Optional(Type.String({ maxLength: 2048 })),
     windowStart: Type.Optional(Type.String({ pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' })),
     starBand: Type.Optional(
       Type.Tuple([
@@ -144,6 +145,15 @@ function endpoint(plan: GitHubPlan) {
     (!plan.windowStart || date(plan.windowStart)?.slice(0, 10) !== plan.windowStart)
   )
     throw new Error('invalid_github_window');
+  let scope = '';
+  if (plan.scope) {
+    const url = new URL(normalizeConsiderUrl(plan.scope).normalizedUrl);
+    const parts = url.pathname.split('/').filter(Boolean);
+    if (url.origin !== 'https://github.com' || url.search || url.hash || parts.length > 2)
+      throw new Error('unsupported_github_scope');
+    scope =
+      parts.length === 1 ? `user:${parts[0]}` : parts.length === 2 ? `repo:${parts.join('/')}` : '';
+  }
   const query = [
     requiresTopic ? `topic:${plan.topic}` : requiresTerms ? plan.terms : '',
     plan.lane === 'capability-established' ? 'in:name,description,readme' : '',
@@ -156,6 +166,7 @@ function endpoint(plan: GitHubPlan) {
           ? 'stars:0..999'
           : '',
     'archived:false',
+    scope,
   ]
     .filter(Boolean)
     .join(' ');
@@ -435,6 +446,14 @@ export async function githubSearch(
           checkedAt: page.checkedAt,
         });
         for (const hit of page.hits) {
+          if (plan.scope) {
+            const scope = new URL(plan.scope).pathname.replace(/\/$/, '');
+            const path = new URL(hit.uri).pathname;
+            if (scope && path !== scope && !path.startsWith(`${scope}/`)) {
+              gaps.push(`github/${plan.lane}: out-of-scope repository omitted`);
+              continue;
+            }
+          }
           const trail = { lane: plan.lane, query: receipt.query, page: receipt.page };
           const prior = seen.get(hit.repositoryId);
           if (prior) prior.discovery.push(trail);

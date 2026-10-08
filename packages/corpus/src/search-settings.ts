@@ -52,12 +52,32 @@ const settingsSchema = Type.Object(
     timezone: Type.Literal('UTC'),
     corpusEveryDays: Type.Integer({ minimum: 1, maximum: 3650 }),
     batchSize: Type.Integer({ minimum: 1, maximum: 10 }),
+    acquisitionGroups: Type.Optional(
+      Type.Array(
+        Type.Object(
+          {
+            id: Type.String({ pattern: '^[a-z0-9-]{1,80}$' }),
+            members: Type.Array(Type.String({ pattern: '^[a-z0-9-]{1,80}$' }), {
+              minItems: 2,
+              maxItems: 30,
+              uniqueItems: true,
+            }),
+            query: Type.String({ minLength: 1, maxLength: 120 }),
+            reason: Type.String({ minLength: 1, maxLength: 1000 }),
+            proposedBy: Type.Literal('native'),
+          },
+          closed,
+        ),
+        { maxItems: 32 },
+      ),
+    ),
     queries: Type.Array(
       Type.Object(
         {
           id: Type.String({ pattern: '^[a-z0-9-]{1,80}$' }),
           query: Type.String({ minLength: 1, maxLength: 2000 }),
           context: Type.Optional(Type.String({ maxLength: 5000 })),
+          shareAcquisition: Type.Optional(Type.Boolean()),
           enabled: Type.Boolean(),
           everyDays: Type.Integer({ minimum: 1, maximum: 3650 }),
           offsetMinutes: Type.Integer({ minimum: 0, maximum: 1440 }),
@@ -142,6 +162,19 @@ function validateSettings(input: unknown) {
   });
   if (new Set(settings.queries.map((query) => query.id)).size !== settings.queries.length)
     throw new Error('duplicate_query');
+  const grouped = new Set<string>();
+  const ids = new Set<string>();
+  for (const group of settings.acquisitionGroups ?? []) {
+    if (ids.has(group.id)) throw new Error('duplicate_acquisition_group');
+    ids.add(group.id);
+    parseRequest({ query: group.query });
+    for (const id of group.members) {
+      if (!settings.queries.some((query) => query.id === id))
+        throw new Error('unknown_acquisition_interest');
+      if (grouped.has(id)) throw new Error('overlapping_acquisition_groups');
+      grouped.add(id);
+    }
+  }
   return settings;
 }
 export async function loadSettings(root = process.cwd()) {
