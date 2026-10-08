@@ -1,5 +1,7 @@
 # Signals AI
 
+For ordinary discovery in an existing AI session, use the native `signal-search` skill. The local workbench and headless CLI also offer a one-session native brief with source verification, explicit saving and bounded saved-corpus reuse. New workbench profiles select Sol low, private saving and disabled recurrence; existing settings are preserved. Fast, Balanced and Deep selections show their budgets. Full assessment remains available. See [ADR-014](docs/architecture/ADR-014-native-brief-and-retained-research.md) for the measured limits: retained evidence is useful, but a speed or general research-quality advantage over direct native research was not demonstrated.
+
 Signals discovers reusable knowledge, checks source-bound observations and lets you save useful entities to a Git Corpus. Your existing AI supplies interpretation; deterministic code owns acquisition limits, evidence binding, scoring, storage and replay. This is pre-1 software. No v1.0.0 release is active or authorized.
 
 ## Use your AI

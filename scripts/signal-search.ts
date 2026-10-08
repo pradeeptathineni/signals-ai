@@ -63,7 +63,7 @@ try {
     const request = parseRequest({
       query: values.query,
       profile: values.profile ?? 'wide',
-      ...(values.route ? { route: values.route } : {}),
+      route: values.route ?? (values.accept ? 'assessed' : 'native'),
       save: values.save ?? 'never',
       cache: values.cache ?? 'memory',
       supplementalSites: values.site,
@@ -139,7 +139,7 @@ try {
           limits: budgets[request.profile ?? 'wide'],
         }
       : await signalSearch(request, {
-          runner: codexRunner(values.model, values.effort, {
+          runner: codexRunner(values.model ?? 'gpt-6.1-sol', values.effort ?? 'low', {
             githubPlans,
             root: process.cwd(),
             acquisition: await loadAcquisitionConfig(process.cwd()),

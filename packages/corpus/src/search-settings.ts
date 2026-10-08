@@ -77,14 +77,15 @@ export type SearchSettings = Static<typeof settingsSchema>;
 export const defaultSettings: SearchSettings = {
   version: 1,
   runner: 'codex',
-  model: '',
-  effort: '',
+  model: 'gpt-6.1-sol',
+  effort: 'low',
   extractionModel: '',
   extractionEffort: '',
   profile: 'wide',
+  route: 'native',
   threshold: 75,
   retentionDays: 7,
-  destination: 'public',
+  destination: 'private',
   publication: 'local-only',
   sources: [...channels],
   supplementalSites: [
@@ -104,11 +105,20 @@ export const defaultSettings: SearchSettings = {
 function validateSettings(input: unknown) {
   if (!Value.Check(settingsSchema, input)) throw new Error('invalid_settings');
   const settings = structuredClone(input);
-  for (const source of settings.followedSources ?? [])
+  for (const source of settings.followedSources ?? []) {
     source.uri = parseRequest({
       query: 'Validate followed source',
-      supplementalSites: [source.uri],
-    }).supplementalSites![0]!;
+      captureUrls: [source.uri],
+    }).captureUrls![0]!;
+    if (
+      [...new URL(source.uri).searchParams.keys()].some((key) =>
+        /^(?:api[-_]?key|access[-_]?token|token|auth|authorization|password|secret|signature)$/i.test(
+          key,
+        ),
+      )
+    )
+      throw new Error('credential_followed_source');
+  }
   if (
     new Set((settings.followedSources ?? []).map((source) => source.uri)).size !==
     (settings.followedSources ?? []).length

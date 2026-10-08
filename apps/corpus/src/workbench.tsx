@@ -20,6 +20,7 @@ import { PersonalEditor } from './workbench-personal.js';
 import { SourceManager } from './workbench-sources.js';
 import type { PersonalState } from '../../../packages/domain/src/search-priority.js';
 import type { InboxEntry } from '../../../packages/corpus/src/search-inbox.js';
+import { rejectedNativeLeads } from '../../../packages/domain/src/search-rejected.js';
 
 const local = (window as Window & { __SIGNALS_LOCAL__?: boolean }).__SIGNALS_LOCAL__ === true;
 const base = import.meta.env.BASE_URL;
@@ -242,6 +243,7 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
     captureUrls?: string[],
   ) {
     setSourceResult(null);
+    setProvisional([]);
     const started = await api<{ id: string }>(
       refreshId ? 'refresh' : captureUrls ? 'capture' : 'search',
       refreshId
@@ -370,6 +372,57 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                   <option>wide</option>
                 </select>
               </label>
+              <fieldset>
+                <legend>Research intent</legend>
+                <button
+                  onClick={() =>
+                    setSettings({
+                      ...settings,
+                      profile: 'quick',
+                      route: 'native',
+                      model: 'gpt-6.1-sol',
+                      effort: 'low',
+                      groundedReview: false,
+                    })
+                  }
+                >
+                  Fast
+                </button>
+                <button
+                  onClick={() =>
+                    setSettings({
+                      ...settings,
+                      profile: 'wide',
+                      route: 'native',
+                      model: 'gpt-6.1-sol',
+                      effort: 'low',
+                      groundedReview: false,
+                    })
+                  }
+                >
+                  Balanced
+                </button>
+                <button
+                  onClick={() =>
+                    setSettings({
+                      ...settings,
+                      profile: 'wide',
+                      route: 'assessed',
+                      model: 'gpt-6.1-sol',
+                      effort: 'high',
+                      groundedReview: true,
+                    })
+                  }
+                >
+                  Deep
+                </button>
+                <p>
+                  Fast allows 6 searches, 12 reads and 120 seconds. Balanced allows 24 searches, 60
+                  reads and 600 seconds. Both use one native research session with Sol low. Deep
+                  uses Sol high and requests an additional grounded assessment. Each may return
+                  partial findings. Save settings to apply this selection.
+                </p>
+              </fieldset>
               <label>
                 Research route
                 <select
@@ -1116,6 +1169,27 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
               </details>
             )}
             <section className="controls" aria-label="Entity filters">
+              {tab === 'Search' &&
+                result?.status === 'failed' &&
+                rejectedNativeLeads(result.usage.providerUsage).length > 0 && (
+                  <section aria-label="Unvalidated leads from rejected response">
+                    <h2>Leads retained from a rejected response</h2>
+                    <p>
+                      The response failed validation. These names and descriptions are unverified;
+                      they are not discovered successes and cannot be saved from this view. The
+                      original response remains available in this result.
+                    </p>
+                    <ul>
+                      {rejectedNativeLeads(result.usage.providerUsage).map((lead, index) => (
+                        <li key={index}>
+                          <strong>{lead.name}</strong>
+                          <p>{lead.description}</p>
+                          <p>{lead.uri}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
               {tab === 'Search' && busy && provisional.length > 0 && (
                 <section aria-label="Provisional research leads">
                   <h2>Leads awaiting evidence verification</h2>
