@@ -69,6 +69,59 @@ const fetch = async (uri: string) => ({
   digest: 'a'.repeat(64),
 });
 
+it('binds normalized introducing parents to actual outlinks and source exposures', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'source-parent-review-')));
+  try {
+    const reportedParent = 'https://EXAMPLE.org/feed/?utm_source=follow';
+    const parent = 'https://example.org/feed';
+    const settings = await saveSettings(
+      {
+        ...defaultSettings,
+        followedSources: [{ uri: parent, label: 'Scout', enabled: true, interests: [] }],
+      },
+      root,
+    );
+    const sourceFetch = async (uri: string) => ({
+      ...(await fetch(uri)),
+      material: {
+        text: 'Scout',
+        title: 'Scout',
+        author: null,
+        publishedAt: null,
+        sections: [],
+        extractor: 'fixture',
+        links: [{ uri: 'https://example.org/tool', title: 'Tool' }],
+      },
+    });
+    await scanSources(settings, root, { persist: true, recordExposure: false, fetch: sourceFetch });
+    const linked = structuredClone(proposal);
+    linked.sources.push({ ...linked.sources[0]!, uri: reportedParent, title: 'Scout' });
+    linked.candidates[0]!.discovery = {
+      introducedBy: 'followed-source',
+      parentUri: reportedParent,
+    };
+    const accepted = await acceptDiscovery(
+      linked,
+      { query: 'portable tracing' },
+      { fetch: sourceFetch, followedSources: [parent] },
+    );
+    expect(accepted.items[0]!.discovery).toMatchObject({
+      parentUri: parent,
+      linkVerified: true,
+      provenanceBasis: 'configured-source',
+    });
+    expect(accepted.gaps).not.toContain(
+      'Example Tool: introducing parent link not verified in fetched material',
+    );
+    await recordSourceResultExposures(root, accepted.items);
+    const state = JSON.parse(await readFile(resolve(root, '.signals/source-state.json'), 'utf8'));
+    expect(state[parent].resultExposures).toBe(1);
+    expect(state[reportedParent]).toBeUndefined();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 it('credits explicit feedback once to the configured source without counting background scans as exposures', async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'source-feedback-review-')));
   try {

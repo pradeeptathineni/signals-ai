@@ -46,7 +46,9 @@ export function reconcileDiscoveryTrail(
 ): SearchItem['discovery'] {
   const uri = candidate.uri;
   const id = entityIdentity(uri);
-  const parent = candidate.discovery?.parentUri;
+  const parent = candidate.discovery?.parentUri
+    ? normalizeConsiderUrl(candidate.discovery.parentUri).normalizedUrl
+    : undefined;
   const captured = request.captureUrls?.some((seed) => entityIdentity(seed) === id) ?? false;
   const configuredParent =
     !!parent &&
@@ -83,6 +85,7 @@ export function reconcileDiscoveryTrail(
   const discovery = introducedBy
     ? {
         ...candidate.discovery,
+        ...(parent ? { parentUri: parent } : {}),
         introducedBy,
         linkVerified,
         provenanceBasis: captured
@@ -469,7 +472,9 @@ export async function acceptDiscovery(
       ].sort();
       prior.entity.assessment = assessEntity(prior.entity, asOf);
     } else {
-      const parent = candidate.discovery?.parentUri;
+      const parent = candidate.discovery?.parentUri
+        ? normalizeConsiderUrl(candidate.discovery.parentUri).normalizedUrl
+        : undefined;
       const linkVerified =
         !!parent &&
         !!documents.get(parent)?.material?.links.some((link) => entityIdentity(link.uri) === id);
@@ -574,7 +579,12 @@ export async function signalSearch(
   };
   try {
     const acquisitionConfig = await loadAcquisitionConfig(dependencies.root ?? process.cwd());
-    const runner = dependencies.runner ?? codexRunner();
+    const runner =
+      dependencies.runner ??
+      codexRunner(undefined, undefined, {
+        root: dependencies.root ?? process.cwd(),
+        acquisition: acquisitionConfig,
+      });
     const readiness = await runner.readiness();
     dependencies.progress?.(readiness.reason);
     if (!readiness.available || !readiness.broadSearch) {
