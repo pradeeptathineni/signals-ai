@@ -1,4 +1,4 @@
-import { Type, type Static } from 'typebox';
+import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 import {
   candidateSchema,
@@ -77,7 +77,6 @@ export const nativeBriefSchema = Type.Object(
   },
   closed,
 );
-export type NativeBrief = Static<typeof nativeBriefSchema>;
 export function nativeProposal(input: unknown): Proposal {
   if (Value.Check(nativeBriefSchema, input))
     return nativeProposal({
