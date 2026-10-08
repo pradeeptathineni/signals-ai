@@ -9,6 +9,7 @@ import { signalSearch } from './signal-search.js';
 import { codexRunner } from './search-runner.js';
 import { loadAcquisitionConfig } from './search-acquisition.js';
 import { parseRequest, budgets } from '../../domain/src/search-contract.js';
+import { digest } from './search-fetch.js';
 
 const batchSchema = Type.Object(
   {
@@ -32,6 +33,7 @@ const batchSchema = Type.Object(
             'uncertain',
           ]),
           runId: Type.Optional(Type.String()),
+          reusedFromJobId: Type.Optional(Type.String()),
           saved: Type.Array(Type.String()),
           gaps: Type.Array(Type.String()),
         },
@@ -67,6 +69,13 @@ export async function loadQueryBatch(id: string, root = process.cwd()) {
       supplementalSites: job.supplementalSites,
     }),
   );
+  for (const job of raw.jobs) {
+    if (job.reusedFromJobId) {
+      const owner = raw.jobs.find((item) => item.id === job.reusedFromJobId);
+      if (!owner || owner.id === job.id || owner.reusedFromJobId)
+        throw new Error('invalid_query_batch_reuse');
+    }
+  }
   return raw;
 }
 export async function queryBatchHistory(root = process.cwd()) {
@@ -140,7 +149,7 @@ export async function runQueryListOnce(options: BatchOptions = {}) {
 }
 async function executeBatch(options: BatchOptions, batchId: string) {
   const root = options.root ?? process.cwd();
-  const settings = options.settings ?? (await loadSettings(root));
+  const settings = structuredClone(options.settings ?? (await loadSettings(root)));
   const limit = options.limit ?? settings.batchSize;
   if (!Number.isInteger(limit) || limit < 1 || limit > 512)
     throw new Error('invalid_query_batch_limit');
@@ -186,77 +195,116 @@ async function executeBatch(options: BatchOptions, batchId: string) {
   }
   await atomicJson(path, batch);
   options.progress?.(
-    `Batch ${batchId}: ${batch.jobs.length} interests, sequential ${settings.profile} runs; ${JSON.stringify(budgets[settings.profile])} per query, threshold ${settings.threshold}, ${settings.destination}, local saves only.`,
+    `Batch ${batchId}: ${batch.jobs.length} interests, sequential ${settings.profile} runs; ${JSON.stringify(budgets[settings.profile])} per distinct exact need, threshold ${settings.threshold}, ${settings.destination}, local saves only.`,
   );
-  let processed = 0;
-  for (const job of batch.jobs) {
+  const acquisition = await loadAcquisitionConfig(root);
+  const runner = codexRunner(settings.model || undefined, settings.effort || undefined, {
+    root,
+    acquisition,
+    extractionModel: settings.extractionModel || undefined,
+    extractionEffort: settings.extractionEffort || undefined,
+  });
+  const selected = batch.jobs.filter((job) => job.status === 'pending').slice(0, limit);
+  const operationScope = {
+    runner: settings.runner,
+    model: settings.model,
+    effort: settings.effort,
+    extractionModel: settings.extractionModel,
+    extractionEffort: settings.extractionEffort,
+    destination: settings.destination,
+    acquisition,
+    budget: budgets[settings.profile],
+  };
+  const groups = new Map<
+    string,
+    { request: ReturnType<typeof parseRequest>; jobs: QueryBatch['jobs'] }
+  >();
+  for (const job of selected) {
+    const request = parseRequest({
+      query: job.query,
+      context: job.context,
+      profile: settings.profile,
+      route: settings.route,
+      review: settings.groundedReview ?? false,
+      threshold: settings.threshold,
+      sources: settings.sources,
+      supplementalSites: job.supplementalSites,
+      save: 'never',
+      cache: 'private',
+    });
+    const key = digest(JSON.stringify({ request, operationScope }));
+    const group = groups.get(key);
+    if (group) group.jobs.push(job);
+    else groups.set(key, { request, jobs: [job] });
+  }
+  for (const [needDigest, group] of groups) {
     if (options.signal?.aborted) break;
-    if (job.status !== 'pending') continue;
-    if (processed++ >= limit) break;
+    const owner = group.jobs[0]!;
     // Persist the uncertainty boundary before invoking AI. Do not hold the corpus writer during research.
     await withWriter(root, async () => {
       const current = await loadQueryBatch(batch.id, root);
-      const stored = current.jobs.find((item) => item.id === job.id)!;
-      if (stored.status !== 'pending') throw new Error('batch_job_already_claimed');
-      stored.status = 'running';
+      const stored = group.jobs.map((job) => current.jobs.find((item) => item.id === job.id)!);
+      if (stored.some((job) => job.status !== 'pending'))
+        throw new Error('batch_job_already_claimed');
+      for (const job of stored) {
+        job.status = 'running';
+        if (job.id !== owner.id) job.reusedFromJobId = owner.id;
+      }
       await atomicJson(path, current);
     });
-    job.status = 'running';
-    options.progress?.(`Research ${job.id}: ${job.query}`);
+    for (const job of group.jobs) {
+      job.status = 'running';
+      if (job.id !== owner.id) job.reusedFromJobId = owner.id;
+    }
+    options.progress?.(
+      `Research ${owner.id}: ${owner.query}; ${group.jobs.length} exact interest(s).`,
+    );
     try {
-      const result = await (options.search ?? signalSearch)(
-        {
-          query: job.query,
-          context: job.context,
-          profile: settings.profile,
-          route: settings.route,
-          review: settings.groundedReview ?? false,
-          threshold: settings.threshold,
-          sources: settings.sources,
-          supplementalSites: job.supplementalSites,
-          save: 'never',
-          cache: 'private',
-        },
-        {
-          root,
-          runner: codexRunner(settings.model || undefined, settings.effort || undefined, {
-            root,
-            acquisition: await loadAcquisitionConfig(root),
-            extractionModel: settings.extractionModel || undefined,
-            extractionEffort: settings.extractionEffort || undefined,
-          }),
-          signal: options.signal,
-          progress: options.progress,
-        },
-      );
-      job.runId = result.runId;
-      job.gaps = result.gaps;
-      job.status = result.status === 'not_configured' ? 'failed' : result.status;
+      const result = await (options.search ?? signalSearch)(group.request, {
+        root,
+        runner,
+        signal: options.signal,
+        progress: options.progress,
+      });
       await retainRun(result, root);
-      if (['completed', 'partial'].includes(result.status) && !options.signal?.aborted) {
-        const saved = await saveEntities(
-          result.items,
-          'eligible',
-          root,
-          settings.destination,
-          settings.threshold,
-          false,
-          {
-            runId: result.runId,
-            query: result.query,
-            kind: 'query-discovery',
-            queryId: job.id,
-            concepts: job.concepts,
-          },
-        );
-        job.saved = saved.changed;
+      for (const job of group.jobs) {
+        job.runId = result.runId;
+        job.gaps = [...result.gaps];
+        job.status = result.status === 'not_configured' ? 'failed' : result.status;
+        if (['completed', 'partial'].includes(result.status) && !options.signal?.aborted) {
+          try {
+            const saved = await saveEntities(
+              result.items,
+              'eligible',
+              root,
+              settings.destination,
+              settings.threshold,
+              false,
+              {
+                runId: result.runId,
+                query: result.query,
+                kind: 'query-discovery',
+                queryId: job.id,
+                concepts: job.concepts,
+                needDigest,
+              },
+            );
+            job.saved = saved.changed;
+          } catch (failure) {
+            job.status = 'failed';
+            job.gaps.push(failure instanceof Error ? failure.message : 'query_batch_save_failed');
+          }
+        }
       }
     } catch (failure) {
-      job.status = options.signal?.aborted ? 'cancelled' : 'failed';
-      job.gaps.push(failure instanceof Error ? failure.message : 'query_batch_failed');
+      for (const job of group.jobs) {
+        job.status = options.signal?.aborted ? 'cancelled' : 'failed';
+        job.gaps.push(failure instanceof Error ? failure.message : 'query_batch_failed');
+      }
     }
     await atomicJson(path, batch);
-    options.progress?.(`${job.id}: ${job.status}; ${job.saved.length} canonical files changed.`);
+    for (const job of group.jobs)
+      options.progress?.(`${job.id}: ${job.status}; ${job.saved.length} canonical files changed.`);
   }
   return batch;
 }

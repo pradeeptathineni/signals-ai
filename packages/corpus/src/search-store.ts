@@ -349,6 +349,7 @@ export interface SelectionProvenance {
   kind: 'one-off' | 'query-discovery' | 'corpus-refresh';
   queryId?: string;
   concepts?: string[];
+  needDigest?: string;
 }
 export async function selectionHistory(root = process.cwd()) {
   const path = resolve(root, '.signals/selections.json');
@@ -546,6 +547,7 @@ export async function saveEntities(
       provenance &&
       (!/^[a-f0-9-]{36}$/.test(provenance.runId) ||
         provenance.query.length > 2000 ||
+        (provenance.needDigest !== undefined && !/^[a-f0-9]{64}$/.test(provenance.needDigest)) ||
         !['one-off', 'query-discovery', 'corpus-refresh'].includes(provenance.kind))
     )
       throw new Error('invalid_selection_provenance');
@@ -641,7 +643,22 @@ export async function saveEntities(
       if (!/^[a-f0-9-]{36}$/.test(provenance.runId) || provenance.query.length > 2000)
         throw new Error('invalid_selection_provenance');
       const selected = items.map((item) => item.entity.id).sort();
-      const id = digest(`${provenance.runId}:${mode}:${destination}:${selected.join(',')}`);
+      // Historical IDs remain intact; distinct interest scopes receive successor receipts.
+      const id = provenance.queryId
+        ? digest(
+            JSON.stringify([
+              'selection-interest-v2',
+              provenance.runId,
+              mode,
+              destination,
+              selected,
+              provenance.queryId,
+              provenance.query,
+              provenance.concepts ?? [],
+              provenance.needDigest ?? null,
+            ]),
+          )
+        : digest(`${provenance.runId}:${mode}:${destination}:${selected.join(',')}`);
       const history = await selectionHistory(root);
       if (!history.some((row) => row.id === id))
         await atomicJson(resolve(root, '.signals/selections.json'), [
