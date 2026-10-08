@@ -209,6 +209,7 @@ async function executeBatch(options: BatchOptions, batchId: string) {
           query: job.query,
           context: job.context,
           profile: settings.profile,
+          route: settings.route,
           review: settings.groundedReview ?? false,
           threshold: settings.threshold,
           sources: settings.sources,
