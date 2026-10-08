@@ -1136,33 +1136,45 @@ describe('canonical saving and scheduling', () => {
       await rm(root, { recursive: true, force: true });
     }
   });
-  it('does not complete a refresh without its target or update another saved entity', async () => {
-    const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-refresh-target-')));
-    try {
-      const first = (await acquired()).items[0]!;
-      const otherInput = proposal();
-      otherInput.candidates[0]!.uri = 'https://example.com/other';
-      const other = (await acquired(otherInput)).items[0]!;
-      await saveEntities([first, other], 'manual', root);
-      const before = await loadEntities(join(root, 'signals/entities'));
-      const returned = [first, other].sort((a, b) => a.entity.id.localeCompare(b.entity.id))[1]!;
-      const settings = { ...structuredClone(defaultSettings), corpusDiscovery: true, batchSize: 1 };
-      const result = await runDueOnce({
-        root,
-        now: Date.parse(date),
-        settings,
-        search: async () => ({
-          ...(await signalSearch({ query: 'refresh' }, { runner: runner(proposal()), fetch })),
-          items: [returned],
-        }),
-      });
-      expect(result.jobs[0]!.status).toBe('failed');
-      expect(result.jobs[0]!.reason).toBe('refresh_target_missing');
-      expect(await loadEntities(join(root, 'signals/entities'))).toEqual(before);
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-  });
+  it.each(['public', 'private'] as const)(
+    'does not complete a %s refresh without its target or update another saved entity',
+    async (destination) => {
+      const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-refresh-target-')));
+      try {
+        const first = (await acquired()).items[0]!;
+        const otherInput = proposal();
+        otherInput.candidates[0]!.uri = 'https://example.com/other';
+        const other = (await acquired(otherInput)).items[0]!;
+        await saveEntities([first, other], 'manual', root, destination);
+        const directory = join(
+          root,
+          destination === 'public' ? 'signals/entities' : '.signals/corpus/entities',
+        );
+        const before = await loadEntities(directory);
+        const returned = [first, other].sort((a, b) => a.entity.id.localeCompare(b.entity.id))[1]!;
+        const settings = {
+          ...structuredClone(defaultSettings),
+          destination,
+          corpusDiscovery: true,
+          batchSize: 1,
+        };
+        const result = await runDueOnce({
+          root,
+          now: Date.parse(date),
+          settings,
+          search: async () => ({
+            ...(await signalSearch({ query: 'refresh' }, { runner: runner(proposal()), fetch })),
+            items: [returned],
+          }),
+        });
+        expect(result.jobs[0]!.status).toBe('failed');
+        expect(result.jobs[0]!.reason).toBe('refresh_target_missing');
+        expect(await loadEntities(directory)).toEqual(before);
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
   it('reopens immutable history using the selected cutoff', async () => {
     const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-history-cutoff-')));
     try {

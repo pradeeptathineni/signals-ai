@@ -417,10 +417,12 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                   Deep
                 </button>
                 <p>
-                  Fast allows 6 searches, 12 reads and 120 seconds. Balanced allows 24 searches, 60
-                  reads and 600 seconds. Both use one native research session with Sol low. Deep
-                  uses Sol high and requests an additional grounded assessment. Each may return
-                  partial findings. Save settings to apply this selection.
+                  Fast allows {budgets.quick.searches} searches, {budgets.quick.documents} reads and{' '}
+                  {budgets.quick.seconds} seconds. Balanced allows {budgets.wide.searches} searches,{' '}
+                  {budgets.wide.documents} reads and {budgets.wide.seconds} seconds. Both use one
+                  native research session with Sol low. Deep uses Sol high and requests an
+                  additional grounded assessment. Each may return partial findings. Save settings to
+                  apply this selection.
                 </p>
               </fieldset>
               <label>

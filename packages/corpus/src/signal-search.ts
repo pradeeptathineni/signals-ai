@@ -676,7 +676,9 @@ export async function signalSearch(
           : configuredDocumentFetch(acquisitionConfig.jina, undefined, acquisitionConfig.docling)),
       progress: dependencies.progress,
       enrich:
-        runner.enrich && request.route !== 'native' && request.review !== false
+        runner.enrich &&
+        (request.route !== 'native' || request.review === true) &&
+        request.review !== false
           ? async (proposal, material) => {
               base.usage.modelCalls++;
               let recorded = false;

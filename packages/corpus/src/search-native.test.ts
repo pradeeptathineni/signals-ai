@@ -139,4 +139,41 @@ describe('native brief kernel boundary', () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+  it('honors an explicitly requested additional grounded review on the native route', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'signals-native-review-'));
+    let extra = 0;
+    const runner: SearchRunner = {
+      readiness: async () => ({
+        available: true,
+        broadSearch: true,
+        runner: 'fixture',
+        reason: 'fixture',
+      }),
+      discover: async () => ({ proposal: nativeProposal(brief()), usage: null, searches: 1 }),
+      enrich: async (proposal) => {
+        extra++;
+        return { proposal, usage: { fixture: true } };
+      },
+    };
+    try {
+      const result = await signalSearch(
+        { query: 'Portable notes', route: 'native', review: true, cache: 'memory', save: 'never' },
+        {
+          root,
+          runner,
+          fetch: async (uri) => ({
+            uri,
+            text: 'A portable guide for notes.',
+            digest: 'a'.repeat(64),
+          }),
+        },
+      );
+      expect(result.status).toBe('completed');
+      expect(extra).toBe(1);
+      expect(result.usage.modelCalls).toBe(2);
+      expect(await readdir(root)).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });
