@@ -187,12 +187,13 @@ features:
     assessment:
       delivery: working
       value: 2
-      scope: 'Two actual six-source conditional maintenance passes, all HTTP 304, with zero inference; controlled denial preserves last good state.'
+      scope: 'Two actual three-source conditional maintenance passes (six checks total), all HTTP 304, with zero inference; controlled denial preserves last good state.'
       assessed_ref: 332b0fe93511614f0f624b77a37a30a04b45d8e0
       evidence:
         [
           'packages/corpus/src/search-scheduler.test.ts',
           'packages/corpus/src/search-review-regressions.test.ts',
+          'private:job-proof/actual-maintenance.json',
         ]
       limitations: 'Functional scope only; no general productivity or personal usefulness claim.'
   - id: feedback
@@ -235,7 +236,7 @@ features:
       value: 1
       scope: 'Validated static read-only projection from public canonical records; private findings excluded.'
       assessed_ref: 332b0fe93511614f0f624b77a37a30a04b45d8e0
-      evidence: ['tests/corpus', 'packages/corpus/src/public-export.test.ts']
+      evidence: ['tests/public-corpus/corpus.spec.ts', 'packages/corpus/src/public-export.test.ts']
       limitations: 'Functional scope only; no general productivity or personal usefulness claim.'
   - id: interfaces
     name: CLI & tool interfaces
