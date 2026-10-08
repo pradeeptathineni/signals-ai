@@ -22,6 +22,14 @@ const api = searchApi(root, async (input, dependencies) => {
   const request = parseRequest(input);
   dependencies?.progress?.('Replaying approved public evidence for UI verification.');
   if (request.query === 'cancellation fixture') {
+    dependencies?.provisional?.(
+      approved.map(({ entity }) => ({
+        uri: entity.uri,
+        name: entity.name,
+        description: entity.description,
+        limits: entity.limits,
+      })),
+    );
     await new Promise<void>((done) =>
       dependencies?.signal?.addEventListener('abort', () => done(), { once: true }),
     );

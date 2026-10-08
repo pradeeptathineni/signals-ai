@@ -12,9 +12,16 @@ import { searchEvidenceBundle } from '../packages/corpus/src/search-exchange.js'
 import { retainRun, saveEntities } from '../packages/corpus/src/search-store.js';
 import { randomUUID } from 'node:crypto';
 import { directSearch } from '../packages/corpus/src/search-direct.js';
+import {
+  parseGitHubPlans,
+  memoryGitHubCache,
+  privateGitHubCache,
+} from '../packages/corpus/src/search-github.js';
 import type { SearchResult } from '../packages/domain/src/search-contract.js';
 import { loadAcquisitionConfig } from '../packages/corpus/src/search-acquisition.js';
 import { loadSettings } from '../packages/corpus/src/search-settings.js';
+import { researchCorpusSlice, checkPrimaryMaterial } from '../packages/corpus/src/search-reuse.js';
+import { loadEntities } from '../packages/corpus/src/search-store.js';
 
 const { values } = parseArgs({
   options: {
@@ -24,6 +31,7 @@ const { values } = parseArgs({
     save: { type: 'string' },
     cache: { type: 'string' },
     site: { type: 'string', multiple: true },
+    source: { type: 'string', multiple: true },
     url: { type: 'string', multiple: true },
     threshold: { type: 'string' },
     model: { type: 'string' },
@@ -35,6 +43,9 @@ const { values } = parseArgs({
     capability: { type: 'boolean' },
     review: { type: 'boolean' },
     'sources-only': { type: 'boolean' },
+    'github-plan': { type: 'string' },
+    'corpus-only': { type: 'boolean' },
+    'check-primary': { type: 'string' },
     accept: { type: 'boolean' },
     context: { type: 'boolean' },
   },
@@ -56,14 +67,39 @@ try {
       save: values.save ?? 'never',
       cache: values.cache ?? 'memory',
       supplementalSites: values.site,
+      sources: values.source,
       captureUrls: values.url,
       review: values.review ?? false,
       threshold: Number(values.threshold ?? 75),
     });
     const controller = new AbortController();
+    if (values['corpus-only']) {
+      process.stdout.write(
+        `${JSON.stringify(await researchCorpusSlice(request, process.cwd()), null, 2)}\n`,
+      );
+      process.exit(0);
+    }
+    if (values['check-primary']) {
+      const records = [
+        ...(await loadEntities()),
+        ...(await loadEntities('.signals/corpus/entities')),
+      ];
+      const record = records.find((record) => record.entity.id === values['check-primary']);
+      if (!record) throw new Error('unknown_entity');
+      const { material, ...check } = await checkPrimaryMaterial(record.entity, {
+        signal: controller.signal,
+      });
+      process.stdout.write(
+        `${JSON.stringify({ ...check, materialDigest: material?.digest ?? null }, null, 2)}\n`,
+      );
+      process.exit(0);
+    }
+    const githubPlans = values['github-plan']
+      ? parseGitHubPlans(JSON.parse(values['github-plan']))
+      : undefined;
     if (values['sources-only']) {
       process.stdout.write(
-        `${JSON.stringify(await directSearch(request, controller.signal), null, 2)}\n`,
+        `${JSON.stringify(await directSearch(request, controller.signal, undefined, githubPlans ? { plans: githubPlans, cache: request.cache === 'private' ? privateGitHubCache(process.cwd()) : memoryGitHubCache() } : undefined), null, 2)}\n`,
       );
       process.exit(0);
     }
@@ -104,6 +140,7 @@ try {
         }
       : await signalSearch(request, {
           runner: codexRunner(values.model, values.effort, {
+            githubPlans,
             root: process.cwd(),
             acquisition: await loadAcquisitionConfig(process.cwd()),
             extractionModel: values['extract-model'],

@@ -83,3 +83,14 @@ test('source settings and owned cancellation remain usable', async ({ page }) =>
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(page.getByText(/Research cancelled/)).toBeVisible();
 });
+
+test('provisional leads are separate from final savable evidence', async ({ page }) => {
+  await page.goto('');
+  await page.getByLabel('Research question').fill('cancellation fixture');
+  await page.getByRole('button', { name: 'Start search', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Provisional research leads' })).toBeVisible();
+  await expect(page.locator('.entity-card')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Provisional research leads' })).not.toBeVisible();
+  await expect(page.getByText(/Research cancelled/)).toBeVisible();
+});
