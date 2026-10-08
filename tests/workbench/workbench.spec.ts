@@ -1,5 +1,51 @@
 import { test, expect } from '@playwright/test';
 import { AxeBuilder } from '@axe-core/playwright';
+import { loadEntities } from '../../packages/corpus/src/search-store.js';
+
+test('duplicate Corpus identities send the selected store for check and refresh', async ({
+  page,
+}) => {
+  const [record] = await loadEntities();
+  if (!record) throw new Error('public_replay_fixture_missing');
+  // Frontend boundary fixture; backend scope/storage guards have separate HTTP regressions.
+  await page.route('**/__signals/api/corpus', (route) => route.fulfill({ json: [record] }));
+  await page.route('**/__signals/api/private-corpus', (route) => route.fulfill({ json: [record] }));
+  const selections: { id: string; destination: string }[] = [];
+  await page.route('**/__signals/api/primary-check', async (route) => {
+    selections.push(route.request().postDataJSON());
+    await route.fulfill({ json: { status: 'unchanged', reason: 'Scope boundary fixture.' } });
+  });
+  await page.route('**/__signals/api/refresh', async (route) => {
+    selections.push(route.request().postDataJSON());
+    await route.fulfill({ status: 400, json: { code: 'scope_boundary_fixture_stopped' } });
+  });
+  await page.goto('');
+  await page.getByRole('button', { name: 'Corpus', exact: true }).click();
+  const privateCard = page
+    .locator('.entity-card')
+    .filter({ has: page.getByText('Private Corpus', { exact: true }) });
+  const publicCard = page
+    .locator('.entity-card')
+    .filter({ has: page.getByText('Public Corpus', { exact: true }) });
+  await expect(privateCard).toHaveCount(1);
+  await expect(publicCard).toHaveCount(1);
+  await privateCard.getByRole('button', { name: 'Check primary source without AI' }).click();
+  await expect(page.getByText(/Scope boundary fixture/)).toBeVisible();
+  await privateCard
+    .getByRole('button', { name: 'Research changes and independent evidence' })
+    .click();
+  await expect(page.getByText('scope_boundary_fixture_stopped', { exact: true })).toBeVisible();
+  await publicCard.getByRole('button', { name: 'Check primary source without AI' }).click();
+  expect(selections).toEqual([
+    { id: record.entity.id, destination: 'private' },
+    { id: record.entity.id, destination: 'private' },
+    { id: record.entity.id, destination: 'public' },
+  ]);
+  const ids = await page
+    .locator('[id]')
+    .evaluateAll((elements) => elements.map((element) => element.id));
+  expect(new Set(ids).size).toBe(ids.length);
+});
 
 test('server-owned replay supports evidence, private notes, manual saves, inbox and reopening', async ({
   page,

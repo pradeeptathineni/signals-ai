@@ -61,7 +61,9 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
   >([]);
   const [message, setMessage] = useState(''),
     [error, setError] = useState('');
-  const [corpus, setCorpus] = useState<StoredEntity[]>([]),
+  const [corpus, setCorpus] = useState<(StoredEntity & { destination: 'public' | 'private' })[]>(
+      [],
+    ),
     [saved, setSaved] = useState(new Set<string>());
   const [selected, setSelected] = useState<string[]>([]),
     [filters, setFilters] = useState<SearchFilters>({});
@@ -126,9 +128,14 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
       : await fetch(`${base}entities.json`).then((response) =>
           response.ok ? (response.json() as Promise<StoredEntity[]>) : [],
         );
-    if (local) records.push(...(await api<StoredEntity[]>('private-corpus')));
-    setCorpus(records);
-    setSaved(new Set(records.map((record) => record.entity.id)));
+    const scoped = records.map((record) => ({ ...record, destination: 'public' as const }));
+    const privateRecords = local ? await api<StoredEntity[]>('private-corpus') : [];
+    const combined = [
+      ...scoped,
+      ...privateRecords.map((record) => ({ ...record, destination: 'private' as const })),
+    ];
+    setCorpus(combined);
+    setSaved(new Set(combined.map((record) => record.entity.id)));
   }
   useEffect(() => {
     void reloadCorpus().catch((failure: unknown) => setError(String(failure)));
@@ -216,9 +223,16 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
     eligible: false,
     reasons: [],
   }));
+  const corpusDestinations = useMemo(
+    () => new Map(corpus.map((record) => [record.entity, record.destination])),
+    [corpus],
+  );
   const all = tab === 'Search' ? (result?.items ?? []) : corpusItems;
   const items = useMemo(() => filterSearchItems(all, filters, saved), [all, filters, saved]);
   const compared = all.filter((item) => selected.includes(item.entity.id)).slice(0, 2);
+  function entityAnchor(entity: SearchItem['entity']) {
+    return `${tab === 'Corpus' ? `${corpusDestinations.get(entity)}-` : ''}${entity.id}`;
+  }
   function change(key: keyof SearchFilters, value: string | number | undefined) {
     setFilters((current) => ({ ...current, [key]: value }));
   }
@@ -241,13 +255,14 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
     supplementalSites?: string[],
     context?: string,
     captureUrls?: string[],
+    destination?: 'public' | 'private',
   ) {
     setSourceResult(null);
     setProvisional([]);
     const started = await api<{ id: string }>(
       refreshId ? 'refresh' : captureUrls ? 'capture' : 'search',
       refreshId
-        ? { id: refreshId }
+        ? { id: refreshId, destination }
         : {
             query: question,
             context,
@@ -1443,8 +1458,8 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
               {items.map((item) => (
                 <article
                   className="entity-card"
-                  key={item.entity.id}
-                  id={`entity-${item.entity.id}`}
+                  key={`${corpusDestinations.get(item.entity) ?? 'search'}:${item.entity.id}`}
+                  id={`entity-${entityAnchor(item.entity)}`}
                 >
                   <label className="check">
                     <input
@@ -1460,6 +1475,12 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                     </a>
                   </h2>
                   <p>{item.entity.description}</p>
+                  {tab === 'Corpus' && (
+                    <p>
+                      {corpusDestinations.get(item.entity) === 'private' ? 'Private' : 'Public'}{' '}
+                      Corpus
+                    </p>
+                  )}
                   <p>
                     {item.entity.kind} · Signal {item.entity.assessment.score ?? 'unknown'} ·{' '}
                     {item.match.level} · {saved.has(item.entity.id) ? 'Saved' : 'Unsaved'}
@@ -1503,7 +1524,7 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                           <a
                             href={
                               all.some((other) => other.entity.uri === relation.uri)
-                                ? `#entity-${all.find((other) => other.entity.uri === relation.uri)!.entity.id}`
+                                ? `#entity-${entityAnchor(all.find((other) => other.entity.uri === relation.uri)!.entity)}`
                                 : relation.uri
                             }
                             rel="noreferrer"
@@ -1638,7 +1659,9 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                               Preview evidence for {item.entity.name}
                             </button>
                             {' · '}
-                            <a href={`#source-${item.entity.id}-${observation.evidenceId}`}>
+                            <a
+                              href={`#source-${entityAnchor(item.entity)}-${observation.evidenceId}`}
+                            >
                               Source:{' '}
                               {
                                 item.entity.evidence.find(
@@ -1652,7 +1675,7 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                     </details>
                     <ul>
                       {item.entity.evidence.map((source) => (
-                        <li key={source.id} id={`source-${item.entity.id}-${source.id}`}>
+                        <li key={source.id} id={`source-${entityAnchor(item.entity)}-${source.id}`}>
                           {source.state === 'fetched' ? (
                             <a href={source.uri} rel="noreferrer">
                               {source.title}
@@ -1681,7 +1704,10 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                         void action(async () => {
                           const check = await api<{ status: string; reason: string }>(
                             'primary-check',
-                            { id: item.entity.id },
+                            {
+                              id: item.entity.id,
+                              destination: corpusDestinations.get(item.entity),
+                            },
                           );
                           setMessage(`${item.entity.name}: ${check.status}. ${check.reason}`);
                         });
@@ -1694,7 +1720,16 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                     <button
                       disabled={busy}
                       onClick={() => {
-                        void action(() => start(item.entity.id));
+                        void action(() =>
+                          start(
+                            item.entity.id,
+                            query,
+                            undefined,
+                            undefined,
+                            undefined,
+                            corpusDestinations.get(item.entity),
+                          ),
+                        );
                       }}
                     >
                       Research changes and independent evidence

@@ -30,6 +30,7 @@ import {
 import { runDueOnce, refreshRequest } from './search-scheduler.js';
 import { answerFromEvidence } from './search-followup.js';
 import { checkPrimaryMaterial } from './search-reuse.js';
+import { selectSavedEntity } from './search-selection.js';
 import {
   runQueryListOnce,
   queryBatchHistory,
@@ -57,6 +58,13 @@ const followupSchema = Type.Object(
     runId: selection.properties.runId,
     ids: selection.properties.ids,
     question: Type.String({ minLength: 1, maxLength: 2000 }),
+  },
+  { additionalProperties: false },
+);
+const savedEntitySelection = Type.Object(
+  {
+    id: Type.String({ pattern: '^entity-[a-f0-9]{24}$' }),
+    destination: Type.Optional(Type.Enum(['public', 'private'])),
   },
   { additionalProperties: false },
 );
@@ -284,20 +292,8 @@ export function searchApi(
         pruneRuns();
         json(200, { id });
       } else if (route === 'primary-check' && mutation) {
-        if (
-          !body ||
-          typeof body !== 'object' ||
-          Object.keys(body).join(',') !== 'id' ||
-          !('id' in body) ||
-          typeof body.id !== 'string'
-        )
-          throw new Error('invalid_primary_check');
-        const records = [
-          ...(await loadEntities(resolve(root, 'signals/entities'))),
-          ...(await loadEntities(resolve(root, '.signals/corpus/entities'))),
-        ];
-        const record = records.find((record) => record.entity.id === body.id);
-        if (!record) throw new Error('unknown_entity');
+        if (!Value.Check(savedEntitySelection, body)) throw new Error('invalid_primary_check');
+        const { record } = await selectSavedEntity(body.id, root, body.destination);
         const { material, ...checked } = await check(record.entity);
         json(200, {
           ...checked,
@@ -316,34 +312,10 @@ export function searchApi(
         let refreshDestination = settings.destination;
         let refreshId: string | undefined;
         if (route === 'refresh') {
-          if (
-            !body ||
-            typeof body !== 'object' ||
-            Object.keys(body).join(',') !== 'id' ||
-            !('id' in body) ||
-            typeof body.id !== 'string'
-          )
-            throw new Error('invalid_refresh');
-          let record = (
-            await loadEntities(
-              resolve(
-                root,
-                settings.destination === 'public' ? 'signals/entities' : '.signals/corpus/entities',
-              ),
-            )
-          ).find((item) => item.entity.id === (body as { id: string }).id);
-          if (!record) {
-            refreshDestination = settings.destination === 'public' ? 'private' : 'public';
-            record = (
-              await loadEntities(
-                resolve(
-                  root,
-                  refreshDestination === 'public' ? 'signals/entities' : '.signals/corpus/entities',
-                ),
-              )
-            ).find((item) => item.entity.id === (body as { id: string }).id);
-          }
-          if (!record) throw new Error('unknown_entity');
+          if (!Value.Check(savedEntitySelection, body)) throw new Error('invalid_refresh');
+          const selected = await selectSavedEntity(body.id, root, body.destination);
+          const { record } = selected;
+          refreshDestination = selected.destination;
           refreshId = record.entity.id;
           input = refreshRequest(record.entity, settings);
         }

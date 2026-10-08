@@ -21,7 +21,7 @@ import type { SearchResult } from '../packages/domain/src/search-contract.js';
 import { loadAcquisitionConfig } from '../packages/corpus/src/search-acquisition.js';
 import { loadSettings } from '../packages/corpus/src/search-settings.js';
 import { researchCorpusSlice, checkPrimaryMaterial } from '../packages/corpus/src/search-reuse.js';
-import { loadEntities } from '../packages/corpus/src/search-store.js';
+import { selectSavedEntity } from '../packages/corpus/src/search-selection.js';
 
 const { values } = parseArgs({
   options: {
@@ -46,6 +46,7 @@ const { values } = parseArgs({
     'github-plan': { type: 'string' },
     'corpus-only': { type: 'boolean' },
     'check-primary': { type: 'string' },
+    destination: { type: 'string' },
     accept: { type: 'boolean' },
     context: { type: 'boolean' },
   },
@@ -80,12 +81,13 @@ try {
       process.exit(0);
     }
     if (values['check-primary']) {
-      const records = [
-        ...(await loadEntities()),
-        ...(await loadEntities('.signals/corpus/entities')),
-      ];
-      const record = records.find((record) => record.entity.id === values['check-primary']);
-      if (!record) throw new Error('unknown_entity');
+      if (values.destination !== undefined && !['public', 'private'].includes(values.destination))
+        throw new Error('invalid_entity_destination');
+      const { record } = await selectSavedEntity(
+        values['check-primary'],
+        process.cwd(),
+        values.destination as 'public' | 'private' | undefined,
+      );
       const { material, ...check } = await checkPrimaryMaterial(record.entity, {
         signal: controller.signal,
       });
