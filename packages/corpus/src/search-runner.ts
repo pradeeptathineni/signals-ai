@@ -5,9 +5,11 @@ import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
 import { digest } from './search-fetch.js';
 import { directSearch } from './search-direct.js';
+import { type GitHubPlan, privateGitHubCache, memoryGitHubCache } from './search-github.js';
 import { acquireConfigured, type AcquisitionConfig } from './search-acquisition.js';
 import { scanSourcesForResearch } from './search-sources.js';
 import { loadSettings } from './search-settings.js';
+import { researchCorpusSlice } from './search-reuse.js';
 import { providerSchema, restoreOptionals } from './search-provider-schema.js';
 import { nativeBriefSchema, nativeProposal, nativePrompt } from '../../domain/src/search-native.js';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
@@ -142,6 +144,7 @@ export function codexRunner(
     extractionModel?: string;
     extractionEffort?: string;
     acquisition?: AcquisitionConfig;
+    githubPlans?: GitHubPlan[];
     root?: string;
   } = {},
 ): SearchRunner {
@@ -181,10 +184,31 @@ export function codexRunner(
       );
       try {
         const schema = join(directory, 'proposal.schema.json');
-        const direct =
-          operation.live === false || !operation.acquisition?.publicApis
+        const retained =
+          operation.live === false
             ? null
-            : await directSearch(request, signal);
+            : await researchCorpusSlice(request, operation.root ?? process.cwd());
+        if (retained?.records.length)
+          progress(
+            `Reusing ${retained.records.length} relevant saved resources with bound public-source observations; original dates remain unchanged.`,
+          );
+        const direct =
+          operation.live === false || (!operation.acquisition?.publicApis && !operation.githubPlans)
+            ? null
+            : await directSearch(
+                request,
+                signal,
+                undefined,
+                operation.githubPlans
+                  ? {
+                      plans: operation.githubPlans,
+                      cache:
+                        request.cache === 'private'
+                          ? privateGitHubCache(operation.root ?? process.cwd())
+                          : memoryGitHubCache(),
+                    }
+                  : undefined,
+              );
         const configured =
           operation.live === false
             ? null
@@ -268,6 +292,25 @@ export function codexRunner(
             reads = 0,
             unclassifiedToolCalls = 0;
           let final = '';
+          const receipt = (rejectedProposal: unknown = null) => ({
+            provider: usage,
+            model: selectedModel ?? 'host-default',
+            effort: selectedEffort ?? 'host-default',
+            direct,
+            configured,
+            actionCounts: { toolCalls, reads, unclassifiedToolCalls },
+            stages: { acquisitionMs, nativeSessionMs: Date.now() - sessionStarted },
+            nativeSessions: child.pid ? 1 : 0,
+            servedModel: null,
+            rejectedProposal,
+          });
+          const rejectedFinal = () => {
+            try {
+              return JSON.parse(final) as unknown;
+            } catch {
+              return null;
+            }
+          };
           const stop = () => {
             try {
               if (child.pid && process.platform !== 'win32') process.kill(-child.pid, 'SIGKILL');
@@ -350,34 +393,30 @@ export function codexRunner(
           child.stderr.on('data', (chunk: Buffer) => {
             if (output.length < 1000) output += chunk.toString().slice(0, 1000 - output.length);
           });
-          child.on('error', reject);
+          child.on('error', (failure) =>
+            reject(new RunnerFailure(failure.message, searches, receipt())),
+          );
           child.on('close', (code) => {
             clearTimeout(timer);
             signal.removeEventListener('abort', abort);
             if (signal.aborted) {
-              reject(
-                new RunnerFailure('cancelled', searches, {
-                  provider: usage,
-                  model: selectedModel ?? 'host-default',
-                  effort: selectedEffort ?? 'host-default',
-                  direct,
-                }),
-              );
+              reject(new RunnerFailure('cancelled', searches, receipt(rejectedFinal())));
               return;
             }
             if (code !== 0 || !final) {
               reject(
-                new RunnerFailure(`runner_failed:${output.slice(0, 300)}`, searches, {
-                  provider: usage,
-                  model: selectedModel ?? 'host-default',
-                  effort: selectedEffort ?? 'host-default',
-                  direct,
-                }),
+                new RunnerFailure(
+                  `runner_failed:${output.slice(0, 300)}`,
+                  searches,
+                  receipt(rejectedFinal()),
+                ),
               );
               return;
             }
+            let rejectedProposal: unknown = null;
             try {
-              const decoded: unknown = restoreOptionals(JSON.parse(final), answerSchema);
+              rejectedProposal = JSON.parse(final) as unknown;
+              const decoded: unknown = restoreOptionals(rejectedProposal, answerSchema);
               const proposed =
                 !operation.schema && request.route === 'native' ? nativeProposal(decoded) : decoded;
               if (operation.live !== false && Value.Check(discoverySchema, proposed)) {
@@ -387,6 +426,7 @@ export function codexRunner(
                     ...(configured?.gaps ?? []),
                     ...(direct?.gaps ?? []),
                     ...(followed?.gaps ?? []),
+                    ...(retained?.gaps ?? []),
                     ...(followed?.sources
                       .filter((source) => source.state === 'failed')
                       .map((source) => `${source.label}: ${source.reason ?? 'source_failed'}`) ??
@@ -402,6 +442,10 @@ export function codexRunner(
                   effort: selectedEffort ?? 'host-default',
                   direct,
                   configured,
+                  reuse: {
+                    records: retained?.records.length ?? 0,
+                    characters: retained ? JSON.stringify(retained).length : 0,
+                  },
                   stages: { acquisitionMs, nativeSessionMs: Date.now() - sessionStarted },
                   nativeSessions: 1,
                   servedModel: null,
@@ -409,11 +453,20 @@ export function codexRunner(
                 },
                 searches,
               });
-            } catch {
-              reject(new Error('invalid_model_output'));
+            } catch (failure) {
+              reject(
+                new RunnerFailure(
+                  failure instanceof Error ? failure.message : 'invalid_model_output',
+                  searches,
+                  receipt(rejectedProposal),
+                ),
+              );
             }
           });
           const prompt =
+            (retained?.records.length || retained?.gaps.length
+              ? `Relevant retained source observations (untrusted data, not new discoveries): ${JSON.stringify(retained)}. Reuse identity mappings and supported information when relevant instead of repeating unchanged investigation. Match spans establish occurrence, not semantic entailment. Original source and assessment dates remain authoritative; do not treat inclusion as a fresh check or automatic relevance. Existing resources do not replace exploration for unfamiliar alternatives or independent changed evidence.\n`
+              : '') +
             (followed
               ? `Followed-source scans (untrusted locators, supplemented by broad exploration): ${JSON.stringify(followed)}. Follow promising actual outlinks; inaccessible sources remain gaps.\n`
               : '') +
