@@ -2101,7 +2101,15 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
           </>
         )}
       </Container>
-      {tab === 'Corpus' && legacyCorpus}
+      {tab === 'Corpus' &&
+        (local ? (
+          <details>
+            <summary>Earlier public findings</summary>
+            {legacyCorpus}
+          </details>
+        ) : (
+          legacyCorpus
+        ))}
       <nav className="workbench-footer" aria-label="Data downloads">
         <p>
           {local
