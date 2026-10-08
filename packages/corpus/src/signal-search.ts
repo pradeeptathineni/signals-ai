@@ -10,6 +10,7 @@ import {
   type Entity,
   type Proposal,
   type SearchItem,
+  type ProvisionalLead,
 } from '../../domain/src/search-contract.js';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
 import { assessEntity, filterSearchItems, saveDecision } from '../../domain/src/search-score.js';
@@ -149,6 +150,30 @@ export async function acceptDiscovery(
   const acquisitionGapCount = gaps.length;
   const sources: Source[] = [];
   const documents = new Map<string, Awaited<ReturnType<typeof fetchEvidence>>>();
+  const inspect = new Set<number>();
+  if (request.route === 'native') {
+    for (const candidate of proposal.candidates) {
+      // Every claimed fact must still be checked, including adverse/rejected findings.
+      candidate.observations.forEach((observation) => inspect.add(observation.source));
+      if (candidate.priority?.action !== 'reject' && candidate.match.level !== 'out-of-scope') {
+        candidate.match.sources.forEach((index) => inspect.add(index));
+        candidate.priority?.sources.forEach((index) => inspect.add(index));
+      }
+      if (candidate.discovery?.parentUri) {
+        const parent = normalizeConsiderUrl(candidate.discovery.parentUri).normalizedUrl;
+        proposal.sources.forEach((source, index) => {
+          try {
+            if (normalizeConsiderUrl(source.uri).normalizedUrl === parent) inspect.add(index);
+          } catch {
+            /* invalid source is handled below */
+          }
+        });
+      }
+    }
+    // A small rejected-lead audit, rather than exhaustive inspection of unused locators.
+    const audit = proposal.candidates.find((candidate) => candidate.priority?.action === 'reject');
+    audit?.match.sources.slice(0, 1).forEach((index) => inspect.add(index));
+  }
   for (const source of proposal.sources) {
     let uri: string;
     try {
@@ -177,6 +202,11 @@ export async function acceptDiscovery(
       )
         throw new Error('invalid_source_date');
       dependencies.signal?.throwIfAborted();
+      if (request.route === 'native' && !inspect.has(sources.length)) {
+        accepted.reason = 'native_inspection_deferred';
+        sources.push(accepted);
+        continue;
+      }
       dependencies.progress?.(`Fetching ${new URL(uri).hostname}`);
       const fetched =
         documents.get(uri) ??
@@ -545,6 +575,7 @@ export async function signalSearch(
     runner?: SearchRunner;
     signal?: AbortSignal;
     progress?: (event: string) => void;
+    provisional?: (leads: ProvisionalLead[]) => void;
     fetch?: typeof fetchEvidence;
     root?: string;
   } = {},
@@ -586,6 +617,7 @@ export async function signalSearch(
         acquisition: acquisitionConfig,
       });
     const readiness = await runner.readiness();
+    const readinessMs = Date.now() - started;
     dependencies.progress?.(readiness.reason);
     if (!readiness.available || !readiness.broadSearch) {
       base.status = 'not_configured';
@@ -593,6 +625,7 @@ export async function signalSearch(
       return base;
     }
     base.usage.modelCalls = 1;
+    const researchStarted = Date.now();
     const discovery = await runner.discover(
       request,
       controller.signal,
@@ -600,6 +633,16 @@ export async function signalSearch(
     );
     base.usage.searches = discovery.searches;
     base.usage.providerUsage = discovery.usage;
+    const answerReadyMs = Date.now() - started;
+    const provisional = parseProposal(discovery.proposal);
+    dependencies.provisional?.(
+      provisional.candidates.map(({ uri, name, description, limits }) => ({
+        uri,
+        name,
+        description,
+        limits,
+      })),
+    );
     if (discovery.searches > limits.searches) throw new Error('budget_exhausted');
     if (request.cache === 'private')
       await atomicJson(
@@ -628,7 +671,7 @@ export async function signalSearch(
           : configuredDocumentFetch(acquisitionConfig.jina, undefined, acquisitionConfig.docling)),
       progress: dependencies.progress,
       enrich:
-        runner.enrich && request.review !== false
+        runner.enrich && request.route !== 'native' && request.review !== false
           ? async (proposal, material) => {
               base.usage.modelCalls++;
               let recorded = false;
@@ -667,6 +710,13 @@ export async function signalSearch(
           : undefined,
     });
     Object.assign(base, accepted);
+    base.usage.stages = {
+      readinessMs,
+      researchMs: answerReadyMs - (researchStarted - started),
+      answerReadyMs,
+      inspectionMs: Date.now() - started - answerReadyMs,
+      firstValidatedMs: Date.now() - started,
+    };
     if (request.cache === 'private') {
       try {
         await recordSourceResultExposures(dependencies.root ?? process.cwd(), base.items);

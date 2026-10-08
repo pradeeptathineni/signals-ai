@@ -13,6 +13,8 @@ Read `README.md`, `ARCHITECTURE.md`, ADR-001, the latest numbered ADR, and `docs
 
 ## Commands and code map
 
+Before changing an ordinary route, name the observable outcome it should improve. Compare consequential alternatives with a strong native workflow under equivalent constraints; retain failed/partial runs and unknown costs. Format validation is not evidence of user benefit. Use bounded native subagents for scoped inspection/review or disjoint isolated implementation; the parent integrates, and ordinary signal-search never recursively launches another AI. Follow [the product commands and boundaries](README.md), preserve required capabilities when a specialization loses, and keep evaluation evidence outside always-loaded guidance.
+
 - `npm run verify` checks the file-based product and isolated browser fixtures. It requires no database or model service. `npm run clean` removes generated build/test output only.
 - `npm run signal-search -- --query QUESTION --save never` performs bounded live discovery with the installed authenticated Codex runner. The native `signal-search` skill uses its invoking AI without recursion.
 - `npm run research -- corpus-query QUESTION` explicitly retrieves historical Corpus knowledge. Optional loopback organization applies only to that constrained collection.

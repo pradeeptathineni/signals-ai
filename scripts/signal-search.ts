@@ -5,6 +5,7 @@ import {
   contextualizeResult,
 } from '../packages/corpus/src/signal-search.js';
 import { discoverySchema, parseRequest, budgets } from '../packages/domain/src/search-contract.js';
+import { nativeBriefSchema, nativeProposal } from '../packages/domain/src/search-native.js';
 import { codexRunner } from '../packages/corpus/src/search-runner.js';
 import { execFileSync } from 'node:child_process';
 import { searchEvidenceBundle } from '../packages/corpus/src/search-exchange.js';
@@ -19,6 +20,7 @@ const { values } = parseArgs({
   options: {
     query: { type: 'string' },
     profile: { type: 'string' },
+    route: { type: 'string' },
     save: { type: 'string' },
     cache: { type: 'string' },
     site: { type: 'string', multiple: true },
@@ -38,7 +40,10 @@ const { values } = parseArgs({
   },
 });
 try {
-  if (values.schema) process.stdout.write(`${JSON.stringify(discoverySchema)}\n`);
+  if (values.schema)
+    process.stdout.write(
+      `${JSON.stringify(values.route === 'native' ? nativeBriefSchema : discoverySchema)}\n`,
+    );
   else if (values.capability)
     process.stdout.write(
       `${JSON.stringify({ ...(await codexRunner().readiness()), limits: budgets, persistence: 'none unless selected', unattended: false })}\n`,
@@ -47,6 +52,7 @@ try {
     const request = parseRequest({
       query: values.query,
       profile: values.profile ?? 'wide',
+      ...(values.route ? { route: values.route } : {}),
       save: values.save ?? 'never',
       cache: values.cache ?? 'memory',
       supplementalSites: values.site,
@@ -76,12 +82,16 @@ try {
           runId: randomUUID(),
           query: request.query,
           status: 'completed',
-          ...(await acceptDiscovery(JSON.parse(input), request, {
-            signal: controller.signal,
-            followedSources: (await loadSettings(process.cwd())).followedSources
-              ?.filter((source) => source.enabled)
-              .map((source) => source.uri),
-          })),
+          ...(await acceptDiscovery(
+            values.route === 'native' ? nativeProposal(JSON.parse(input)) : JSON.parse(input),
+            request,
+            {
+              signal: controller.signal,
+              followedSources: (await loadSettings(process.cwd())).followedSources
+                ?.filter((source) => source.enabled)
+                .map((source) => source.uri),
+            },
+          )),
           usage: {
             searches: 0,
             documents: 0,

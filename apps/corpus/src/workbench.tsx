@@ -7,7 +7,11 @@ import {
   type SearchFilters,
 } from '../../../packages/domain/src/search-score.js';
 import { budgets, kinds, channels } from '../../../packages/domain/src/search-vocabulary.js';
-import type { SearchItem, SearchResult } from '../../../packages/domain/src/search-contract.js';
+import type {
+  SearchItem,
+  SearchResult,
+  ProvisionalLead,
+} from '../../../packages/domain/src/search-contract.js';
 import type { SearchSettings } from '../../../packages/corpus/src/search-settings.js';
 import type { StoredEntity } from '../../../packages/corpus/src/search-store.js';
 import type { QueryBatch } from '../../../packages/corpus/src/search-query-list.js';
@@ -50,6 +54,7 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
   const [interestFilter, setInterestFilter] = useState('');
   const [sourceBusy, setSourceBusy] = useState(false);
   const [sourceResult, setSourceResult] = useState<DirectSearchResult | null>(null);
+  const [provisional, setProvisional] = useState<ProvisionalLead[]>([]);
   const [batchHistory, setBatchHistory] = useState<
     { id: string; createdAt: string; total: number; pending: number; uncertain: number }[]
   >([]);
@@ -162,6 +167,7 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
       try {
         const state = await api<{
           events: string[];
+          provisional: ProvisionalLead[];
           result: SearchResult | null;
           error: string | null;
           batch: QueryBatch | null;
@@ -169,6 +175,7 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
         if (state.error) throw new Error(state.error);
         if (stopped) return;
         setEvents(state.events);
+        setProvisional(state.provisional ?? []);
         if (state.batch) {
           setBatch(state.batch);
           setBusy(false);
@@ -361,6 +368,18 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                 >
                   <option>quick</option>
                   <option>wide</option>
+                </select>
+              </label>
+              <label>
+                Research route
+                <select
+                  value={settings.route ?? 'assessed'}
+                  onChange={(event) =>
+                    setSettings({ ...settings, route: event.target.value as 'native' | 'assessed' })
+                  }
+                >
+                  <option value="native">Native brief (selective evidence)</option>
+                  <option value="assessed">Full assessment</option>
                 </select>
               </label>
               <label>
@@ -1097,6 +1116,22 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
               </details>
             )}
             <section className="controls" aria-label="Entity filters">
+              {tab === 'Search' && busy && provisional.length > 0 && (
+                <section aria-label="Provisional research leads">
+                  <h2>Leads awaiting evidence verification</h2>
+                  <p>
+                    These are provisional model findings. Saving and admission become available
+                    after verification.
+                  </p>
+                  <ul>
+                    {provisional.map((lead) => (
+                      <li key={lead.uri}>
+                        <strong>{lead.name}</strong>: {lead.description}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
               <div className="filters">
                 <label>
                   Filter results

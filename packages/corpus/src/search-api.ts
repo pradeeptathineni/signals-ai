@@ -4,7 +4,11 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
-import { parseRequest, type SearchResult } from '../../domain/src/search-contract.js';
+import {
+  parseRequest,
+  type SearchResult,
+  type ProvisionalLead,
+} from '../../domain/src/search-contract.js';
 import { signalSearch } from './signal-search.js';
 import { directSearch } from './search-direct.js';
 import { codexRunner } from './search-runner.js';
@@ -59,6 +63,7 @@ interface ActiveRun {
   controller: AbortController;
   events: string[];
   result?: SearchResult;
+  provisional?: ProvisionalLead[];
   error?: string;
   batch?: QueryBatch;
 }
@@ -339,6 +344,7 @@ export function searchApi(
           {
             ...query,
             profile: query.profile ?? settings.profile,
+            route: query.route ?? settings.route,
             review: query.review ?? settings.groundedReview ?? false,
             threshold: query.threshold ?? settings.threshold,
             sources: settings.sources,
@@ -359,6 +365,9 @@ export function searchApi(
               extractionEffort: settings.extractionEffort || undefined,
             }),
             signal: controller.signal,
+            provisional: (leads) => {
+              run.provisional = leads;
+            },
             progress: (event) => {
               run.events.push(event);
               if (run.events.length > 100) run.events.shift();
@@ -410,6 +419,7 @@ export function searchApi(
             ? {
                 events: run.events,
                 result: run.result ?? null,
+                provisional: run.result ? [] : (run.provisional ?? []),
                 error: run.error ?? null,
                 batch: run.batch ?? null,
               }

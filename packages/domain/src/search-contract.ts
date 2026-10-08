@@ -220,6 +220,7 @@ const requestSchema = Type.Object(
       Type.Array(Type.Enum(channels), { minItems: 1, maxItems: 12, uniqueItems: true }),
     ),
     profile: Type.Optional(enumOf(['quick', 'wide'])),
+    route: Type.Optional(enumOf(['native', 'assessed'])),
     save: Type.Optional(enumOf(['never', 'eligible'])),
     cache: Type.Optional(enumOf(['memory', 'private'])),
     review: Type.Optional(Type.Boolean()),
@@ -321,12 +322,23 @@ export interface SearchResult {
     elapsedMs: number;
     modelCalls: number;
     providerUsage: unknown;
+    stages?: {
+      readinessMs: number;
+      researchMs: number;
+      answerReadyMs: number;
+      inspectionMs: number;
+      firstValidatedMs: number;
+    };
     cost: null;
   };
   counts: { leads: number; distinct: number; duplicates: number; omitted: number };
   limits: typeof budgets.quick;
   persistence?: { changed: string[]; skipped: string[]; privateRun: boolean };
 }
+export type ProvisionalLead = Pick<
+  Proposal['candidates'][number],
+  'uri' | 'name' | 'description' | 'limits'
+>;
 export function parseRequest(input: unknown): SearchRequest {
   if (!Value.Check(requestSchema, input) || !input.query.trim()) throw new Error('invalid_request');
   const sites = (input.supplementalSites ?? []).map((site) => {

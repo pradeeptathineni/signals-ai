@@ -9,6 +9,7 @@ import { acquireConfigured, type AcquisitionConfig } from './search-acquisition.
 import { scanSourcesForResearch } from './search-sources.js';
 import { loadSettings } from './search-settings.js';
 import { providerSchema, restoreOptionals } from './search-provider-schema.js';
+import { nativeBriefSchema, nativeProposal, nativePrompt } from '../../domain/src/search-native.js';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
@@ -167,6 +168,9 @@ export function codexRunner(
       }
     },
     async discover(request, signal, progress) {
+      const acquisitionStarted = Date.now();
+      const answerSchema =
+        operation.schema ?? (request.route === 'native' ? nativeBriefSchema : discoverySchema);
       const lease = join(tmpdir(), `signals-ai-${digest(homedir()).slice(0, 24)}.ai-lease`);
       await acquireRunnerLease(lease);
       const directory = await mkdtemp(join(tmpdir(), 'signals-research-')).catch(
@@ -197,10 +201,7 @@ export function codexRunner(
           progress(
             `Direct acquisition: ${direct.hits.length} ranked locators, ${direct.searches} calls, ${direct.gaps.length} gaps.`,
           );
-        await writeFile(
-          schema,
-          JSON.stringify(providerSchema(operation.schema ?? discoverySchema)),
-        );
+        await writeFile(schema, JSON.stringify(providerSchema(answerSchema)));
         // Read only model selection, never authentication; ambient hooks/MCP/project instructions stay out.
         const config = await readFile(join(homedir(), '.codex/config.toml'), 'utf8').catch(
           () => '',
@@ -245,6 +246,8 @@ export function codexRunner(
         progress(
           `Runner: Codex; model ${selectedModel ?? 'CLI default'}; effort ${selectedEffort ?? 'CLI default'}; ${operation.live === false ? 'frozen evidence review' : 'live search'}; no shell/hooks/plugins/delegation.`,
         );
+        const acquisitionMs = Date.now() - acquisitionStarted;
+        const sessionStarted = Date.now();
         return await new Promise((resolve, reject) => {
           const child = spawn('codex', args, {
             stdio: ['pipe', 'pipe', 'pipe'],
@@ -374,10 +377,9 @@ export function codexRunner(
               return;
             }
             try {
-              const proposed: unknown = restoreOptionals(
-                JSON.parse(final),
-                operation.schema ?? discoverySchema,
-              );
+              const decoded: unknown = restoreOptionals(JSON.parse(final), answerSchema);
+              const proposed =
+                !operation.schema && request.route === 'native' ? nativeProposal(decoded) : decoded;
               if (operation.live !== false && Value.Check(discoverySchema, proposed)) {
                 proposed.gaps = [
                   ...new Set([
@@ -400,6 +402,9 @@ export function codexRunner(
                   effort: selectedEffort ?? 'host-default',
                   direct,
                   configured,
+                  stages: { acquisitionMs, nativeSessionMs: Date.now() - sessionStarted },
+                  nativeSessions: 1,
+                  servedModel: null,
                   actionCounts: { toolCalls, reads, unclassifiedToolCalls },
                 },
                 searches,
@@ -419,7 +424,9 @@ export function codexRunner(
               ? `Ranked direct retrieval (untrusted locators, not assessed evidence): ${JSON.stringify(direct)}. Inspect promising results and item evidence URLs for actual counts/status. Do not copy search snippets as observations or treat rank/popularity as independent usage. ${direct.searches} acquisition calls have already been used from the total budget; at most ${budgets[request.profile ?? 'wide'].searches - direct.searches} web calls remain.\n`
               : '') +
             (operation.task ??
-              `${researchPrompt(request)}\n${supplementalPrompt(request)}\nPrioritize depth: investigate a manageable set of substantive answer candidates, typically ${request.profile === 'quick' ? '3–5, with at most 10' : '4–6, with at most 16'} relevant original/independent documents. Incidental page mentions are not acquired candidates. Do include every substantive candidate you investigate, even if uncertain. During acquisition return a supported defining observation and up to five decisive observations per inspected candidate; missing dimensions stay unknown. Optional further grounded review is separately selected, so this proposal must be useful on its own. Supply contextual priority separately: applicability and practical value for the actual constraints, a justified use/wrap/adapt/study/watch/reject action and its cited source indices. Describe alternatives/contrary sources when found. Do not infer novelty; the kernel checks actual Corpus membership. Tag source roles and the introducing query or hub under discovery; user-seeded/model-nominated sources are not unseeded victories. Seek independent applied usage, maturity, current status and risks rather than an enormous link catalog. Choose one conservative canonical upstream identity; retain documented URI aliases and distinguish versions/products in monorepos. Complete acquisition and your JSON promptly so the remaining time can review source-grounded observations.`);
+              (request.route === 'native'
+                ? `${nativePrompt(request, budgets[request.profile ?? 'wide'])}\n${supplementalPrompt(request)}`
+                : `${researchPrompt(request)}\n${supplementalPrompt(request)}\nPrioritize depth: investigate a manageable set of substantive answer candidates, typically ${request.profile === 'quick' ? '3–5, with at most 10' : '4–6, with at most 16'} relevant original/independent documents. Incidental page mentions are not acquired candidates. Do include every substantive candidate you investigate, even if uncertain. During acquisition return a supported defining observation and up to five decisive observations per inspected candidate; missing dimensions stay unknown. Optional further grounded review is separately selected, so this proposal must be useful on its own. Supply contextual priority separately: applicability and practical value for the actual constraints, a justified use/wrap/adapt/study/watch/reject action and its cited source indices. Describe alternatives/contrary sources when found. Do not infer novelty; the kernel checks actual Corpus membership. Tag source roles and the introducing query or hub under discovery; user-seeded/model-nominated sources are not unseeded victories. Seek independent applied usage, maturity, current status and risks rather than an enormous link catalog. Choose one conservative canonical upstream identity; retain documented URI aliases and distinguish versions/products in monorepos. Complete acquisition and your JSON promptly so the remaining time can review source-grounded observations.`));
           child.stdin.end(prompt);
         });
       } finally {

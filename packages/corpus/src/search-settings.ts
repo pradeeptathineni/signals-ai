@@ -14,6 +14,7 @@ const settingsSchema = Type.Object(
     extractionModel: Type.Optional(Type.String({ maxLength: 100 })),
     extractionEffort: Type.Optional(Type.String({ maxLength: 30 })),
     profile: Type.Enum(['quick', 'wide']),
+    route: Type.Optional(Type.Enum(['native', 'assessed'])),
     groundedReview: Type.Optional(Type.Boolean()),
     threshold: Type.Integer({ minimum: 0, maximum: 100 }),
     retentionDays: Type.Integer({ minimum: 1, maximum: 90 }),
