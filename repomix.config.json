@@ -45,6 +45,7 @@
     "docs/architecture/ADR-009-*.md",
     "docs/architecture/ADR-011-*.md",
     "docs/architecture/ADR-012-*.md",
+    "docs/architecture/ADR-013-*.md",
     "docs/architecture/schema.md"
   ],
   "ignore": {

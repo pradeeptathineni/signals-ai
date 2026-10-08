@@ -26,7 +26,12 @@ import {
   type SearchResult,
 } from '../../domain/src/search-contract.js';
 import { assessEntity, saveDecision, activeEvidenceIds } from '../../domain/src/search-score.js';
-import { entityIdentity, observationIdentity } from './signal-search.js';
+import {
+  entityIdentity,
+  observationIdentity,
+  reconcileDiscoveryTrail,
+  contextualizeResult,
+} from './signal-search.js';
 import { digest, normalizeText, normalizeSpan } from './search-fetch.js';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
 
@@ -732,8 +737,21 @@ export async function loadRun(
     );
     validateRetainedEntity(item.entity);
     Object.assign(item, saveDecision(item.entity, item.match, threshold));
+    // Only kernel-bound provenance can validate historical configuration or a seed.
+    // Today's followed sources cannot establish how an earlier run acquired an item.
+    const trail = item.discovery;
+    item.discovery = reconcileDiscoveryTrail(
+      { ...item.entity, discovery: trail },
+      {
+        query: result.query,
+        ...(trail?.provenanceBasis === 'request-seed' ? { captureUrls: [item.entity.uri] } : {}),
+      },
+      trail?.linkVerified ?? false,
+      trail?.provenanceBasis === 'configured-source' && trail.parentUri ? [trail.parentUri] : [],
+      result.gaps,
+    );
   }
-  return result;
+  return await contextualizeResult(result, root);
 }
 export async function runHistory(root = process.cwd()) {
   const directory = resolve(root, '.signals/runs');

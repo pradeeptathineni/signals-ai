@@ -2,6 +2,7 @@ import type { SearchResult } from '../../domain/src/search-contract.js';
 import { type EvidenceBundle, parseEvidenceBundle } from '../../domain/src/evidence-exchange.js';
 import { digest } from './search-fetch.js';
 import { activeObservations } from '../../domain/src/search-score.js';
+import { priorityGrounded } from '../../domain/src/search-priority.js';
 
 /** Compatibility transport preserves old meanings; it never translates intrinsic scores into old ratings. */
 export function searchEvidenceBundle(result: SearchResult, commit: string): EvidenceBundle {
@@ -86,7 +87,7 @@ export function searchEvidenceBundle(result: SearchResult, commit: string): Evid
                 priority?.evidenceIds.includes(observation.evidenceId),
             )
             .map((observation) => observation.id);
-          if (!priority || !capability || !claimIds.length) return [];
+          if (!priority || !capability || !claimIds.length || !priorityGrounded(item)) return [];
           return [
             {
               candidate_id: item.entity.id,
@@ -116,7 +117,11 @@ export function searchEvidenceBundle(result: SearchResult, commit: string): Evid
             applicability: item.priority!.applicability,
             value: item.priority!.value,
             action: item.priority!.action,
-            reason: item.priority!.reason,
+            reason:
+              item.priority!.proposedAction &&
+              item.priority!.proposedAction !== item.priority!.action
+                ? `${item.priority!.reason} Original proposed action: ${item.priority!.proposedAction}; held at ${item.priority!.action} because defining/cited evidence is not grounded.`
+                : item.priority!.reason,
             constraints: item.priority!.constraints,
             evidence_ids: item.priority!.evidenceIds,
             relations: item.priority!.relations ?? [],

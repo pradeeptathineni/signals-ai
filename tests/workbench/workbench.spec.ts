@@ -10,6 +10,7 @@ test('server-owned replay supports evidence, private notes, manual saves, inbox 
   await page.getByRole('button', { name: 'Start search', exact: true }).click();
   await expect(page.locator('.entity-card')).toHaveCount(2);
   const first = page.locator('.entity-card').first();
+  const annotatedName = await first.getByRole('heading', { level: 2 }).innerText();
   await first.getByText('Score, limits and sources', { exact: true }).click();
   await first.locator('details details summary').click();
   await first
@@ -36,12 +37,12 @@ test('server-owned replay supports evidence, private notes, manual saves, inbox 
     .first()
     .click();
   await expect(page.locator('.entity-card')).toHaveCount(2);
-  await page
+  // Current Corpus membership can reorder replay; the annotation belongs to an identity.
+  const reopened = page
     .locator('.entity-card')
-    .first()
-    .getByText('Private note and feedback', { exact: true })
-    .click();
-  await expect(page.getByRole('textbox', { name: /^Note for/ }).first()).toHaveValue(
+    .filter({ has: page.getByRole('heading', { level: 2, name: annotatedName, exact: true }) });
+  await reopened.getByText('Private note and feedback', { exact: true }).click();
+  await expect(reopened.getByRole('textbox', { name: /^Note for/ })).toHaveValue(
     'Private browser annotation',
   );
   for (const width of [1440, 320]) {

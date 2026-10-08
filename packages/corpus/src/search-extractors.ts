@@ -17,7 +17,12 @@ export async function jinaDocument(
   await dependencies.validate(uri);
   const result = await dependencies.fetch(`https://r.jina.ai/${uri}`, signal);
   const body = result.text;
-  if (/\b(?:401|403|429|access denied|captcha|login required)\b/i.test(body.slice(0, 1000)))
+  const statusHeaders = body
+    .split(/\n\s*(?:Markdown Content|Content):/i)[0]!
+    .split('\n')
+    .filter((line) => /^(?:Warning|Status|HTTP Status|Error):/i.test(line.trim()))
+    .join('\n');
+  if (/\b(?:401|403|429|access denied|captcha|login required)\b/i.test(statusHeaders))
     throw new Error('reader_source_denied');
   const title = /Title:\s*([^\n]+)/i.exec(body)?.[1]?.slice(0, 200) ?? new URL(uri).hostname;
   const links = [...body.matchAll(/\[([^\]]{0,200})\]\((https:\/\/[^\s)]+)\)/g)]
@@ -134,6 +139,7 @@ export function configuredDocumentFetch(
   jina = false,
   fetch = fetchEvidence,
   docling?: AcquisitionConfig['docling'],
+  reader = jinaDocument,
 ) {
   return async (uri: string, signal?: AbortSignal) => {
     try {
@@ -145,12 +151,15 @@ export function configuredDocumentFetch(
       }
       if (
         !jina ||
-        /denied|forbidden|blocked|private|dns|redirect|bytes_limit|cancel|abort|404/i.test(
-          e instanceof Error ? e.message : '',
+        !(
+          e instanceof Error &&
+          ['source_timeout', 'document_parse_failed', 'article_extraction_failed'].includes(
+            e.message,
+          )
         )
       )
         throw e;
-      return jinaDocument(uri, signal);
+      return reader(uri, signal);
     }
   };
 }

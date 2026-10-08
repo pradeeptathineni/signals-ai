@@ -1364,6 +1364,14 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                         </strong>
                       </p>
                       <p>{item.priority.reason}</p>
+                      {item.priority.proposedAction &&
+                        item.priority.proposedAction !== item.priority.action && (
+                          <p>
+                            Original proposed action: {item.priority.proposedAction}. Held at{' '}
+                            {item.priority.action} until defining and cited evidence is grounded;
+                            the candidate remains available for inspection.
+                          </p>
+                        )}
                       <p>
                         {item.priority.novelty}; personal novelty: {item.priority.personalNovelty}.{' '}
                         {item.entity.assessment.score === null
@@ -1397,7 +1405,10 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                   )}
                   {item.discovery && (
                     <p>
-                      Introduced by {item.discovery.introducedBy}
+                      Introduced by {item.discovery.introducedBy} (
+                      {item.discovery.provenanceBasis ??
+                        'historical model report; unverified mechanism'}
+                      )
                       {item.discovery.parentUri && (
                         <>
                           {' '}
@@ -1417,14 +1428,18 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                       value={personal[item.entity.id]}
                       onSave={(value) =>
                         action(async () => {
-                          await api('personal', {
+                          const saved = await api<{ sourceFeedbackError?: boolean }>('personal', {
                             id: item.entity.id,
                             note: value.note,
                             feedback: value.feedback,
                             novelty: value.novelty,
                           });
                           setPersonal((current) => ({ ...current, [item.entity.id]: value }));
-                          setMessage('Private note and feedback saved.');
+                          setMessage(
+                            saved.sourceFeedbackError
+                              ? 'Private note and feedback saved; source feedback could not be recorded.'
+                              : 'Private note and feedback saved.',
+                          );
                         })
                       }
                     />
@@ -1573,6 +1588,10 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
               <>
                 <details>
                   <summary>Source coverage and gaps</summary>
+                  <p>
+                    Coverage by source family is model-reported, not independently verified by total
+                    tool-call counts. Equal contextual priorities use stable entity identity order.
+                  </p>
                   <ul>
                     {result.coverage.map((channel) => (
                       <li key={channel.channel}>

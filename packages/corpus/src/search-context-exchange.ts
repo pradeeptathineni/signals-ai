@@ -9,7 +9,7 @@ const schema = Type.Object(
       Type.Object(
         {
           id: text,
-          policy: Type.Literal('contextual-priority-v1'),
+          policy: Type.Enum(['contextual-priority-v1', 'contextual-priority-v2']),
           score: Type.Union([Type.Number({ minimum: 0, maximum: 100 }), Type.Null()]),
           applicability: Type.Enum(['direct', 'partial', 'incompatible', 'unknown']),
           value: Type.Enum(['high', 'medium', 'low', 'unknown']),

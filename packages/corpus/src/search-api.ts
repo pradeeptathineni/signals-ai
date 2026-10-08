@@ -169,14 +169,39 @@ export function searchApi(
               ...(await loadEntities(resolve(root, '.signals/corpus/entities'))),
             ].some((record) => record.entity.id === body.id);
           if (!known) throw new Error('unknown_result_identity');
+          let introducing = [...runs.values()]
+            .flatMap((run) => run.result?.items ?? [])
+            .find(
+              (item) =>
+                item.entity.id === body.id &&
+                item.discovery?.linkVerified &&
+                item.discovery.provenanceBasis === 'configured-source',
+            )?.discovery?.parentUri;
+          if (!introducing) {
+            for (const selection of (await selectionHistory(root))
+              .filter((selection) => selection.selected.includes(body.id))
+              .reverse()) {
+              const frozen = await loadRun(selection.runId, root).catch(() => null);
+              const trail = frozen?.items.find((item) => item.entity.id === body.id)?.discovery;
+              if (trail?.linkVerified && trail.provenanceBasis === 'configured-source') {
+                introducing = trail.parentUri;
+                break;
+              }
+            }
+          }
           json(
             200,
-            await updatePersonal(root, body.id, {
-              note: body.note,
-              feedback: body.feedback,
-              novelty: body.novelty,
-              seenAt: new Date().toISOString(),
-            }),
+            await updatePersonal(
+              root,
+              body.id,
+              {
+                note: body.note,
+                feedback: body.feedback,
+                novelty: body.novelty,
+                seenAt: new Date().toISOString(),
+              },
+              introducing,
+            ),
           );
         }
       } else if (route === 'inbox') {

@@ -4,6 +4,8 @@ Closeout corrections after the fixed 286bf7c review snapshot: explicit public CA
 
 ## Unreleased
 
+- Independent-review repairs ground contextual advice in defining/cited evidence, qualify discovery mechanisms against request/configuration, preserve stale model-access diagnostics after successful kernel fetches, and keep source transport outside writer locks. Explicit source feedback and result exposures stay private; hosted fallback rejects HTTP failures without dispatch. Research budgets, native tools and intrinsic admission are unchanged.
+
 - Native-first intent-derived discovery, explicit URL capture, optional reviewed acquisition/extraction and separate search/read budgets. Readability/RSS retain original outlinks; denied providers remain gaps.
 - Contextual priority/actions/alternatives are separate from intrinsic strength and admission. Private notes/feedback, source health, promising inbox, entity deltas and evidence preview share the existing workbench and store. Additional frozen review is configurable.
 

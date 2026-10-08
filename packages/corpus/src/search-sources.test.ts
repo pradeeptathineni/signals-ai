@@ -37,7 +37,8 @@ it('keeps source exposures/opportunities and missing feedback, emitting addition
     const unchanged = (await scanSources(settings, root, { persist: true, fetch })).sources[0]!;
     expect(unchanged.delta).toBe('unchanged');
     expect(unchanged.newLinks).toHaveLength(0);
-    expect(unchanged.health?.exposures).toBe(2);
+    expect(unchanged.health?.exposures).toBe(1);
+    expect(unchanged.health?.scans).toBe(2);
     expect(unchanged.health?.feedback).toBeNull();
     changed = true;
     const next = (await scanSources(settings, root, { persist: true, fetch })).sources[0]!;

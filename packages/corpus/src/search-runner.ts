@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { digest } from './search-fetch.js';
 import { directSearch } from './search-direct.js';
 import { acquireConfigured, type AcquisitionConfig } from './search-acquisition.js';
-import { scanSources } from './search-sources.js';
+import { scanSourcesForResearch } from './search-sources.js';
 import { loadSettings } from './search-settings.js';
 import { providerSchema, restoreOptionals } from './search-provider-schema.js';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
@@ -188,7 +188,7 @@ export function codexRunner(
         const followed =
           operation.live === false
             ? null
-            : await scanSources(
+            : await scanSourcesForResearch(
                 await loadSettings(operation.root ?? process.cwd()),
                 operation.root ?? process.cwd(),
                 { signal, persist: request.cache === 'private' },
@@ -384,6 +384,7 @@ export function codexRunner(
                     ...proposed.gaps,
                     ...(configured?.gaps ?? []),
                     ...(direct?.gaps ?? []),
+                    ...(followed?.gaps ?? []),
                     ...(followed?.sources
                       .filter((source) => source.state === 'failed')
                       .map((source) => `${source.label}: ${source.reason ?? 'source_failed'}`) ??

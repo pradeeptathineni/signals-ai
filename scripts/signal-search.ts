@@ -13,6 +13,7 @@ import { randomUUID } from 'node:crypto';
 import { directSearch } from '../packages/corpus/src/search-direct.js';
 import type { SearchResult } from '../packages/domain/src/search-contract.js';
 import { loadAcquisitionConfig } from '../packages/corpus/src/search-acquisition.js';
+import { loadSettings } from '../packages/corpus/src/search-settings.js';
 
 const { values } = parseArgs({
   options: {
@@ -75,7 +76,12 @@ try {
           runId: randomUUID(),
           query: request.query,
           status: 'completed',
-          ...(await acceptDiscovery(JSON.parse(input), request, { signal: controller.signal })),
+          ...(await acceptDiscovery(JSON.parse(input), request, {
+            signal: controller.signal,
+            followedSources: (await loadSettings(process.cwd())).followedSources
+              ?.filter((source) => source.enabled)
+              .map((source) => source.uri),
+          })),
           usage: {
             searches: 0,
             documents: 0,

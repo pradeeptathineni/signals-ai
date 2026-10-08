@@ -291,9 +291,14 @@ export interface SearchItem {
   eligible: boolean;
   reasons: string[];
   change?: 'new-to-corpus' | 'unchanged' | 'supported-description-or-status-changed';
-  discovery?: Candidate['discovery'] & { linkVerified: boolean };
+  discovery?: Candidate['discovery'] & {
+    linkVerified: boolean;
+    provenanceBasis?: 'request-seed' | 'configured-source' | 'matched-outlink' | 'model-report';
+    proposedIntroducedBy?: NonNullable<Candidate['discovery']>['introducedBy'];
+  };
   priority?: NonNullable<Candidate['priority']> & {
-    policy: 'contextual-priority-v1';
+    policy: 'contextual-priority-v1' | 'contextual-priority-v2';
+    proposedAction?: NonNullable<Candidate['priority']>['action'];
     score: number | null;
     novelty: 'new-to-corpus' | 'known-in-corpus' | 'unknown';
     personalNovelty: 'confirmed-new' | 'known' | 'unknown';

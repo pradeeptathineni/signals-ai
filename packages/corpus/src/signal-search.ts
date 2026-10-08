@@ -9,6 +9,7 @@ import {
   type Source,
   type Entity,
   type Proposal,
+  type SearchItem,
 } from '../../domain/src/search-contract.js';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
 import { assessEntity, filterSearchItems, saveDecision } from '../../domain/src/search-score.js';
@@ -23,6 +24,7 @@ import { contextualize, rankContextual, entityDelta } from '../../domain/src/sea
 import { loadPersonal } from './search-personal.js';
 import { loadSettings } from './search-settings.js';
 import { updateInbox } from './search-inbox.js';
+import { recordSourceResultExposures } from './search-sources.js';
 
 function entityUri(uri: string) {
   return `${normalizeConsiderUrl(uri).normalizedUrl}${new URL(uri).hash}`;
@@ -35,6 +37,69 @@ export function entityIdentity(uri: string) {
     new URL(normalized.normalizedUrl).pathname.split('/').filter(Boolean).length === 2;
   return `entity-${digest(repository && normalized.strongIdentity ? `github:${normalized.strongIdentity.value}` : entityUri(uri)).slice(0, 24)}`;
 }
+export function reconcileDiscoveryTrail(
+  candidate: Pick<Proposal['candidates'][number], 'uri' | 'name' | 'aliases' | 'discovery'>,
+  request: SearchRequest,
+  linkVerified: boolean,
+  followedSources: string[] = [],
+  gaps: string[] = [],
+): SearchItem['discovery'] {
+  const uri = candidate.uri;
+  const id = entityIdentity(uri);
+  const parent = candidate.discovery?.parentUri;
+  const captured = request.captureUrls?.some((seed) => entityIdentity(seed) === id) ?? false;
+  const configuredParent =
+    !!parent &&
+    followedSources.some(
+      (source) =>
+        normalizeConsiderUrl(source).normalizedUrl === normalizeConsiderUrl(parent).normalizedUrl,
+    );
+  const words = (text: string) =>
+    ` ${text
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .trim()} `;
+  const query = candidate.discovery?.query ?? '';
+  const target = new URL(uri);
+  const named =
+    !!query &&
+    ([candidate.name, ...candidate.aliases].some(
+      (name) => name.trim().length > 3 && words(query).includes(words(name)),
+    ) ||
+      query
+        .toLowerCase()
+        .includes(
+          `${target.hostname}${target.pathname === '/' ? '' : target.pathname}`.toLowerCase(),
+        ));
+  let introducedBy = captured ? ('user-seeded' as const) : candidate.discovery?.introducedBy;
+  if (
+    (introducedBy === 'followed-source' && !configuredParent) ||
+    (introducedBy === 'unseeded-query' && named)
+  ) {
+    const gap = `${candidate.name}: model-reported discovery mechanism not substantiated; retained as model-nominated.`;
+    if (!gaps.includes(gap)) gaps.push(gap);
+    introducedBy = 'model-nominated';
+  }
+  const discovery = introducedBy
+    ? {
+        ...candidate.discovery,
+        introducedBy,
+        linkVerified,
+        provenanceBasis: captured
+          ? ('request-seed' as const)
+          : introducedBy === 'followed-source' && configuredParent
+            ? ('configured-source' as const)
+            : linkVerified
+              ? ('matched-outlink' as const)
+              : ('model-report' as const),
+        ...(candidate.discovery && candidate.discovery.introducedBy !== introducedBy
+          ? { proposedIntroducedBy: candidate.discovery.introducedBy }
+          : {}),
+      }
+    : undefined;
+  return discovery;
+}
+
 export function observationIdentity(
   entityId: string,
   evidenceId: string,
@@ -60,6 +125,7 @@ export async function acceptDiscovery(
     fetch?: typeof fetchEvidence;
     asOf?: string;
     evidenceClass?: Entity['acquisition'];
+    followedSources?: string[];
     progress?: (event: string) => void;
     enrich?: (
       proposal: Proposal,
@@ -125,6 +191,30 @@ export async function acceptDiscovery(
         gaps.push(`${source.title}: provider final source identity unverified`);
       }
       if (fetched.truncated) gaps.push(`${source.title}: provider document truncated`);
+      const accessFailure =
+        /retrieval (?:failed|errors?)|could not be retrieved|inaccessible|could not (?:fetch|access)|not accessible/i;
+      const stale =
+        accessFailure.test(source.title) ||
+        proposal.gaps.some(
+          (gap) =>
+            accessFailure.test(gap) &&
+            (gap.includes(source.uri) ||
+              gap.includes(source.title) ||
+              proposal.candidates.some(
+                (candidate) =>
+                  gap.toLowerCase().includes(candidate.name.toLowerCase()) &&
+                  (candidate.match.sources.includes(sources.length) ||
+                    candidate.observations.some(
+                      (observation) => observation.source === sources.length,
+                    )),
+              )),
+        );
+      if (stale) {
+        if (!accepted.reason) accepted.reason = 'kernel_fetched_model_assessment_stale';
+        gaps.push(
+          `${source.title}: kernel fetched successfully; earlier model access/assessment remains stale. Inspect fetched material; no automatic reinterpretation or rescore.${fetched.material?.publishedAt ? ` Extracted publication metadata: ${fetched.material.publishedAt}.` : ''}`,
+        );
+      }
       if ('fetchedAt' in fetched && typeof fetched.fetchedAt === 'string')
         accepted.fetchedAt = fetched.fetchedAt;
       accepted.id = `evidence-${digest(`${uri}:${fetched.digest}`).slice(0, 24)}`;
@@ -385,6 +475,13 @@ export async function acceptDiscovery(
         !!documents.get(parent)?.material?.links.some((link) => entityIdentity(link.uri) === id);
       if (parent && !linkVerified)
         gaps.push(`${candidate.name}: introducing parent link not verified in fetched material`);
+      const discovery = reconcileDiscoveryTrail(
+        { ...candidate, uri },
+        request,
+        linkVerified,
+        dependencies.followedSources,
+        gaps,
+      );
       entities.set(id, {
         entity: canonical,
         match: candidate.match,
@@ -401,7 +498,7 @@ export async function acceptDiscovery(
               },
             }
           : {}),
-        ...(candidate.discovery ? { discovery: { ...candidate.discovery, linkVerified } } : {}),
+        ...(discovery ? { discovery } : {}),
       });
     }
   }
@@ -505,6 +602,9 @@ export async function signalSearch(
         },
       );
     const accepted = await acceptDiscovery(discovery.proposal, request, {
+      followedSources: (await loadSettings(dependencies.root ?? process.cwd())).followedSources
+        ?.filter((source) => source.enabled)
+        .map((source) => source.uri),
       evidenceClass: dependencies.fetch ? 'fixture' : (runner.evidenceClass ?? 'fixture'),
       signal: controller.signal,
       fetch:
@@ -557,6 +657,15 @@ export async function signalSearch(
           : undefined,
     });
     Object.assign(base, accepted);
+    if (request.cache === 'private') {
+      try {
+        await recordSourceResultExposures(dependencies.root ?? process.cwd(), base.items);
+      } catch {
+        base.gaps.push(
+          'Followed-source result exposure could not be recorded; research results retained.',
+        );
+      }
+    }
     await contextualizeResult(base, dependencies.root ?? process.cwd());
     const inbox = (await loadSettings(dependencies.root ?? process.cwd())).promisingInbox;
     if (request.cache === 'private' && inbox?.enabled && !controller.signal.aborted) {

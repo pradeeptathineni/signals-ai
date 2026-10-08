@@ -5,6 +5,60 @@ import {
   normalizeDocling,
   doclingDocument,
 } from './search-extractors.js';
+it('limits hosted fallback to timeouts/parse failures and reads denials only from protocol status headers', async () => {
+  const read = async (text: string) =>
+    jinaDocument('https://example.com', undefined, {
+      validate: async () => ({
+        url: new URL('https://example.com'),
+        address: { address: '93.184.216.34', family: 4 },
+      }),
+      fetch: async (uri) => ({ uri, text, digest: 'a'.repeat(64) }),
+    });
+  const document = await read(
+    'Title: HTTP status reference\nMarkdown Content:\n401 and 403 are HTTP response codes; login required is an example phrase.',
+  );
+  expect(document.text).toContain('403');
+  await expect(
+    read(
+      'Title: Denied\nWarning: Target URL returned error 403: Forbidden\nMarkdown Content:\nDenied',
+    ),
+  ).rejects.toThrow('reader_source_denied');
+  let dispatched = 0;
+  const reader = async () => {
+    dispatched++;
+    return document;
+  };
+  for (const error of [
+    'source_http_410',
+    'source_http_429',
+    'source_http_500',
+    'private_target_denied',
+    'redirect_limit',
+    'bytes_limit',
+    'source_aborted',
+  ]) {
+    await expect(
+      configuredDocumentFetch(
+        true,
+        async () => {
+          throw new Error(error);
+        },
+        undefined,
+        reader,
+      )('https://example.com'),
+    ).rejects.toThrow(error);
+  }
+  expect(dispatched).toBe(0);
+  await configuredDocumentFetch(
+    true,
+    async () => {
+      throw new Error('source_timeout');
+    },
+    undefined,
+    reader,
+  )('https://example.com');
+  expect(dispatched).toBe(1);
+});
 it('validates target before hosted dispatch and never uses a reader to bypass denied access', async () => {
   let called = false;
   await expect(
