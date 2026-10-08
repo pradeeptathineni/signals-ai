@@ -4,7 +4,7 @@ import type { SearchResult } from '../../domain/src/search-contract.js';
 
 const result = {
   brief: { format: 'markdown', text: 'Retained hypothetical exercise; it was not executed.' },
-  gaps: ['Runtime not tested.'],
+  gaps: ['Runtime not tested.', 'excluded resource access was denied.'],
   items: ['selected', 'excluded'].map((id) => ({
     entity: {
       id,
@@ -24,7 +24,7 @@ it('keeps prior hypothetical synthesis distinct from verified observations', () 
   const frozen = frozenFollowupMaterial(result, []);
   expect(frozen.priorSynthesis).toContain('it was not executed');
   expect(frozen.material).toEqual([]);
-  expect(frozen.gaps).toEqual(['Runtime not tested.']);
+  expect(frozen.gaps).toEqual(result.gaps);
 });
 
 it('never adds unselected records or their prior synthesis to a scoped follow-up', () => {

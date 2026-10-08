@@ -37,7 +37,7 @@ export function frozenFollowupMaterial(result: SearchResult, ids: string[]) {
     // A selected subset must not inherit synthesis about unselected records.
     priorSynthesis:
       selected.length === result.items.length ? result.brief?.text.slice(0, 12000) : undefined,
-    gaps: result.gaps.slice(0, 10),
+    gaps: selected.length === result.items.length ? result.gaps.slice(0, 10) : [],
   };
 }
 
