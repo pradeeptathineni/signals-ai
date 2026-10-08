@@ -54,13 +54,33 @@ const brief = () => ({
   gaps: [],
 });
 describe('native brief kernel boundary', () => {
+  it('encodes only existing valid signal pairs and projects version 2 identically', () => {
+    const old = brief();
+    const current = {
+      ...old,
+      version: 2,
+      candidates: old.candidates.map((candidate) => ({
+        ...candidate,
+        observations: candidate.observations.map(({ feature, indicator, ...fact }) => ({
+          ...fact,
+          signal: `${feature}/${indicator}`,
+        })),
+      })),
+    };
+    expect(nativeProposal(current)).toEqual(nativeProposal(old));
+    current.candidates[0]!.observations[0]!.signal = 'verification/documented';
+    expect(() => nativeProposal(current)).toThrow('invalid_native_brief');
+  });
   it('keeps missing facets/dimensions unknown and rejects invalid binding vocabulary', () => {
     const proposal = nativeProposal(brief());
     expect(proposal.candidates[0]!.facets.domains).toEqual([]);
     expect(proposal.candidates[0]!.observations).toHaveLength(1);
     const invalid = brief();
     invalid.candidates[0]!.observations[0]!.indicator = 'broad';
-    expect(() => nativeProposal(invalid)).toThrow('invalid_evidence_binding');
+    expect(() => nativeProposal(invalid)).toThrow('invalid_native_brief');
+    const unbound = brief();
+    unbound.candidates[0]!.observations[0]!.source = 11;
+    expect(() => nativeProposal(unbound)).toThrow('invalid_evidence_binding');
   });
   it('checks claimed facts while transparently deferring unused source locators', async () => {
     const fetched: string[] = [];

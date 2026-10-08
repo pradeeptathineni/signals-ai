@@ -1602,10 +1602,26 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                     <button
                       disabled={busy}
                       onClick={() => {
+                        void action(async () => {
+                          const check = await api<{ status: string; reason: string }>(
+                            'primary-check',
+                            { id: item.entity.id },
+                          );
+                          setMessage(`${item.entity.name}: ${check.status}. ${check.reason}`);
+                        });
+                      }}
+                    >
+                      Check primary source without AI
+                    </button>
+                  )}
+                  {local && tab === 'Corpus' && (
+                    <button
+                      disabled={busy}
+                      onClick={() => {
                         void action(() => start(item.entity.id));
                       }}
                     >
-                      Refresh saved
+                      Research changes and independent evidence
                     </button>
                   )}
                 </article>

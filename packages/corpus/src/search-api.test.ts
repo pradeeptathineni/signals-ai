@@ -73,6 +73,24 @@ it('keeps replay follow-ups behind mutation and retained-identity guards without
   try {
     const { token } = (await (await fetch(`${base}session`)).json()) as { token: string };
     const headers = { 'content-type': 'application/json', 'x-signals-token': token };
+    expect(
+      (
+        await fetch(`${base}primary-check`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ id: record.entity.id }),
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await fetch(`${base}primary-check`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ id: record.entity.id, extra: 'invalid' }),
+        })
+      ).status,
+    ).toBe(400);
     const body = JSON.stringify({
       runId: result.runId,
       ids: [record.entity.id],

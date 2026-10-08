@@ -215,6 +215,11 @@ export async function acceptDiscovery(
       accepted.state = 'fetched';
       accepted.digest = fetched.digest;
       accepted.finalUri = fetched.uri;
+      if (fetched.response?.etag || fetched.response?.lastModified)
+        accepted.transport = {
+          etag: fetched.response.etag,
+          lastModified: fetched.response.lastModified,
+        };
       normalizeConsiderUrl(fetched.uri);
       if (fetched.material) accepted.extractor = fetched.material.extractor;
       if (fetched.normalizer) accepted.normalizer = fetched.normalizer;

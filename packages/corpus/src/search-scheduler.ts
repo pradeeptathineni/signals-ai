@@ -40,6 +40,7 @@ export function refreshRequest(
   return {
     query: `Refresh exact entity ${entity.name} (${entity.uri}); aliases ${entity.aliases.join(', ')}. Find material changes, new independent applied use, alternatives, deprecation and contrary evidence. Preserve exact canonical identity.`,
     profile: settings.profile,
+    route: settings.route,
     review: settings.groundedReview ?? false,
     threshold: settings.threshold,
     cache: 'private',
@@ -113,6 +114,7 @@ export async function runDueOnce(
       extractionModel: settings.extractionModel,
       extractionEffort: settings.extractionEffort,
       profile: settings.profile,
+      route: settings.route,
       threshold: settings.threshold,
       groundedReview: settings.groundedReview ?? false,
       sources: settings.sources,
@@ -138,6 +140,7 @@ export async function runDueOnce(
             query: query.query,
             context: query.context,
             profile: settings.profile,
+            route: settings.route,
             review: settings.groundedReview ?? false,
             threshold: settings.threshold,
             sources: settings.sources,

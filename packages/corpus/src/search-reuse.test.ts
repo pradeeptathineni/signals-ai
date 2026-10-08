@@ -8,6 +8,24 @@ import { saveEntities } from './search-store.js';
 import { researchCorpusSlice, checkPrimaryMaterial } from './search-reuse.js';
 import type { Proposal } from '../../domain/src/search-contract.js';
 
+it('conditionally checks unchanged primary material without renewing any claim', async () => {
+  const { entity } = await acquired();
+  const before = JSON.stringify(entity);
+  entity.evidence[0]!.transport = { etag: '"retained-v1"' };
+  const retained = JSON.stringify(entity);
+  const check = await checkPrimaryMaterial(entity, {
+    fetch: async (uri, _signal, _redirects, _pdf, options) => {
+      expect(options).toEqual({ conditional: { etag: '"retained-v1"' }, allowNotModified: true });
+      return { uri, text: '', digest: digest(''), response: { status: 304 } };
+    },
+  });
+  expect(check.status).toBe('unchanged');
+  expect(check.claimsRenewed).toBe(false);
+  expect(check.independentChangesChecked).toBe(false);
+  expect(JSON.stringify(entity)).toBe(retained);
+  expect(JSON.parse(before).evidence[0].fetchedAt).toBe(entity.evidence[0]!.fetchedAt);
+});
+
 const text = 'Drains wet soil in gardens. Tested drainage systems can have maintenance failures.';
 const date = '2026-10-01T00:00:00.000Z';
 async function acquired(

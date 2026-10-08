@@ -29,6 +29,7 @@ import {
 } from './search-store.js';
 import { runDueOnce, refreshRequest } from './search-scheduler.js';
 import { answerFromEvidence } from './search-followup.js';
+import { checkPrimaryMaterial } from './search-reuse.js';
 import {
   runQueryListOnce,
   queryBatchHistory,
@@ -72,6 +73,7 @@ export function searchApi(
   search = signalSearch,
   locate = directSearch,
   follow = answerFromEvidence,
+  check = checkPrimaryMaterial,
 ) {
   const token = randomBytes(32).toString('hex');
   const runs = new Map<string, ActiveRun>();
@@ -281,6 +283,29 @@ export function searchApi(
         });
         pruneRuns();
         json(200, { id });
+      } else if (route === 'primary-check' && mutation) {
+        if (
+          !body ||
+          typeof body !== 'object' ||
+          Object.keys(body).join(',') !== 'id' ||
+          !('id' in body) ||
+          typeof body.id !== 'string'
+        )
+          throw new Error('invalid_primary_check');
+        const records = [
+          ...(await loadEntities(resolve(root, 'signals/entities'))),
+          ...(await loadEntities(resolve(root, '.signals/corpus/entities'))),
+        ];
+        const record = records.find((record) => record.entity.id === body.id);
+        if (!record) throw new Error('unknown_entity');
+        const { material, ...checked } = await check(record.entity);
+        json(200, {
+          ...checked,
+          materialDigest:
+            material?.response?.status === 304
+              ? checked.source?.digest
+              : (material?.digest ?? null),
+        });
       } else if ((route === 'search' || route === 'capture' || route === 'refresh') && mutation) {
         if (active) {
           json(409, { code: 'runner_busy' });

@@ -187,7 +187,10 @@ export async function checkPrimaryMaterial(
     };
   try {
     normalizeConsiderUrl(source.uri);
-    const material = await (options.fetch ?? fetchEvidence)(source.uri, options.signal);
+    const material = await (options.fetch ?? fetchEvidence)(source.uri, options.signal, 0, false, {
+      conditional: source.transport,
+      allowNotModified: !!source.transport && !!source.digest,
+    });
     options.signal?.throwIfAborted();
     const expected = normalizeConsiderUrl(source.finalUri ?? source.uri).normalizedUrl;
     if (
@@ -202,7 +205,8 @@ export async function checkPrimaryMaterial(
         material,
       };
     const unchanged =
-      source.digest === material.digest && source.normalizer === material.normalizer;
+      material.response?.status === 304 ||
+      (source.digest === material.digest && source.normalizer === material.normalizer);
     return {
       ...base,
       status: unchanged ? ('unchanged' as const) : ('changed' as const),

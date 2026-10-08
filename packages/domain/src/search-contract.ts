@@ -243,6 +243,7 @@ export type Source = Proposal['sources'][number] & {
   excerpt: string;
   finalUri?: string;
   extractor?: string;
+  transport?: { etag?: string; lastModified?: string };
 };
 export interface Entity extends Omit<Candidate, 'observations' | 'match'> {
   id: string;

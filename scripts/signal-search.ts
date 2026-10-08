@@ -90,7 +90,7 @@ try {
         signal: controller.signal,
       });
       process.stdout.write(
-        `${JSON.stringify({ ...check, materialDigest: material?.digest ?? null }, null, 2)}\n`,
+        `${JSON.stringify({ ...check, materialDigest: material?.response?.status === 304 ? check.source?.digest : (material?.digest ?? null) }, null, 2)}\n`,
       );
       process.exit(0);
     }
