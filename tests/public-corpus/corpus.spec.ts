@@ -1,87 +1,101 @@
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test, expect } from '@playwright/test';
 import { AxeBuilder } from '@axe-core/playwright';
-import { loadPublicCorpus } from '../../packages/corpus/src/public-corpus.js';
-import { filterPublicOptions } from '../../packages/domain/src/public-corpus.js';
-import { parsePublicIndex } from '../../packages/domain/src/public-index.js';
+import {
+  createLibraryIndex,
+  type LibraryFinding,
+} from '../../packages/domain/src/library-search.js';
 
-test('human and machine find the same real public options with combined filters', async ({
+const findings = JSON.parse(
+  await readFile('dist/public-data/library.json', 'utf8'),
+) as LibraryFinding[];
+
+test('public browsing searches the entire approved library without local or model calls', async ({
   page,
 }) => {
-  const { options } = await loadPublicCorpus();
+  const localCalls: string[] = [];
+  page.on('request', (request) => {
+    if (request.url().includes('__signals')) localCalls.push(request.url());
+  });
   await page.goto('');
-  await expect(page.locator('.finding')).toHaveCount(options.length);
-  await page.getByLabel('Search keywords').fill('water meter');
-  await page.getByRole('combobox', { name: 'Domain', exact: true }).selectOption('Household');
-  await page.getByLabel('Signal type').selectOption('practices');
-  await page.getByLabel('Source kind').selectOption('guidance');
-  const ids = await page
-    .locator('.finding')
-    .evaluateAll((nodes) => nodes.map((n) => n.getAttribute('data-option-id')));
-  expect(ids).toEqual(
-    filterPublicOptions(options, {
-      query: 'water meter',
-      type: 'practices',
-      category: 'Household',
-      sourceClass: 'guidance',
-    }).map((o) => o.id),
-  );
-  await expect(page.getByRole('status')).toContainText('1 of');
-  const downloadEvent = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Download these results' }).click();
-  const download = await downloadEvent;
-  const stream = await download.createReadStream();
-  const parts = [];
-  for await (const part of stream) parts.push(Buffer.from(part));
-  const downloaded: unknown = JSON.parse(Buffer.concat(parts).toString());
-  if (!downloaded || typeof downloaded !== 'object' || !('items' in downloaded))
-    throw new Error('Invalid result export');
-  expect(parsePublicIndex(downloaded.items).map((o) => o.id)).toEqual(ids);
-  await page.getByLabel('GitHub-hosted options').check();
-  await expect(page.getByRole('heading', { name: 'No matching options' })).toBeVisible();
-  await page.getByRole('button', { name: 'Clear filters' }).click();
-  await expect(page.locator('.finding')).toHaveCount(options.length);
-  const question = 'How can I recover verbose test output?';
-  await page.getByLabel('Search keywords').fill(question);
-  await page.getByLabel('Text matching').selectOption('ranked');
+  await expect(page.locator('.desk-finding').first()).toBeVisible();
+  const query = 'water meter';
+  await page.getByLabel('Find something useful', { exact: true }).fill(query);
+  const expected = createLibraryIndex(findings)
+    .search(query)
+    .map((hit) => hit.finding.key);
   expect(
     await page
-      .locator('.finding')
-      .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-option-id'))),
-  ).toEqual(
-    filterPublicOptions(options, { query: question, textMode: 'ranked' }).map(
-      (option) => option.id,
+      .locator('.desk-finding')
+      .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-finding-key'))),
+  ).toEqual(expected.slice(0, 40));
+  await page.getByLabel('Access & license').selectOption('open-source');
+  const filtered = createLibraryIndex(findings)
+    .search(query, { acquisition: 'open-source' })
+    .map((hit) => hit.finding.key);
+  expect(
+    await page
+      .locator('.desk-finding')
+      .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-finding-key'))),
+  ).toEqual(filtered.slice(0, 40));
+  await expect(page.getByRole('button', { name: 'Research online', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Projects', exact: true })).toHaveCount(0);
+  const downloadEvent = page.waitForEvent('download');
+  await page.getByRole('link', { name: 'Download the public library' }).click();
+  const stream = await (await downloadEvent).createReadStream();
+  const parts: Buffer[] = [];
+  for await (const part of stream) parts.push(Buffer.from(part as Uint8Array));
+  expect(JSON.parse(Buffer.concat(parts).toString())).toEqual(findings);
+  expect(
+    findings.every(
+      (finding) => finding.origin.destination === 'public' && finding.notes === undefined,
     ),
-  );
+  ).toBe(true);
+  expect(localCalls).toEqual([]);
 });
 
-test('compares supported scope and limits, with keyboard access and responsive reflow', async ({
+test('supported evidence and comparison reflow with keyboard access and reduced motion', async ({
   page,
 }) => {
   await page.goto('');
-  await expect(page.locator('.finding').first()).toBeVisible();
+  await expect(page.locator('.desk-finding').first()).toBeVisible();
   await page.keyboard.press('Tab');
-  await expect(page.getByRole('link', { name: 'Skip to findings' })).toBeFocused();
+  await expect(page.getByRole('link', { name: /Skip to/ })).toBeFocused();
   await page.keyboard.press('Enter');
-  await expect(page.locator('#results')).toBeFocused();
-  await page.getByRole('combobox', { name: 'Domain', exact: true }).selectOption('Development');
-  await page.getByLabel('Signal type').selectOption('practices');
-  const checks = page.locator('.compare-control input');
-  await checks.nth(0).check();
-  await checks.nth(1).check();
-  await expect(page.getByRole('heading', { name: 'Compare selected options' })).toBeVisible();
-  await expect(page.locator('.comparison-grid article')).toHaveCount(2);
-  await expect(checks.nth(2)).toBeDisabled();
-  for (const width of [1440, 320]) {
+  await expect(page.locator('#desk-content')).toBeFocused();
+  await page
+    .locator('.desk-finding')
+    .nth(0)
+    .getByRole('button', { name: 'Compare', exact: true })
+    .click();
+  await page
+    .locator('.desk-finding')
+    .nth(1)
+    .getByRole('button', { name: 'Compare', exact: true })
+    .click();
+  await expect(
+    page.getByRole('region', { name: 'Compare selected findings' }).locator('article'),
+  ).toHaveCount(2);
+  await page
+    .locator('.desk-finding')
+    .first()
+    .getByText('Evidence & details', { exact: true })
+    .click();
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 1000 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
     expect(
-      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
-    ).toBe(true);
-    const results = await new AxeBuilder({ page })
-      .withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'])
-      .analyze();
-    expect(results.violations).toEqual([]);
+      (
+        await new AxeBuilder({ page })
+          .withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'])
+          .analyze()
+      ).violations,
+    ).toEqual([]);
     if (process.env.SIGNALS_SCREENSHOT_DIR) {
       await mkdir(process.env.SIGNALS_SCREENSHOT_DIR, { recursive: true });
       await page.screenshot({
@@ -90,49 +104,27 @@ test('compares supported scope and limits, with keyboard access and responsive r
       });
     }
   }
-  await page.getByRole('button', { name: 'Clear comparison' }).click();
-  await expect(checks.nth(2)).toBeEnabled();
+  await page.evaluate(() => {
+    document.documentElement.style.zoom = '2';
+  });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
-test('shows a useful loading error and recovers without model or local service calls', async ({
+test('public transport failures and malformed records retain the shell and allow retry', async ({
   page,
 }) => {
-  await page.route('**/corpus.json', (route) =>
+  await page.route('**/library.json', (route) =>
     route.fulfill({ status: 503, body: 'unavailable' }),
   );
   await page.goto('');
   await expect(page.getByRole('alert')).toContainText('could not be loaded');
-  await page.unroute('**/corpus.json');
-  await page.getByRole('button', { name: 'Retry loading' }).click();
-  await expect(page.locator('.finding').first()).toBeVisible();
-});
-
-test('rejects corrupt public JSON before rendering and can recover', async ({ page }) => {
-  await page.route('**/corpus.json', (route) =>
-    route.fulfill({ contentType: 'application/json', body: '[{}]' }),
-  );
-  await page.goto('');
-  await expect(page.getByRole('alert')).toContainText('invalid format');
-  await page.unroute('**/corpus.json');
-  await page.getByRole('button', { name: 'Retry loading' }).click();
-  await expect(page.locator('.finding').first()).toBeVisible();
-});
-
-test('all real records reflow on a narrow screen including long provider identifiers', async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 320, height: 900 });
-  await page.goto('');
-  await expect(page.locator('.finding').first()).toBeVisible();
-  await page
-    .locator('.finding details')
-    .evaluateAll((nodes) => nodes.forEach((node) => node.setAttribute('open', '')));
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.getByLabel('Search keywords').fill('How can I keep reusable prompt prefixes stable?');
-  await page.getByLabel('Text matching').selectOption('ranked');
-  await expect(page.locator('.finding').first()).toHaveAttribute(
-    'data-option-id',
-    'option-claude-prefix-cache',
-  );
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.unroute('**/library.json');
+  await page.getByRole('button', { name: 'Reload library' }).click();
+  await expect(page.locator('.desk-finding').first()).toBeVisible();
+  await page.route('**/library.json', (route) => route.fulfill({ json: [{}] }));
+  await page.reload();
+  await expect(page.getByRole('alert')).toContainText('incomplete');
+  await page.unroute('**/library.json');
+  await page.getByRole('button', { name: 'Reload library' }).click();
+  await expect(page.locator('.desk-finding').first()).toBeVisible();
 });

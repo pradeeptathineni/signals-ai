@@ -1,5 +1,7 @@
 # Architecture
 
+[ADR-016](docs/architecture/ADR-016-corpus-first-project-experience.md) gives Signals one corpus-first Search / Projects / Library / Following workspace and ownership of general project opportunities. A MiniSearch projection unifies eligible native and legacy records; private annotations and permission-scoped project snapshots remain local. Context owns AI equipment selection and delivery. The shared handoff is advisory, with no browser command executor or duplicate installer.
+
 [ADR-015](docs/architecture/ADR-015-native-research-replacement.md) makes one native research task the shared engine. Native brief v3 retains the readable answer before per-item source/record validation. Legacy brief/proposal formats are historical ingestion decoders. Explicit frozen reassessment is a specialist; ordinary research has no second interpretation stage. Native-authored query groups share compatible unassessed acquisition while keeping separate per-interest reasoning. Due maintenance checks unchanged/denied primary material before inference.
 
 [ADR-013](docs/architecture/ADR-013-grounded-priority-and-discovery-provenance.md) corrects recommendation grounding and qualifies discovery labels. Contextual priority v2 holds ungrounded use/wrap/adapt proposals at study without hiding the lead or changing intrinsic admission. Source transport happens outside the writer lock; optional state failures remain gaps. Private source feedback binds explicit entity votes to verified configured introducing parents.

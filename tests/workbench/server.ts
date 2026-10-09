@@ -1,5 +1,5 @@
 import { createServer } from 'vite';
-import { mkdtemp, realpath, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -18,6 +18,12 @@ import {
 const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-workbench-')));
 const approved = (await loadEntities(resolve('signals/entities'))).slice(0, 2);
 if (approved.length !== 2) throw new Error('public_replay_fixture_missing');
+await mkdir(join(root, 'signals/entities'), { recursive: true });
+for (const record of approved)
+  await writeFile(
+    join(root, 'signals/entities', `${record.entity.id}.json`),
+    JSON.stringify(record),
+  );
 const api = searchApi(root, async (input, dependencies) => {
   const request = parseRequest(input);
   dependencies?.progress?.('Replaying approved public evidence for UI verification.');

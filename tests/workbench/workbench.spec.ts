@@ -1,12 +1,35 @@
 import { test, expect, type Page } from '@playwright/test';
 import { AxeBuilder } from '@axe-core/playwright';
 import { loadEntities } from '../../packages/corpus/src/search-store.js';
+import { projectNativeLibrary } from '../../packages/domain/src/library-search.js';
+
+async function destination(page: Page, name: string) {
+  await page.getByRole('complementary').getByRole('button', { name, exact: true }).click();
+}
+async function research(page: Page, question?: string) {
+  await destination(page, 'Search');
+  if (question !== undefined)
+    await page.getByLabel('Find something useful', { exact: true }).fill(question);
+  await page.getByRole('button', { name: 'Research online', exact: true }).click();
+}
+async function following(page: Page, panel: string) {
+  await destination(page, 'Following');
+  await page
+    .getByRole('navigation', { name: 'Following views' })
+    .getByRole('button', { name: panel, exact: true })
+    .click();
+}
 
 async function replayDuplicateIdentity(page: Page) {
   const [record] = await loadEntities();
   if (!record) throw new Error('public_replay_fixture_missing');
-  await page.route('**/__signals/api/corpus', (route) => route.fulfill({ json: [record] }));
-  await page.route('**/__signals/api/private-corpus', (route) => route.fulfill({ json: [record] }));
+  await page.route('**/__signals/api/library', (route) =>
+    route.fulfill({
+      json: {
+        findings: [projectNativeLibrary(record, 'public'), projectNativeLibrary(record, 'private')],
+      },
+    }),
+  );
   return record;
 }
 
@@ -28,7 +51,7 @@ test('source scans and result exposures retain distinct denominators', async ({ 
     });
   });
   await page.goto('');
-  await page.getByRole('button', { name: 'Sources', exact: true }).click();
+  await following(page, 'Sources');
   await page.getByRole('button', { name: 'Scan followed sources without AI', exact: true }).click();
   await expect(page.getByText(/2 scans; 1 result exposures/)).toBeVisible();
 });
@@ -42,7 +65,7 @@ test('Search capture carries explicit question constraints to the research bound
     await route.fulfill({ status: 400, json: { code: 'capture_payload_fixture_stopped' } });
   });
   await page.goto('');
-  await page.getByLabel('Research question').fill('Inspect this learning resource');
+  await research(page, 'Inspect this learning resource');
   await page.getByText('Project context and constraints', { exact: true }).click();
   await page.getByLabel('Context for this question').fill('Read only; no containers or installs.');
   await page.getByLabel('Capture a public URL').fill('https://example.com/learning');
@@ -70,28 +93,32 @@ test('duplicate Corpus identities send the selected store for check and refresh'
     await route.fulfill({ status: 400, json: { code: 'scope_boundary_fixture_stopped' } });
   });
   await page.goto('');
-  await page.getByRole('button', { name: 'Corpus', exact: true }).click();
+  await destination(page, 'Search');
   const privateCard = page
-    .locator('.entity-card')
-    .filter({ has: page.getByText('Private Corpus', { exact: true }) });
+    .locator('.desk-finding')
+    .filter({ has: page.getByText(/Private finding/) });
   const publicCard = page
-    .locator('.entity-card')
-    .filter({ has: page.getByText('Public Corpus', { exact: true }) });
+    .locator('.desk-finding')
+    .filter({ has: page.getByText(/Public finding/) });
   await expect(privateCard).toHaveCount(1);
   await expect(publicCard).toHaveCount(1);
-  await privateCard.getByRole('checkbox').check();
-  await expect(publicCard.getByRole('checkbox')).not.toBeChecked();
-  await expect(page.getByRole('region', { name: 'Compare entities' })).not.toBeVisible();
-  await publicCard.getByRole('checkbox').check();
+  await privateCard.getByRole('button', { name: 'Compare', exact: true }).click();
+  await expect(publicCard.getByRole('button', { name: 'Compare', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'false',
+  );
+  await publicCard.getByRole('button', { name: 'Compare', exact: true }).click();
   await expect(
-    page.getByRole('region', { name: 'Compare entities' }).locator('article'),
+    page.getByRole('region', { name: 'Compare selected findings' }).locator('article'),
   ).toHaveCount(2);
+  await privateCard.getByText('Evidence & details', { exact: true }).click();
   await privateCard.getByRole('button', { name: 'Check primary source without AI' }).click();
   await expect(page.getByText(/Scope boundary fixture/)).toBeVisible();
   await privateCard
     .getByRole('button', { name: 'Research changes and independent evidence' })
     .click();
-  await expect(page.getByText('scope_boundary_fixture_stopped', { exact: true })).toBeVisible();
+  await expect(page.getByRole('alert')).toContainText('scope_boundary_fixture_stopped');
+  await publicCard.getByText('Evidence & details', { exact: true }).click();
   await publicCard.getByRole('button', { name: 'Check primary source without AI' }).click();
   expect(selections).toEqual([
     { id: record.entity.id, destination: 'private' },
@@ -109,8 +136,8 @@ test('server-owned replay supports evidence, private notes, manual saves, inbox 
   request,
 }) => {
   await page.goto('');
-  await page.getByLabel('Research question').fill('approved public replay');
-  await page.getByRole('button', { name: 'Start search', exact: true }).click();
+  await research(page, 'approved public replay');
+  await page.getByRole('button', { name: 'Start online research', exact: true }).click();
   await expect(page.locator('.entity-card')).toHaveCount(2);
   await expect(page.getByRole('region', { name: 'Research brief' })).toContainText(
     'A practical next step',
@@ -145,6 +172,9 @@ test('server-owned replay supports evidence, private notes, manual saves, inbox 
   await page.getByRole('button', { name: /^Save selected/ }).click();
   await expect(first.getByText(/· Saved/)).toBeVisible();
   await page.reload();
+  await expect(page.getByRole('region', { name: 'Research brief' })).toContainText(
+    'A practical next step',
+  );
   await page.getByText(/^Promising inbox \(/).click();
   await page
     .getByRole('button', { name: /^Reopen/ })
@@ -159,13 +189,14 @@ test('server-owned replay supports evidence, private notes, manual saves, inbox 
   await expect(reopened.getByRole('textbox', { name: /^Note for/ })).toHaveValue(
     'Private browser annotation',
   );
-  await page.getByRole('button', { name: 'Inbox', exact: true }).click();
+  await destination(page, 'Library');
+  await page.getByRole('button', { name: 'Inbox & capture', exact: true }).click();
   await page
     .getByRole('button', { name: /^Remove .* from inbox$/ })
     .first()
     .click();
   await expect(page.getByText('No pending leads.', { exact: false })).toBeVisible();
-  await page.getByRole('button', { name: 'Search Signals', exact: true }).click();
+  await research(page);
   for (const width of [1440, 320]) {
     await page.setViewportSize({ width, height: 900 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
@@ -190,8 +221,8 @@ test('a readable answer survives metadata gaps and untrusted content is inert', 
   page,
 }) => {
   await page.goto('');
-  await page.getByLabel('Research question').fill('partial metadata fixture');
-  await page.getByRole('button', { name: 'Start search', exact: true }).click();
+  await research(page, 'partial metadata fixture');
+  await page.getByRole('button', { name: 'Start online research', exact: true }).click();
   const brief = page.getByRole('region', { name: 'Research brief' });
   await expect(brief).toContainText('The original answer is retained despite a record gap.');
   await expect(page.getByRole('region', { name: 'Leads with metadata gaps' })).toContainText(
@@ -201,7 +232,7 @@ test('a readable answer survives metadata gaps and untrusted content is inert', 
   await expect(brief.locator('script')).toHaveCount(0);
   await expect(brief.getByRole('link')).toHaveCount(0);
   expect(await page.evaluate(() => '__briefExecuted' in window)).toBe(false);
-  await page.getByRole('button', { name: 'Jobs', exact: true }).click();
+  await destination(page, 'Activity');
   await expect(page.getByRole('region', { name: 'Recent research' })).toContainText(
     'partial metadata fixture',
   );
@@ -219,20 +250,19 @@ test('offline Corpus filtering and follow-up preserve selected destination scope
     await route.fulfill({ json: { answer: 'Scope fixture response.', statements: [] } });
   });
   await page.goto('');
-  await page.getByRole('button', { name: 'Corpus', exact: true }).click();
-  await page.getByLabel('Filter results', { exact: true }).fill('unmatched phrase fixture');
-  await expect(page.locator('.entity-card')).toHaveCount(0);
-  await page.getByLabel('Filter results', { exact: true }).fill(record.entity.name);
-  await expect(page.locator('.entity-card')).toHaveCount(2);
+  await page.getByLabel('Find something useful', { exact: true }).fill('unmatched phrase fixture');
+  await expect(page.locator('.desk-finding')).toHaveCount(0);
+  await page.getByLabel('Find something useful', { exact: true }).fill(record.entity.name);
+  await expect(page.locator('.desk-finding')).toHaveCount(2);
   await page
-    .locator('.entity-card')
-    .filter({ has: page.getByText('Private Corpus', { exact: true }) })
-    .getByRole('checkbox')
-    .check();
+    .locator('.desk-finding')
+    .filter({ has: page.getByText(/Private finding/) })
+    .getByRole('button', { name: 'Compare', exact: true })
+    .click();
   await page
-    .getByLabel('Ask selected corpus evidence', { exact: true })
+    .getByLabel('Ask selected retained evidence', { exact: true })
     .fill('What can I learn from this?');
-  await page.getByRole('button', { name: 'Answer from evidence', exact: true }).click();
+  await page.getByRole('button', { name: 'Explain from retained evidence', exact: true }).click();
   await expect(page.getByText('Scope fixture response.')).toBeVisible();
   expect(requests).toEqual([
     { ids: [record.entity.id], destinations: ['private'], question: 'What can I learn from this?' },
@@ -241,7 +271,7 @@ test('offline Corpus filtering and follow-up preserve selected destination scope
 
 test('interest plans are editable, validated and opt out by interest', async ({ page }) => {
   await page.goto('');
-  await page.getByRole('button', { name: 'Interests', exact: true }).click();
+  await following(page, 'Interests');
   await page.getByRole('button', { name: 'Add question', exact: true }).click();
   await page
     .getByRole('checkbox', { name: /^Allow shared source acquisition/ })
@@ -266,7 +296,7 @@ test('interest plans are editable, validated and opt out by interest', async ({ 
 
 test('source settings and owned cancellation remain usable', async ({ page }) => {
   await page.goto('');
-  await page.getByRole('button', { name: 'Sources', exact: true }).click();
+  await following(page, 'Sources');
   await page.getByText('Configured acquisition and extraction providers', { exact: true }).click();
   await expect(page.getByText('searxng: unconfigured', { exact: true })).toBeVisible();
   await expect(page.getByText('last30days: unconfigured', { exact: true })).toBeVisible();
@@ -275,19 +305,18 @@ test('source settings and owned cancellation remain usable', async ({ page }) =>
   await page.getByRole('button', { name: 'Add followed source', exact: true }).click();
   await page.getByRole('button', { name: 'Save settings', exact: true }).click();
   await page.reload();
-  await page.getByRole('button', { name: 'Sources', exact: true }).click();
+  await following(page, 'Sources');
   await expect(page.getByRole('group', { name: 'Private followed feed' })).toBeVisible();
-  await page.getByRole('button', { name: 'Search Signals', exact: true }).click();
-  await page.getByLabel('Research question').fill('cancellation fixture');
-  await page.getByRole('button', { name: 'Start search', exact: true }).click();
+  await research(page, 'cancellation fixture');
+  await page.getByRole('button', { name: 'Start online research', exact: true }).click();
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(page.getByText(/Research cancelled/)).toBeVisible();
 });
 
 test('provisional leads are separate from final savable evidence', async ({ page }) => {
   await page.goto('');
-  await page.getByLabel('Research question').fill('cancellation fixture');
-  await page.getByRole('button', { name: 'Start search', exact: true }).click();
+  await research(page, 'cancellation fixture');
+  await page.getByRole('button', { name: 'Start online research', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Provisional research leads' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Research brief' })).toContainText(
     'This original answer is ready before source checks finish.',
@@ -303,7 +332,7 @@ test('provisional leads are separate from final savable evidence', async ({ page
 
 test('Jobs runs a finite disabled activation without enabling recurrence', async ({ page }) => {
   await page.goto('');
-  await page.getByRole('button', { name: 'Jobs', exact: true }).click();
+  await destination(page, 'Activity');
   await page.getByRole('button', { name: 'Run due once', exact: true }).click();
   await expect(page.getByRole('status')).toContainText('No due jobs activated.');
   await expect(page.getByLabel('Enable query discovery', { exact: true })).not.toBeChecked();

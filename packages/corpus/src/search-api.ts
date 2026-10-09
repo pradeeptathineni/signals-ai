@@ -32,6 +32,30 @@ import { runDueOnce, refreshRequest } from './search-scheduler.js';
 import { answerFromEvidence } from './search-followup.js';
 import { checkPrimaryMaterial } from './search-reuse.js';
 import { selectSavedEntity } from './search-selection.js';
+import { loadLibrary, setLibrarySaved, retainedIntroducingParent } from './library.js';
+import { previewProject, type ProjectPreview } from './project-preview.js';
+import {
+  loadProjects,
+  registerProject,
+  updateProject,
+  disconnectProject,
+  listOpportunities,
+  attachOpportunity,
+  updateOpportunity,
+  associateOpportunity,
+  importContextOpportunities,
+  projectMatches,
+  projectHistory,
+  projectResearchPreview,
+  projectAiSetup,
+} from './projects.js';
+import {
+  checked,
+  previewRequestSchema,
+  registerRequestSchema,
+  projectIdSchema,
+  type ProjectSource,
+} from './project-contract.js';
 import {
   runQueryListOnce,
   queryBatchHistory,
@@ -89,6 +113,7 @@ export function searchApi(
 ) {
   const token = randomBytes(32).toString('hex');
   const runs = new Map<string, ActiveRun>();
+  const previews = new Map<string, ProjectPreview>();
   const pruneRuns = () => {
     for (const [key, run] of runs) {
       if (runs.size <= 30) break;
@@ -148,6 +173,75 @@ export function searchApi(
         });
       else if (route === 'settings')
         json(200, mutation ? await saveSettings(body, root) : await loadSettings(root));
+      else if (route === 'library' && !mutation) json(200, { findings: await loadLibrary(root) });
+      else if (route === 'library-saved' && mutation) {
+        const schema = Type.Object(
+          {
+            key: Type.String({ minLength: 1, maxLength: 300 }),
+            saved: Type.Boolean(),
+            note: Type.Optional(Type.String({ maxLength: 4000 })),
+            feedback: Type.Optional(Type.Enum(['none', 'skip', 'mute', 'useful'])),
+            novelty: Type.Optional(Type.Enum(['confirmed-new', 'known', 'unknown'])),
+          },
+          { additionalProperties: false },
+        );
+        if (!Value.Check(schema, body)) throw new Error('invalid_library_saved');
+        const { key, saved, ...patch } = body;
+        await setLibrarySaved(root, key, saved, patch);
+        json(200, { key, saved });
+      } else if (route === 'projects' && !mutation)
+        json(200, { projects: (await loadProjects(root)).projects });
+      else if (route === 'projects/preview' && mutation) {
+        const request = checked<{ source: ProjectSource }>(previewRequestSchema, body);
+        for (const [id, entry] of previews)
+          if (Date.parse(entry.expiresAt) <= Date.now()) previews.delete(id);
+        if (previews.size >= 10) throw new Error('too_many_project_previews');
+        const preview = await previewProject(request.source, root);
+        previews.set(preview.id, preview);
+        json(200, preview);
+      } else if (route === 'projects/register' && mutation) {
+        const request = checked<{
+          previewId: string;
+          name: string;
+          purpose: string;
+          constraints: string[];
+        }>(registerRequestSchema, body);
+        const preview = previews.get(request.previewId);
+        if (!preview || Date.parse(preview.expiresAt) <= Date.now())
+          throw new Error('project_preview_expired');
+        const project = await registerProject(root, {
+          ...preview.project,
+          name: request.name,
+          purpose: request.purpose,
+          constraints: request.constraints,
+        });
+        previews.delete(request.previewId);
+        json(200, project);
+      } else if (route === 'projects/update' && mutation)
+        json(200, await updateProject(root, body));
+      else if (route === 'projects/disconnect' && mutation) {
+        const request = checked<{ id: string }>(projectIdSchema, body);
+        json(200, await disconnectProject(root, request.id));
+      } else if (route === 'projects/matches' && mutation) {
+        const request = checked<{ id: string }>(projectIdSchema, body);
+        json(200, await projectMatches(root, request.id));
+      } else if (route === 'projects/history' && mutation) {
+        const request = checked<{ id: string }>(projectIdSchema, body);
+        json(200, await projectHistory(root, request.id));
+      } else if (route === 'projects/research-preview' && mutation)
+        json(200, await projectResearchPreview(root, body));
+      else if (route === 'projects/ai-setup' && mutation)
+        json(200, await projectAiSetup(root, body));
+      else if (route === 'opportunities' && !mutation)
+        json(200, { opportunities: await listOpportunities(root) });
+      else if (route === 'opportunities/attach' && mutation)
+        json(200, await attachOpportunity(root, body));
+      else if (route === 'opportunities/update' && mutation)
+        json(200, await updateOpportunity(root, body));
+      else if (route === 'opportunities/project' && mutation)
+        json(200, await associateOpportunity(root, body));
+      else if (route === 'opportunities/import' && mutation)
+        json(200, await importContextOpportunities(root, body));
       else if (route === 'source-scan' && mutation) {
         if (
           !Value.Check(
@@ -196,18 +290,7 @@ export function searchApi(
                 item.discovery?.linkVerified &&
                 item.discovery.provenanceBasis === 'configured-source',
             )?.discovery?.parentUri;
-          if (!introducing) {
-            for (const selection of (await selectionHistory(root))
-              .filter((selection) => selection.selected.includes(body.id))
-              .reverse()) {
-              const frozen = await loadRun(selection.runId, root).catch(() => null);
-              const trail = frozen?.items.find((item) => item.entity.id === body.id)?.discovery;
-              if (trail?.linkVerified && trail.provenanceBasis === 'configured-source') {
-                introducing = trail.parentUri;
-                break;
-              }
-            }
-          }
+          if (!introducing) introducing = await retainedIntroducingParent(root, body.id);
           json(
             200,
             await updatePersonal(

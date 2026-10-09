@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import type { loadPublicCorpus } from './public-corpus.js';
 import { parsePublicIndex } from '../../domain/src/public-index.js';
 import type { StoredEntity } from './search-store.js';
+import { projectLegacyLibrary, projectNativeLibrary } from '../../domain/src/library-search.js';
 
 /** Complete immutable derived bytes before atomically switching the public-data pointer. */
 export async function publishPublicData(
@@ -24,6 +25,12 @@ export async function publishPublicData(
   const staging = await mkdtemp(join(resolve(directory), 'public-snapshot-'));
   await writeFile(join(staging, 'corpus.json'), `${JSON.stringify(corpus.options, null, 2)}\n`);
   await writeFile(join(staging, 'entities.json'), `${JSON.stringify(entities, null, 2)}\n`);
+  // Derive only from the approved public inputs. Local annotations and projects never enter this view.
+  const library = [
+    ...entities.map((record) => projectNativeLibrary(record, 'public')),
+    ...corpus.options.map(projectLegacyLibrary),
+  ];
+  await writeFile(join(staging, 'library.json'), `${JSON.stringify(library, null, 2)}\n`);
   await mkdir(join(staging, 'bundles'));
   for (const { bundle, admission, bytes } of corpus.bundles) {
     await writeFile(join(staging, 'bundles', `${bundle.bundle_id}.json`), bytes);

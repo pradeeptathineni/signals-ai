@@ -34,7 +34,7 @@ const server = createServer((request, response) => {
     }
     const path = raw.slice('/signals-ai/'.length) || 'index.html';
     if (
-      !/^(?:index\.html|corpus\.json|entities\.json|assets\/[a-zA-Z0-9._-]+|bundles\/[a-zA-Z0-9._-]+)$/.test(
+      !/^(?:index\.html|corpus\.json|entities\.json|library\.json|assets\/[a-zA-Z0-9._-]+|bundles\/[a-zA-Z0-9._-]+)$/.test(
         path,
       )
     ) {

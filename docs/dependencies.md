@@ -1,5 +1,11 @@
 # Dependency baseline
 
+The corpus-first experience reuses MiniSearch 7.2.0 for one native/legacy metadata index,
+React 19.3.0 for the local desk, and the existing Playwright/axe infrastructure. Project previews
+use the existing safe fetch and Node filesystem primitives; no crawler, GitHub SDK, database,
+auth service or agent runtime was added. The portable Context request is data only. Dependency
+and lockfile versions are unchanged by ADR-016.
+
 The 2026-10-08 gate identified Handlebars JavaScript-injection advisories
 [GHSA-8r5x-fm3f-whwj](https://github.com/advisories/GHSA-8r5x-fm3f-whwj),
 [GHSA-p8wg-vrv2-v86f](https://github.com/advisories/GHSA-p8wg-vrv2-v86f) and

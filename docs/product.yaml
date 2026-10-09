@@ -163,8 +163,8 @@ features:
     role: core
     type: retrieval
     intent:
-      Search retained knowledge without AI when sufficient, and use relevant evidence for AI follow-ups
-      without unnecessarily repeating research.
+      Search the eligible retained corpus without paid inference using meaningful metadata; distinguish local
+      retrieval from explicit new research and grounded follow-ups over selected evidence.
     assessment:
       delivery: working
       value: 2
@@ -215,8 +215,8 @@ features:
     role: supporting
     type: ui
     intent:
-      Provide one local workbench for search, inbox, corpus, comparisons, source management, jobs,
-      and settings.
+      Provide a clear workspace for Search, Projects, Library and Following, with evidence, costs,
+      progress, jobs and settings revealed where they matter.
     assessment:
       delivery: working
       value: 1
@@ -229,8 +229,8 @@ features:
     role: supporting
     type: publishing
     intent:
-      Publish deliberately selected corpus content as a read-only site and structured data, derived
-      from canonical records rather than maintained separately.
+      Publish only approved canonical findings through a read-only searchable site with no paid inference
+      for ordinary browsing and no private project or runtime information.
     assessment:
       delivery: working
       value: 1
@@ -368,3 +368,35 @@ features:
           'private:verify-final-candidate.log',
         ]
       limitations: 'Exact development Handlebars security patch verified; existing narrowly scoped Repomix advisory waiver remains visible. Tested safeguards do not establish perfect semantic accuracy.'
+  - id: projects
+    name: Projects
+    role: core
+    type: configuration
+    intent:
+      Register selected GitHub repositories, VCS checkouts or local folders and maintain editable,
+      permission-scoped project context for useful corpus-backed recommendations.
+    assessment:
+      delivery: working
+      value: 2
+      scope: 'Actual pinned GitHub Labs README and explicit non-Git study folder; bounded previews, editable constraints, snapshot history and disconnect.'
+      assessed_ref: null
+      evidence: ['packages/corpus/src/projects.test.ts', 'private:experience-20261008/after.json']
+      limitations: 'Agent-verified functional scope only; personal usefulness unassessed. Local working-copy cleanliness is unknown, not treated as a verified commit. Finite document allowlist is not a whole-repository audit.'
+  - id: project-opportunities
+    name: Project opportunities
+    role: core
+    type: assessment
+    intent:
+      Connect actual project needs to retained or newly researched knowledge, tools, practices and ideas,
+      with evidence, constraints, decisions and next actions in the local portal.
+    assessment:
+      delivery: working
+      value: 2
+      scope: 'All 13 Context originals migrated unchanged; actual Labs learning and Boston winter-study associations retain evidence, need, reason and personal decision. Frozen Context v3 plan-only handoff.'
+      assessed_ref: null
+      evidence:
+        [
+          'packages/corpus/src/projects.test.ts',
+          'private:experience-20261008/migration-receipt-v1.json',
+        ]
+      limitations: 'No automatic semantic fit or human usefulness claim. AI setup requests grant plan-only authority to Context.'

@@ -26,7 +26,33 @@ import { rejectedNativeLeads } from '../../../packages/domain/src/search-rejecte
 const local = (window as Window & { __SIGNALS_LOCAL__?: boolean }).__SIGNALS_LOCAL__ === true;
 const base = import.meta.env.BASE_URL;
 const settingsTabs = ['Settings', 'Interests', 'Sources', 'Jobs'];
-export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
+export function Workbench({
+  legacyCorpus,
+  embedded = false,
+  requestedTab,
+  question,
+  reopenRun,
+  onCompleted,
+  onOpenResult,
+  providedContext,
+  providedContextKey,
+  providedContextLabel,
+  providedProfile,
+  monitorRun,
+}: {
+  legacyCorpus: ReactNode;
+  embedded?: boolean;
+  requestedTab?: string;
+  question?: string;
+  reopenRun?: string;
+  onCompleted?: (runId: string) => void;
+  onOpenResult?: (runId: string, restoredQuery?: string) => void;
+  providedContext?: string;
+  providedContextKey?: string;
+  providedContextLabel?: string;
+  providedProfile?: 'quick' | 'wide';
+  monitorRun?: string;
+}) {
   const [tab, setTab] = useState(local ? 'Search' : 'Corpus');
   const [token, setToken] = useState(''),
     [ready, setReady] = useState('Checking runner…');
@@ -38,7 +64,40 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
     [result, setResult] = useState<SearchResult | null>(null);
   const [earlyBrief, setEarlyBrief] = useState<SearchResult['brief']>();
   const [captureUrl, setCaptureUrl] = useState('');
-  const [context, setContext] = useState('');
+  const [manualContext, setManualContext] = useState('');
+  const [editedContext, setEditedContext] = useState<{
+    key: string | undefined;
+    text: string;
+    label: string;
+  } | null>(null);
+  const [heldContexts, setHeldContexts] = useState<
+    { key: string | undefined; text: string; label: string }[]
+  >([]);
+  const context =
+    providedContext === undefined
+      ? manualContext
+      : editedContext && editedContext.key === providedContextKey
+        ? editedContext.text
+        : providedContext;
+  function setContext(text: string) {
+    if (providedContext !== undefined)
+      setEditedContext({
+        key: providedContextKey,
+        text,
+        label: providedContextLabel ?? 'An approved project question',
+      });
+    else setManualContext(text);
+  }
+  useEffect(() => {
+    if (editedContext && editedContext.key !== providedContextKey) {
+      // An edited project preview stays held; withdrawal never promotes it into general egress.
+      setHeldContexts((current) => [
+        ...current.filter((draft) => draft.key !== editedContext.key),
+        editedContext,
+      ]);
+      setEditedContext(null);
+    }
+  }, [editedContext, providedContextKey]);
   const [groupPlan, setGroupPlan] = useState('[]');
   const [personal, setPersonal] = useState<Record<string, PersonalState>>({});
   const [inbox, setInbox] = useState<InboxEntry[]>([]);
@@ -101,6 +160,29 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
       queryId?: string;
     }[]
   >([]);
+  useEffect(() => {
+    if (requestedTab) setTab(requestedTab);
+    if (requestedTab === 'Jobs') void action(loadHistory);
+  }, [requestedTab]);
+  useEffect(() => {
+    if (question !== undefined) setQuery(question);
+  }, [question]);
+  useEffect(() => {
+    if (reopenRun) void action(() => openRun(reopenRun));
+  }, [reopenRun]);
+  useEffect(() => {
+    if (monitorRun) {
+      setRun(monitorRun);
+      setBusy(true);
+      setTab('Search');
+      setResult(null);
+      setEarlyBrief(undefined);
+      setEvents(['Opening active research…']);
+    }
+  }, [monitorRun]);
+  useEffect(() => {
+    if (result && onCompleted) onCompleted(result.runId);
+  }, [result?.runId]);
   async function api<T>(route: string, body?: unknown): Promise<T> {
     let requestToken = token;
     if (body !== undefined && !requestToken) {
@@ -219,6 +301,7 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
           setResult(state.result);
           if (reopening.current) {
             setQuery(state.result.query);
+            onOpenResult?.(state.result.runId, state.result.query);
             reopening.current = false;
           }
           setBusy(false);
@@ -298,7 +381,7 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
             context,
             captureUrls,
             supplementalSites,
-            profile: settings?.profile ?? 'wide',
+            profile: providedProfile ?? settings?.profile ?? 'wide',
             save: 'never',
             cache: 'private',
           },
@@ -332,6 +415,7 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
   );
   async function openRun(runId: string) {
     const opened = await api<{ id: string }>('history/open', { runId });
+    onOpenResult?.(runId);
     setRun(opened.id);
     reopening.current = true;
     setBusy(true);
@@ -374,36 +458,40 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
       setAnswerBusy(false);
     }
   }
-  const Container = tab === 'Corpus' ? 'section' : 'main';
+  const Container = embedded || tab === 'Corpus' ? 'section' : 'main';
   return (
     <>
-      <a className="skip-link" href={tab === 'Corpus' ? '#results' : '#workbench-content'}>
-        Skip to {tab === 'Corpus' ? 'findings' : 'search'}
-      </a>
-      <nav className="workbench-nav" aria-label="Signals destinations">
-        <a href={base} className="brand">
-          Signals
+      {!embedded && (
+        <a className="skip-link" href={tab === 'Corpus' ? '#results' : '#workbench-content'}>
+          Skip to {tab === 'Corpus' ? 'findings' : 'search'}
         </a>
-        {(local
-          ? ['Search', 'Inbox', 'Corpus', 'Interests', 'Sources', 'Jobs', 'Settings']
-          : ['Corpus']
-        ).map((destination) => (
-          <button
-            key={destination}
-            aria-current={tab === destination ? 'page' : undefined}
-            onClick={() => {
-              setTab(destination);
-              setFilters({});
-              setSelected([]);
-              setAnswer(null);
-              if (destination === 'Jobs') void action(loadHistory);
-            }}
-          >
-            {destination === 'Search' ? 'Search Signals' : destination}
-          </button>
-        ))}
-        <span>{local ? 'Local workbench' : 'Public corpus · read only'}</span>
-      </nav>
+      )}
+      {!embedded && (
+        <nav className="workbench-nav" aria-label="Signals destinations">
+          <a href={base} className="brand">
+            Signals
+          </a>
+          {(local
+            ? ['Search', 'Inbox', 'Corpus', 'Interests', 'Sources', 'Jobs', 'Settings']
+            : ['Corpus']
+          ).map((destination) => (
+            <button
+              key={destination}
+              aria-current={tab === destination ? 'page' : undefined}
+              onClick={() => {
+                setTab(destination);
+                setFilters({});
+                setSelected([]);
+                setAnswer(null);
+                if (destination === 'Jobs') void action(loadHistory);
+              }}
+            >
+              {destination === 'Search' ? 'Search Signals' : destination}
+            </button>
+          ))}
+          <span>{local ? 'Local workbench' : 'Public corpus · read only'}</span>
+        </nav>
+      )}
       <Container id="workbench-content" className="workbench" aria-label="Native Signals entities">
         <dialog ref={evidenceDialog} aria-label="Evidence preview" onClose={() => setPreview(null)}>
           {preview && (
@@ -1222,14 +1310,16 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
           </section>
         ) : (
           <>
-            <section className="intro">
-              <h1>{tab === 'Search' ? 'Search Signals' : 'Your saved knowledge.'}</h1>
-              <p>
-                {tab === 'Search'
-                  ? 'Find worthwhile possibilities for your question, with a practical brief and evidence you can inspect.'
-                  : 'Search, compare and follow up on retained findings. Filtering works without AI.'}
-              </p>
-            </section>
+            {!embedded && (
+              <section className="intro">
+                <h1>{tab === 'Search' ? 'Search Signals' : 'Your saved knowledge.'}</h1>
+                <p>
+                  {tab === 'Search'
+                    ? 'Find worthwhile possibilities for your question, with a practical brief and evidence you can inspect.'
+                    : 'Search, compare and follow up on retained findings. Filtering works without AI.'}
+                </p>
+              </section>
+            )}
             {tab === 'Search' && (
               <>
                 {inbox.length > 0 && (
@@ -1241,10 +1331,10 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                     void action(() => start(undefined, query, undefined, context));
                   }}
                 >
-                  <label>
+                  <label hidden={embedded}>
                     Research question
                     <textarea
-                      required
+                      required={!embedded}
                       maxLength={2000}
                       value={query}
                       onChange={(event) => setQuery(event.target.value)}
@@ -1256,6 +1346,7 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                     <label>
                       Context for this question
                       <textarea
+                        aria-label="Context for this question"
                         maxLength={4000}
                         value={context}
                         onChange={(event) => setContext(event.target.value)}
@@ -1263,6 +1354,20 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                       />
                     </label>
                     <p>This context stays in private research history.</p>
+                    {heldContexts.length > 0 && (
+                      <section aria-label="Held project drafts">
+                        <p>
+                          Edited project drafts are retained in this browser session for inspection.
+                          They are not included in current or general research requests.
+                        </p>
+                        {heldContexts.map((draft, index) => (
+                          <details key={draft.key ?? index}>
+                            <summary>Held project draft: {draft.label}</summary>
+                            <pre>{draft.text}</pre>
+                          </details>
+                        ))}
+                      </section>
+                    )}
                   </details>
                   <p>{ready}</p>
                   <label>
@@ -1293,13 +1398,13 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
                     Capture URL
                   </button>
                   <p>
-                    {settings?.profile ?? 'wide'} budget:{' '}
-                    {JSON.stringify(budgets[settings?.profile ?? 'wide'])}. Review before saving;
-                    results retained privately.
+                    {providedProfile ?? settings?.profile ?? 'wide'} budget:{' '}
+                    {JSON.stringify(budgets[providedProfile ?? settings?.profile ?? 'wide'])}.
+                    Review before saving; results retained privately.
                   </p>
                   <div className="actions">
                     <button disabled={busy || sourceBusy || !token || !query.trim()} type="submit">
-                      Start search
+                      {embedded ? 'Start online research' : 'Start search'}
                     </button>
                     <button
                       disabled={busy || sourceBusy || !result}
@@ -2110,14 +2215,16 @@ export function Workbench({ legacyCorpus }: { legacyCorpus: ReactNode }) {
         ) : (
           legacyCorpus
         ))}
-      <nav className="workbench-footer" aria-label="Data downloads">
-        <p>
-          {local
-            ? 'Saving is local. Commit and push reviewed corpus changes separately to publish.'
-            : 'This static public view can browse and compare saved knowledge. Run the local workbench for AI search, saving and discovery.'}
-        </p>
-        <a href={`${base}entities.json`}>Native entity download</a>
-      </nav>
+      {!embedded && (
+        <nav className="workbench-footer" aria-label="Data downloads">
+          <p>
+            {local
+              ? 'Saving is local. Commit and push reviewed corpus changes separately to publish.'
+              : 'This static public view can browse and compare saved knowledge. Run the local workbench for AI search, saving and discovery.'}
+          </p>
+          <a href={`${base}entities.json`}>Native entity download</a>
+        </nav>
+      )}
     </>
   );
 }

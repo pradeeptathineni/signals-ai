@@ -78,3 +78,23 @@ it('preserves an existing directory rather than attempting a non-atomic conversi
     'retained output',
   );
 });
+
+it('builds the library only from approved public inputs, independently of private collection state', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'signals-public-library-'));
+  directories.push(directory);
+  await mkdir(join(directory, '.signals'));
+  await writeFile(
+    join(directory, '.signals', 'library-state.json'),
+    JSON.stringify({
+      secret: 'PRIVATE NOTE AND PROJECT CONTEXT',
+    }),
+  );
+  const corpus = await loadPublicCorpus();
+  await publishPublicData(corpus, directory);
+  const bytes = await readFile(join(directory, 'public-data', 'library.json'), 'utf8');
+  const library = JSON.parse(bytes) as { id: string; origin: { destination: string } }[];
+  expect(library.map((finding) => finding.id)).toEqual(corpus.options.map((option) => option.id));
+  expect(library.every((finding) => finding.origin.destination === 'public')).toBe(true);
+  expect(bytes).not.toContain('PRIVATE NOTE');
+  expect(bytes).not.toContain('.signals');
+});

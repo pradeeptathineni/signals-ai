@@ -1,5 +1,16 @@
 # Data map
 
+The corpus-first workspace adds a derived `library.json` from approved public native/legacy inputs. Local retrieval additionally reads private native records and a bounded private collection annotation ledger; neither enters public assets. Project registration, source snapshots, contextual opportunities and imported Context records remain under `.signals/`. Their identifiers, source basis, decisions and evidence references are separate from intrinsic entity evidence and scores. Context migration preserves the original record object and source digest, with no inferred admission or installation authority. See ADR-016 and the closed project/library contracts.
+
+`projects.json` owns explicit registration, current context, immutable imported source objects and
+personal opportunity decisions. Private append-only project history retains each source/context
+basis before edits, refresh or disconnect, up to 64 entries per project; a full history rejects the
+change instead of dropping old context. `library-state.json` owns saved selection and legacy
+annotations. Native annotations remain in `personal.json`. Stable format/destination-qualified
+library keys prevent ambiguous native/legacy or public/private identity selection. Context v3
+requests preserve namespaced opportunity IDs and enforce its separate text/count/byte limits;
+omitted references remain in the original local record and are counted outside the portable request.
+
 Native brief v3 adds the original Markdown answer before compact candidate metadata. Run snapshots retain optional `brief` and invalid `provisionalLeads`; they never turn invalid leads into entities. Legacy native v1/v2/full proposals remain ingestion-only decoders. `settings.acquisitionGroups` holds inspectable native-authored pool suggestions with per-interest opt-out; batch plans freeze compatible scopes. Per-interest final assessments remain separate. Due job receipts retain conditional primary-check results and source state retains the last successful material after access failure.
 
 Query items add optional discovery parent/query provenance, contextual priority/actions/constraints/relationships and a delta against the saved entity. None of these fields enter the intrinsic canonical entity. `.signals/personal.json`, `inbox.json`, `source-state.json` and `providers.json` are private, schema-validated state, excluded from assets and exchange. Native schema-v1 exchange remains frozen; `signals-ai.contextual-priority` is an optional advisory extension (schema_version 1), accepting contextual-priority-v1/v2 without private notes/feedback. V2 holds ungrounded use/wrap/adapt proposals at study with null priority and preserves `proposedAction` on the query item. Such leads remain candidates but are excluded from recommendations. Discovery's optional `provenanceBasis` and `proposedIntroducedBy` distinguish deterministic binding from a model assertion. Source health adds optional `scans`, `resultExposures` and per-entity explicit `feedbackByEntity` while continuing to read historical records.

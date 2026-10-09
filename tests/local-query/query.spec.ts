@@ -6,8 +6,8 @@ test('a local user saves an ordinary question without writing evidence artifacts
   request,
 }) => {
   await page.goto('./');
-  await page.getByRole('button', { name: 'Corpus', exact: true }).click();
-  await page.getByLabel('Search keywords').fill('toilet dye');
+  await page.getByLabel('Find something useful', { exact: true }).fill('toilet dye');
+  await page.getByText('Keep a historical corpus question', { exact: true }).click();
   const reply = page.waitForResponse(
     (r) => r.url().endsWith('/__signals/query') && r.request().method() === 'POST',
   );

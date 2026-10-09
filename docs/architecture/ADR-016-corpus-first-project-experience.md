@@ -1,0 +1,15 @@
+# ADR-016: Corpus-first workspace and project ownership
+
+Status: accepted for the local experience update, October 8, 2026.
+
+Continue from local owner38606330, retaining ADR-015's native research loop and ADR-011/009 evidence, scoring and history meanings. The starting UI opened in research mode and separated native findings from earlier public findings. Finding saved knowledge required navigation before typing; project context and general opportunities had no Signals owner surface.
+
+Use Search / Projects / Library / Following as the primary workspace. MiniSearch derives one browser projection from every eligible native and legacy finding. Captured titles, descriptions, aliases, kinds, capabilities, technologies, domains and sources support literal, phrase, prefix and fuzzy retrieval. Private notes join only the local index. Rank expresses retrieval, never signal strength. Unknown license/access stays unknown; no inferred open-source or free status. Missing semantic coverage remains visible rather than filled with synthetic candidates or example-specific logic.
+
+Keep native research and maintenance behind explicit actions. The reused Workbench supplies capture, inbox, follow-up, interests, sources, jobs and settings inside the same shell. Browsing starts no model task or source scan and remains available during active research. Query/filter/record/project state is addressable through the URL. Public builds contain a derived library from approved canonical inputs, with no private collection/project context or local inference bridge.
+
+Signals owns the permission-scoped project registry and general opportunities. Fixed bounded documentation/manifest reads produce an inspectable source snapshot; no repository instructions or scripts run. Selected public GitHub revisions and local working snapshots have different bases. Local paths remain local. Summary and exact external-research context are previewed. User edits, decisions and evidence references persist separately from immutable source snapshots. Updating or disconnecting access must preserve saved findings and make stale assumptions visible.
+
+Context exports existing general opportunities once; Signals imports original identities, annotations, status, scope and provenance idempotently. Imported discoveries stay labelled known/migrated. Context remains the sole AI equipment/loadout/delivery authority. The portable AI setup request contains a selected project reference, engineering need, findings and constraints; it grants no installation or execution permission. A public page cannot invoke local programs.
+
+Consequences: one active corpus/project experience replaces the duplicate browse surfaces; no new search service, embeddings, scheduler, hosted authentication or model download. Context guidance is an instruction-only selection. Before/after real-app tasks, migration recovery and project-aware findings establish the scoped functional result; tests, hashes and screenshots do not establish human usefulness or research superiority. Private receipts remain in the sister planning folder.
