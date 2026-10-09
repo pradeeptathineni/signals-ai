@@ -379,7 +379,7 @@ features:
       delivery: working
       value: 2
       scope: 'Actual pinned GitHub Labs README and explicit non-Git study folder; bounded previews, editable constraints, snapshot history and disconnect.'
-      assessed_ref: null
+      assessed_ref: 8c0095e05bd73f4d60fa070614d38e4e02baeb16
       evidence: ['packages/corpus/src/projects.test.ts', 'private:experience-20261008/after.json']
       limitations: 'Agent-verified functional scope only; personal usefulness unassessed. Local working-copy cleanliness is unknown, not treated as a verified commit. Finite document allowlist is not a whole-repository audit.'
   - id: project-opportunities
@@ -393,10 +393,12 @@ features:
       delivery: working
       value: 2
       scope: 'All 13 Context originals migrated unchanged; actual Labs learning and Boston winter-study associations retain evidence, need, reason and personal decision. Frozen Context v3 plan-only handoff.'
-      assessed_ref: null
+      assessed_ref: 8c0095e05bd73f4d60fa070614d38e4e02baeb16
       evidence:
         [
           'packages/corpus/src/projects.test.ts',
-          'private:experience-20261008/migration-receipt-v1.json',
+          'private:experience-20261008/migration-final.json',
+          'private:experience-20261008/DATA-MIGRATION.json',
+          'private:experience-20261008/CONTEXT-HANDOFF.json',
         ]
       limitations: 'No automatic semantic fit or human usefulness claim. AI setup requests grant plan-only authority to Context.'
