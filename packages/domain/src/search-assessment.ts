@@ -168,7 +168,7 @@ const attentionAnchors = {
   mentions: 10,
 };
 
-/** v7 consumes retained model judgments; it never reinterprets historical v0–v6 credit. */
+/** Each successor consumes retained judgments under its declared replay policy. */
 export function assessSuccessor(
   entity: Pick<
     Entity,
@@ -177,6 +177,7 @@ export function assessSuccessor(
   asOf: string,
   active: Entity['observations'],
   originGroups: Map<string, string>,
+  policy: 'signal-strength-v7' | 'signal-strength-v8' = 'signal-strength-v7',
 ): Assessment {
   const basis = entity.signalBasis;
   if (basis && !Value.Check(signalBasisSchema, basis)) throw new Error('invalid_signal_basis');
@@ -303,12 +304,24 @@ export function assessSuccessor(
       basis: ['defining', 'authority'],
       work: ['verification', 'maturity', 'adoption', 'corroboration', 'risk'],
       scrutiny: ['verification', 'adoption', 'corroboration', 'risk'],
-      applicability: ['currentness', 'authority', 'risk'],
+      applicability: [
+        'currentness',
+        'authority',
+        'risk',
+        ...(policy === 'signal-strength-v8' && basis?.rubric !== 'standard-v1'
+          ? ['verification']
+          : []),
+      ],
     };
     const bound = usable.filter(
       (item) =>
         judgment?.observations.includes(item.id) &&
         permitted[name].includes(item.feature) &&
+        !(
+          name === 'applicability' &&
+          item.feature === 'verification' &&
+          item.indicator !== 'inspectable'
+        ) &&
         item.indicator !== 'unknown' &&
         !(name === 'work' && ['attention', 'promotion', 'mention'].includes(item.indicator)),
     );
@@ -341,11 +354,16 @@ export function assessSuccessor(
               item.indicator as 'secondary'
             ] ?? 0);
       if (name === 'applicability')
-        return item.feature === 'currentness'
-          ? ({ current: 4, 'minor-gaps': 3, mixed: 2, stale: 1 }[item.indicator as 'current'] ?? 0)
-          : ({ secondary: 1, primary: 2, recognized: 3, 'formal-current': 4 }[
-              item.indicator as 'secondary'
-            ] ?? 0);
+        return item.feature === 'verification'
+          ? item.indicator === 'inspectable'
+            ? 1
+            : 0
+          : item.feature === 'currentness'
+            ? ({ current: 4, 'minor-gaps': 3, mixed: 2, stale: 1 }[item.indicator as 'current'] ??
+              0)
+            : ({ secondary: 1, primary: 2, recognized: 3, 'formal-current': 4 }[
+                item.indicator as 'secondary'
+              ] ?? 0);
       if (item.feature === 'verification')
         return (
           {
@@ -503,7 +521,7 @@ export function assessSuccessor(
       ? 'provisional'
       : 'assessed';
   return {
-    policy: 'signal-strength-v7',
+    policy,
     asOf,
     score: failures.length
       ? null

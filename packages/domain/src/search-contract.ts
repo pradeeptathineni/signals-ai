@@ -161,7 +161,9 @@ export const candidateSchema = Type.Object(
 );
 export const proposalSchema = Type.Object(
   {
-    assessmentPolicy: Type.Optional(Type.Literal('signal-strength-v7')),
+    assessmentPolicy: Type.Optional(
+      Type.Union([Type.Literal('signal-strength-v7'), Type.Literal('signal-strength-v8')]),
+    ),
     interpretation: Type.Optional(interpretationSchema),
     sources: Type.Array(
       Type.Object(
@@ -303,7 +305,8 @@ export interface Assessment {
     | 'signal-strength-v4'
     | 'signal-strength-v5'
     | 'signal-strength-v6'
-    | 'signal-strength-v7';
+    | 'signal-strength-v7'
+    | 'signal-strength-v8';
   asOf: string;
   score: number | null;
   features: Record<

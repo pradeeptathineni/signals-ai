@@ -4,7 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { acceptDiscovery } from './signal-search.js';
-import { decodeNativeResearch } from '../../domain/src/search-native.js';
+import {
+  decodeNativeResearch,
+  nativeBriefSchema,
+  nativePrompt,
+} from '../../domain/src/search-native.js';
+import { Value } from 'typebox/value';
 import {
   assessEntity,
   filterSearchItems,
@@ -94,6 +99,44 @@ function native(version = 4) {
   };
 }
 const fetched = async (uri: string) => ({ uri, text: quote, digest: 'a'.repeat(64) });
+const scopeText = [
+  'The library performs bounded parsing.',
+  'The worked example returns a parsed object.',
+  'Redistribution is allowed under the MIT license; version 2 supports Python 3.11.',
+];
+function inspectedScope(version: number) {
+  const input = native(version);
+  const candidate = input.candidates[0]!;
+  candidate.observations = [
+    'defining/defines',
+    'verification/worked-example',
+    'verification/inspectable',
+  ].map((signal, index) => ({
+    ...fact(signal),
+    statement: scopeText[index]!,
+    quote: scopeText[index]!,
+  }));
+  candidate.signalJudgment.dimensions = {
+    basis: { level: 2, reason: 'Original defined scope.', observations: [0] },
+    work: { level: 2, reason: 'Concrete worked example.', observations: [1] },
+    scrutiny: { level: null, reason: 'Independent use not inspected.', observations: [] },
+    applicability: {
+      level: 1,
+      reason: 'Inspected licence and version prerequisites.',
+      observations: [2],
+    },
+  };
+  return input;
+}
+const acceptScope = (input = inspectedScope(5)) =>
+  acceptDiscovery(
+    input,
+    { query: 'Inspect a useful tool.', route: 'native', profile: 'wide' },
+    {
+      asOf: date,
+      fetch: async (uri) => ({ uri, text: scopeText.join(' '), digest: 'b'.repeat(64) }),
+    },
+  );
 async function accept(input = native()) {
   return acceptDiscovery(
     input,
@@ -103,6 +146,137 @@ async function accept(input = native()) {
 }
 
 describe('native successor assessment and historical capacity', () => {
+  it('advertises brief v5 in both the machine schema and native guidance', () => {
+    expect(Value.Check(nativeBriefSchema, native(5))).toBe(true);
+    expect(Value.Check(nativeBriefSchema, native(4))).toBe(false);
+    const prompt = nativePrompt({ query: 'Inspect a useful tool.' }, budgets.wide);
+    expect(prompt).toContain('Return version 5');
+    expect(prompt).toContain('belong to query relevance or contextual usefulness');
+  });
+  it('keeps identical brief-v4 evidence null under v7 and grants only limited v8 applicability', async () => {
+    const historical = (await acceptScope(inspectedScope(4))).items[0]!;
+    const current = (await acceptScope()).items[0]!;
+    expect(historical.entity.observations.every((item) => item.verified)).toBe(true);
+    expect(historical.entity.assessment).toMatchObject({
+      policy: 'signal-strength-v7',
+      score: null,
+      disposition: 'not-scoreable',
+    });
+    expect(historical.entity.assessment.features.applicability).toMatchObject({
+      contribution: 0,
+      state: 'unknown',
+    });
+    expect(current.entity.assessment).toMatchObject({
+      policy: 'signal-strength-v8',
+      score: 31,
+      disposition: 'provisional',
+    });
+    expect(current.entity.assessment.features.applicability).toMatchObject({
+      contribution: 6.25,
+      state: 'observed',
+    });
+    expect(current.entity.assessment.features.scrutiny?.contribution).toBe(0);
+    expect(personalSaveDecision(current.entity, current.match, current.relevance).eligible).toBe(
+      false,
+    );
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-policy-replay-')));
+    try {
+      for (const item of [historical, current]) {
+        expect(validateEntity(item.entity)).toEqual(item.entity);
+        const result = await acceptScope(inspectedScope(item === historical ? 4 : 5));
+        const stored: SearchResult = {
+          ...result,
+          schemaVersion: 2,
+          runId: randomUUID(),
+          query: 'Inspect a useful tool.',
+          status: 'completed',
+          limits: budgets.wide,
+          usage: {
+            searches: 0,
+            documents: 3,
+            elapsedMs: 0,
+            modelCalls: 0,
+            providerUsage: null,
+            cost: null,
+          },
+        };
+        await retainRun(stored, root);
+        expect((await loadRun(stored.runId, root)).items[0]?.entity.assessment).toEqual(
+          item.entity.assessment,
+        );
+        await saveEntities([item], 'manual', root, 'private', 75, true);
+        expect(
+          (await loadEntities(join(root, '.signals/corpus/entities')))[0]?.entity.assessment,
+        ).toEqual(item.entity.assessment);
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+  it('preserves legacy proposal dispatch and accepts explicit v8 without manufacturing maximum credit', async () => {
+    const proposal = decodeNativeResearch(inspectedScope(4)).proposal;
+    delete proposal.assessmentPolicy;
+    const dependencies = {
+      asOf: date,
+      fetch: async (uri: string) => ({ uri, text: scopeText.join(' '), digest: 'b'.repeat(64) }),
+    };
+    const request = {
+      query: 'Inspect a useful tool.',
+      route: 'native' as const,
+      profile: 'wide' as const,
+    };
+    expect(
+      (await acceptDiscovery(proposal, request, dependencies)).items[0]?.entity.assessment.policy,
+    ).toBe('signal-strength-v7');
+    proposal.assessmentPolicy = 'signal-strength-v8';
+    proposal.candidates[0]!.signalJudgment!.dimensions.applicability.level = 4;
+    const item = (await acceptDiscovery(proposal, request, dependencies)).items[0]!;
+    expect(item.entity.assessment.features.applicability?.contribution).toBe(6.25);
+    expect(item.entity.assessment.score).toBe(31);
+  });
+  it('holds missing, unverified, unknown and invalid-date applicability in v8', async () => {
+    for (const mode of ['missing', 'unverified', 'unknown', 'future', 'stale', 'wrong-class']) {
+      const item = (await acceptScope()).items[0]!;
+      const observation = item.entity.observations.find(
+        (entry) => entry.statement === scopeText[2],
+      )!;
+      if (mode === 'missing') item.entity.signalBasis!.dimensions.applicability.observations = [];
+      if (mode === 'unverified') observation.verified = false;
+      if (mode === 'unknown') observation.indicator = 'unknown';
+      if (mode === 'wrong-class') observation.indicator = 'worked-example';
+      if (mode === 'future' || mode === 'stale') {
+        const source = item.entity.evidence.find((entry) => entry.id === observation.evidenceId)!;
+        source.fetchedAt =
+          mode === 'future' ? '2027-10-10T00:00:00.000Z' : '2024-10-10T00:00:00.000Z';
+        item.entity.currentChecks![source.uri] = source.fetchedAt;
+      }
+      const assessment = assessEntity(item.entity, date, 'signal-strength-v8');
+      expect(assessment.score, mode).toBeNull();
+      expect(assessment.features.applicability?.contribution, mode).toBe(0);
+    }
+    for (const name of ['basis', 'work'] as const) {
+      const item = (await acceptScope()).items[0]!;
+      item.entity.signalBasis!.dimensions[name].observations = [];
+      expect(assessEntity(item.entity, date, 'signal-strength-v8').score).toBeNull();
+    }
+  });
+  it('retains v8 completed admission and material-failure ceilings', async () => {
+    const item = (await accept(native(5))).items[0]!;
+    expect(item.entity.assessment).toMatchObject({
+      policy: 'signal-strength-v8',
+      score: 81,
+      disposition: 'completed',
+    });
+    expect(personalSaveDecision(item.entity, item.match, item.relevance).eligible).toBe(true);
+    const input = native(5);
+    input.candidates[0]!.observations.push(fact('risk/material', 2, true));
+    const adverse = (await accept(input)).items[0]!;
+    expect(adverse.entity.assessment.features.work?.contribution).toBe(6.25);
+    expect(adverse.entity.assessment.features.applicability?.contribution).toBe(0);
+    expect(personalSaveDecision(adverse.entity, adverse.match, adverse.relevance).eligible).toBe(
+      false,
+    );
+  });
   it('accepts a justified high v7 through the ordinary native decoder and preserves replay', async () => {
     const result = await accept();
     const item = result.items[0]!;
@@ -289,71 +463,84 @@ describe('native successor assessment and historical capacity', () => {
       ).score,
     ).toBeNull();
   });
-  it('rejects ordinal promotion beyond inspected evidence classes and requires official standard status', async () => {
-    const promoted = native();
-    promoted.candidates[0]!.observations[2] = fact('verification/inspectable');
-    promoted.candidates[0]!.observations[3] = fact('authority/secondary');
-    promoted.candidates[0]!.signalJudgment.dimensions.work = {
-      level: 4,
-      reason: 'Unsupported maximum.',
-      observations: [2],
-    };
-    promoted.candidates[0]!.signalJudgment.dimensions.applicability.level = 4;
-    const item = (await accept(promoted)).items[0]!;
-    expect(item.entity.assessment.features.work?.contribution).toBe(6.25);
-    expect(item.entity.assessment.features.applicability?.contribution).toBe(6.25);
-    const standard = native();
-    standard.candidates[0]!.kind = 'standard';
-    standard.candidates[0]!.signalJudgment.rubric = 'standard-v1';
-    const official = (await accept(standard)).items[0]!;
-    expect(official.entity.assessment.features.basis?.contribution).toBe(10);
-    expect(official.entity.assessment.score).toBeNull();
-    expect(official.entity.assessment.reasons?.join(' ')).toContain('issuer');
-  });
-  it('removes future and stale scrutiny credit while keeping valid decisive evidence provisional', async () => {
-    for (const invalidDate of ['2027-10-10T00:00:00.000Z', '2024-10-10T00:00:00.000Z']) {
-      const item = (await accept()).items[0]!;
-      const scrutiny = item.entity.signalBasis!.dimensions.scrutiny.observations;
-      for (const source of item.entity.evidence)
-        if (
-          item.entity.observations.some(
-            (observation) =>
-              scrutiny.includes(observation.id) && observation.evidenceId === source.id,
-          )
-        ) {
-          source.fetchedAt = invalidDate;
-          item.entity.currentChecks![source.uri] = invalidDate;
-        }
-      // Keep work's valid creator example separate from invalid independent material.
-      item.entity.signalBasis!.dimensions.work.observations =
-        item.entity.signalBasis!.dimensions.work.observations.filter(
-          (id) => !scrutiny.includes(id),
-        );
-      const assessment = assessEntity(item.entity, date, 'signal-strength-v7');
-      expect(assessment.features.scrutiny?.contribution).toBe(0);
-      expect(assessment.disposition).toBe('provisional');
-      expect(assessment.nextVerification).toContain('current');
-    }
-  });
-  it('holds stale adverse evidence even when a dimension judgment omitted its reference', async () => {
-    const input = native();
-    input.sources.push({
-      ...input.sources[2]!,
-      uri: 'https://adverse.example.net/material',
-      publisher: 'Adverse inspector',
-      origin: 'adverse',
-    });
-    input.candidates[0]!.observations.push(fact('risk/decisive', 3, true));
-    const item = (await accept(input)).items[0]!;
-    const risk = item.entity.observations.find((entry) => entry.feature === 'risk')!;
-    const source = item.entity.evidence.find((entry) => entry.id === risk.evidenceId)!;
-    source.fetchedAt = '2024-10-10T00:00:00.000Z';
-    item.entity.currentChecks![source.uri] = source.fetchedAt;
-    item.entity.assessment = assessEntity(item.entity, date, 'signal-strength-v7');
-    expect(item.entity.assessment.score).toBeNull();
-    expect(item.entity.assessment.reasons?.join(' ')).toContain('adverse evidence');
-    expect(personalSaveDecision(item.entity, item.match, item.relevance).eligible).toBe(false);
-  });
+  it.each([4, 5])(
+    'brief %i rejects ordinal promotion and requires official standard status',
+    async (version) => {
+      const promoted = native(version);
+      promoted.candidates[0]!.observations[2] = fact('verification/inspectable');
+      promoted.candidates[0]!.observations[3] = fact('authority/secondary');
+      promoted.candidates[0]!.signalJudgment.dimensions.work = {
+        level: 4,
+        reason: 'Unsupported maximum.',
+        observations: [2],
+      };
+      promoted.candidates[0]!.signalJudgment.dimensions.applicability.level = 4;
+      const item = (await accept(promoted)).items[0]!;
+      expect(item.entity.assessment.features.work?.contribution).toBe(6.25);
+      expect(item.entity.assessment.features.applicability?.contribution).toBe(6.25);
+      const standard = native(version);
+      standard.candidates[0]!.kind = 'standard';
+      standard.candidates[0]!.signalJudgment.rubric = 'standard-v1';
+      standard.candidates[0]!.signalJudgment.dimensions.applicability.observations = [2];
+      standard.candidates[0]!.observations[2] = fact('verification/inspectable');
+      const official = (await accept(standard)).items[0]!;
+      expect(official.entity.assessment.features.basis?.contribution).toBe(10);
+      expect(official.entity.assessment.score).toBeNull();
+      expect(official.entity.assessment.reasons?.join(' ')).toContain('issuer');
+      expect(official.entity.assessment.features.applicability?.contribution).toBe(0);
+      expect(official.entity.assessment.reasons?.join(' ')).toContain('official standard status');
+    },
+  );
+  it.each([4, 5])(
+    'brief %i removes invalid-date scrutiny credit and preserves provisional status',
+    async (version) => {
+      for (const invalidDate of ['2027-10-10T00:00:00.000Z', '2024-10-10T00:00:00.000Z']) {
+        const item = (await accept(native(version))).items[0]!;
+        const scrutiny = item.entity.signalBasis!.dimensions.scrutiny.observations;
+        for (const source of item.entity.evidence)
+          if (
+            item.entity.observations.some(
+              (observation) =>
+                scrutiny.includes(observation.id) && observation.evidenceId === source.id,
+            )
+          ) {
+            source.fetchedAt = invalidDate;
+            item.entity.currentChecks![source.uri] = invalidDate;
+          }
+        // Keep work's valid creator example separate from invalid independent material.
+        item.entity.signalBasis!.dimensions.work.observations =
+          item.entity.signalBasis!.dimensions.work.observations.filter(
+            (id) => !scrutiny.includes(id),
+          );
+        const assessment = assessEntity(item.entity, date, item.entity.assessment.policy);
+        expect(assessment.features.scrutiny?.contribution).toBe(0);
+        expect(assessment.disposition).toBe('provisional');
+        expect(assessment.nextVerification).toContain('current');
+      }
+    },
+  );
+  it.each([4, 5])(
+    'brief %i holds stale adverse evidence omitted by dimension references',
+    async (version) => {
+      const input = native(version);
+      input.sources.push({
+        ...input.sources[2]!,
+        uri: 'https://adverse.example.net/material',
+        publisher: 'Adverse inspector',
+        origin: 'adverse',
+      });
+      input.candidates[0]!.observations.push(fact('risk/decisive', 3, true));
+      const item = (await accept(input)).items[0]!;
+      const risk = item.entity.observations.find((entry) => entry.feature === 'risk')!;
+      const source = item.entity.evidence.find((entry) => entry.id === risk.evidenceId)!;
+      source.fetchedAt = '2024-10-10T00:00:00.000Z';
+      item.entity.currentChecks![source.uri] = source.fetchedAt;
+      item.entity.assessment = assessEntity(item.entity, date, item.entity.assessment.policy);
+      expect(item.entity.assessment.score).toBeNull();
+      expect(item.entity.assessment.reasons?.join(' ')).toContain('adverse evidence');
+      expect(personalSaveDecision(item.entity, item.match, item.relevance).eligible).toBe(false);
+    },
+  );
   it('bounds total native observations at 240 while preserving late defining/adverse material and omission holds', async () => {
     const input = native();
     const candidate = input.candidates[0]!;

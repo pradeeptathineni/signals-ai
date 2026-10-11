@@ -84,6 +84,7 @@ export function activeObservations(
       'signal-strength-v5',
       'signal-strength-v6',
       'signal-strength-v7',
+      'signal-strength-v8',
     ].includes(policy)
   ) {
     const physical = new Set(
@@ -154,8 +155,8 @@ export function assessEntity(
 ): Assessment {
   if (!Number.isFinite(Date.parse(asOf))) throw new Error('invalid_assessment_date');
   const active = activeObservations(entity, policy);
-  if (policy === 'signal-strength-v7')
-    return assessSuccessor(entity, asOf, active, originGroups(entity));
+  if (policy === 'signal-strength-v7' || policy === 'signal-strength-v8')
+    return assessSuccessor(entity, asOf, active, originGroups(entity), policy);
   const usable = active.filter(
     (observation) => observation.verified && observation.status === 'supported',
   );
@@ -387,7 +388,7 @@ export function saveDecision(entity: Entity, match: SearchItem['match'], thresho
   if (entity.identity !== 'resolved') reasons.push('ambiguous_identity');
   if (entity.assessment.score === null)
     reasons.push(
-      entity.assessment.policy === 'signal-strength-v7'
+      ['signal-strength-v7', 'signal-strength-v8'].includes(entity.assessment.policy)
         ? 'assessment_not_scoreable'
         : 'no_supported_defining_claim',
     );
@@ -428,7 +429,7 @@ export function personalSaveDecision(
   const decision = saveDecision(entity, match, threshold);
   const reasons = [...decision.reasons];
   if (
-    entity.assessment.policy !== 'signal-strength-v7' ||
+    !['signal-strength-v7', 'signal-strength-v8'].includes(entity.assessment.policy) ||
     entity.assessment.disposition !== 'completed'
   )
     reasons.push('assessment_incomplete');

@@ -558,9 +558,8 @@ export async function acceptDiscovery(
           ...(signalBasis ? { signalBasis } : {}),
         },
         asOf,
-        proposal.assessmentPolicy === 'signal-strength-v7' || candidate.signalJudgment
-          ? 'signal-strength-v7'
-          : 'signal-strength-v6',
+        proposal.assessmentPolicy ??
+          (candidate.signalJudgment ? 'signal-strength-v7' : 'signal-strength-v6'),
       ),
     };
     // Query-dependent fields never enter the reusable entity.
@@ -653,7 +652,7 @@ export async function acceptDiscovery(
                         : candidate.relevance.value,
               },
             }
-          : proposal.assessmentPolicy === 'signal-strength-v7'
+          : ['signal-strength-v7', 'signal-strength-v8'].includes(proposal.assessmentPolicy ?? '')
             ? {
                 relevance: {
                   value: null,
