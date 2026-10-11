@@ -25,7 +25,12 @@ import {
   type SearchItem,
   type SearchResult,
 } from '../../domain/src/search-contract.js';
-import { assessEntity, saveDecision, activeEvidenceIds } from '../../domain/src/search-score.js';
+import {
+  assessEntity,
+  saveDecision,
+  personalSaveDecision,
+  activeEvidenceIds,
+} from '../../domain/src/search-score.js';
 import {
   entityIdentity,
   observationIdentity,
@@ -34,6 +39,12 @@ import {
 } from './signal-search.js';
 import { digest, normalizeText, normalizeSpan } from './search-fetch.js';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
+import {
+  signalBasisSchema,
+  rubricIds,
+  interpretationSchema,
+  relevanceSchema,
+} from '../../domain/src/search-assessment.js';
 
 /** Read-only private state never creates directories and rejects every symlink component. */
 export async function readPrivateJson(
@@ -67,9 +78,12 @@ const properties = { ...candidateSchema.properties };
 delete (properties as Partial<typeof properties>).match;
 delete (properties as Partial<typeof properties>).discovery;
 delete (properties as Partial<typeof properties>).priority;
+delete (properties as Partial<typeof properties>).relevance;
+delete (properties as Partial<typeof properties>).signalJudgment;
 const entitySchema = Type.Object(
   {
     ...properties,
+    signalBasis: Type.Optional(signalBasisSchema),
     currentChecks: Type.Optional(Type.Record(Type.String(), Type.String())),
     id: Type.String({ pattern: '^entity-[a-f0-9]{24}$' }),
     acquisition: Type.Optional(Type.Enum(['configured-live', 'native-agent', 'fixture'])),
@@ -135,24 +149,37 @@ const entitySchema = Type.Object(
           'signal-strength-v4',
           'signal-strength-v5',
           'signal-strength-v6',
+          'signal-strength-v7',
         ]),
         asOf: Type.String(),
         score: Type.Union([Type.Integer({ minimum: 0, maximum: 100 }), Type.Null()]),
-        features: Type.Object(
-          {
-            corroboration: feature,
-            adoption: feature,
-            maturity: feature,
-            currentness: feature,
-            authority: feature,
-            verification: feature,
-          },
-          { additionalProperties: false },
-        ),
+        features: Type.Union([
+          Type.Object(
+            {
+              corroboration: feature,
+              adoption: feature,
+              maturity: feature,
+              currentness: feature,
+              authority: feature,
+              verification: feature,
+            },
+            { additionalProperties: false },
+          ),
+          Type.Object(
+            { basis: feature, work: feature, scrutiny: feature, applicability: feature },
+            { additionalProperties: false },
+          ),
+        ]),
         risk: Type.Integer({ minimum: 0, maximum: 25 }),
         coverage: Type.Number({ minimum: 0, maximum: 1 }),
         missing: Type.Array(Type.String()),
         state: Type.Enum(['assessed', 'provisional', 'unassessed']),
+        rubric: Type.Optional(Type.Union([Type.Enum(rubricIds), Type.Null()])),
+        disposition: Type.Optional(Type.Enum(['completed', 'provisional', 'not-scoreable'])),
+        reasons: Type.Optional(Type.Array(Type.String({ maxLength: 1600 }), { maxItems: 40 })),
+        nextVerification: Type.Optional(
+          Type.Union([Type.String({ maxLength: 1600 }), Type.Null()]),
+        ),
       },
       { additionalProperties: false },
     ),
@@ -453,6 +480,8 @@ function mergeEntity(prior: Entity, incoming: Entity): Entity {
     sameObservations &&
     isDeepStrictEqual([...activeEvidenceIds(prior)].sort(), currentEvidence) &&
     prior.kind === incoming.kind &&
+    isDeepStrictEqual(prior.signalBasis, incoming.signalBasis) &&
+    isDeepStrictEqual(prior.inspection, incoming.inspection) &&
     incoming.aliases.every((alias) => prior.aliases.includes(alias))
   ) {
     const renewed = { ...prior, currentChecks };
@@ -564,37 +593,38 @@ export async function saveEntities(
     const changes: string[] = [],
       skipped: string[] = [];
     const reasons: Record<string, string[]> = {};
+    const admission = (item: SearchItem, entity = item.entity) =>
+      destination === 'private'
+        ? personalSaveDecision(entity, item.match, item.relevance, threshold)
+        : saveDecision(entity, item.match, threshold);
     items
       .filter((item) =>
         mode === 'eligible'
-          ? saveDecision(item.entity, item.match, threshold).eligible &&
-            !dismissed.includes(item.entity.id)
+          ? admission(item).eligible && !dismissed.includes(item.entity.id)
           : mode !== 'refresh' || existing.has(item.entity.id),
       )
       .forEach((item) => validateEntity(item.entity));
     for (const item of items) {
       if (
         (mode === 'eligible' &&
-          (!saveDecision(item.entity, item.match, threshold).eligible ||
-            dismissed.includes(item.entity.id))) ||
+          (!admission(item).eligible || dismissed.includes(item.entity.id))) ||
         (mode === 'refresh' && !existing.has(item.entity.id))
       ) {
         skipped.push(item.entity.id);
         reasons[item.entity.id] =
-          mode === 'eligible'
-            ? saveDecision(item.entity, item.match, threshold).reasons
-            : ['not_saved_in_destination'];
+          mode === 'eligible' ? admission(item).reasons : ['not_saved_in_destination'];
         continue;
       }
       if (item.entity.acquisition === 'fixture' && !allowFixtures)
         throw new Error('fixture_cannot_enter_corpus');
       if (
-        item.entity.identity !== 'resolved' ||
-        (item.entity.assessment.score === null &&
-          !(
-            mode === 'refresh' &&
-            item.entity.observations.some((observation) => observation.verified)
-          ))
+        !(mode === 'manual' && destination === 'private') &&
+        (item.entity.identity !== 'resolved' ||
+          (item.entity.assessment.score === null &&
+            !(
+              mode === 'refresh' &&
+              item.entity.observations.some((observation) => observation.verified)
+            )))
       ) {
         skipped.push(item.entity.id);
         reasons[item.entity.id] = ['unsavable_identity_or_evidence'];
@@ -623,9 +653,9 @@ export async function saveEntities(
           };
       entity.assessment = assessEntity(entity, entity.assessment.asOf, entity.assessment.policy);
       validateEntity(entity);
-      if (mode === 'eligible' && !saveDecision(entity, item.match, threshold).eligible) {
+      if (mode === 'eligible' && !admission(item, entity).eligible) {
         skipped.push(entity.id);
-        reasons[entity.id] = saveDecision(entity, item.match, threshold).reasons;
+        reasons[entity.id] = admission(item, entity).reasons;
         continue;
       }
       const record: StoredEntity = {
@@ -735,6 +765,8 @@ export async function loadRun(
     result.items.length > 60
   )
     throw new Error('invalid_run_snapshot');
+  if (result.interpretation && !Value.Check(interpretationSchema, result.interpretation))
+    throw new Error('invalid_run_interpretation');
   if (
     result.brief &&
     (result.brief.format !== 'markdown' ||
@@ -757,6 +789,15 @@ export async function loadRun(
   )
     throw new Error('invalid_run_leads');
   for (const item of result.items) {
+    if (
+      item.relevance &&
+      (!Value.Check(relevanceSchema, item.relevance) ||
+        [
+          ...item.relevance.sources,
+          ...item.relevance.constraints.flatMap((constraint) => constraint.sources),
+        ].some((index) => !result.sources[index]))
+    )
+      throw new Error('invalid_run_relevance');
     const checks = Object.entries(item.entity.currentChecks ?? {});
     const late = checks.filter(
       ([, date]) => Date.parse(date) > Date.parse(item.entity.assessment.asOf),

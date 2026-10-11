@@ -21,13 +21,14 @@ import { atomicJson, saveEntities, retainRun, loadEntities } from './search-stor
 import { resolve } from 'node:path';
 import { loadAcquisitionConfig } from './search-acquisition.js';
 import { configuredDocumentFetch } from './search-extractors.js';
-import { contextualize, rankContextual, entityDelta } from '../../domain/src/search-priority.js';
+import { contextualize, entityDelta } from '../../domain/src/search-priority.js';
 import { loadPersonal } from './search-personal.js';
 import { loadSettings } from './search-settings.js';
 import { updateInbox } from './search-inbox.js';
 import { recordSourceResultExposures } from './search-sources.js';
 import { decodeNativeResearch } from '../../domain/src/search-native.js';
 import type { AcquisitionHints } from './search-runner.js';
+import { dimensionNames, type SignalBasis } from '../../domain/src/search-assessment.js';
 
 function entityUri(uri: string) {
   return `${normalizeConsiderUrl(uri).normalizedUrl}${new URL(uri).hash}`;
@@ -141,6 +142,22 @@ export async function acceptDiscovery(
 ) {
   const research = decodeNativeResearch(input);
   let proposal = structuredClone(research.proposal);
+  if (request.interpretation) {
+    if (JSON.stringify(proposal.interpretation) !== JSON.stringify(request.interpretation)) {
+      proposal.gaps.push(
+        'Returned interpretation differs from the requested correction; prior relevance judgments are held until assessed against the corrected need.',
+      );
+      proposal.candidates.forEach((candidate) => {
+        if (candidate.relevance)
+          candidate.relevance = {
+            ...candidate.relevance,
+            value: null,
+            reason: 'Needs reassessment against the explicitly corrected interpretation.',
+          };
+      });
+    }
+    proposal.interpretation = request.interpretation;
+  }
   let asOf = dependencies.asOf ?? new Date().toISOString();
   const limits = budgets[request.profile ?? 'wide'];
   const compact = research.brief !== undefined;
@@ -396,6 +413,7 @@ export async function acceptDiscovery(
       match: Proposal['candidates'][number]['match'];
       discovery?: SearchResult['items'][number]['discovery'];
       priority?: SearchResult['items'][number]['priority'];
+      relevance?: SearchItem['relevance'];
     }
   >();
   let duplicates = 0,
@@ -473,6 +491,51 @@ export async function acceptDiscovery(
         .filter((source) => source.state === 'fetched')
         .map((source) => [source.uri, source.fetchedAt]),
     );
+    const signalBasis: SignalBasis | undefined = candidate.signalJudgment
+      ? ({
+          ...candidate.signalJudgment,
+          gaps: [...candidate.signalJudgment.gaps],
+          dimensions: Object.fromEntries(
+            dimensionNames.map((key) => {
+              const judgment = candidate.signalJudgment!.dimensions[key];
+              const ids = judgment.observations.flatMap((index) => {
+                const original = candidate.observations[index];
+                const retained =
+                  original &&
+                  observations.find(
+                    (item) =>
+                      item.evidenceId === sources[original.source]?.id &&
+                      item.feature === original.feature &&
+                      item.indicator === original.indicator &&
+                      item.statement === original.statement &&
+                      item.quote === original.quote,
+                  );
+                return retained ? [retained.id] : [];
+              });
+              return [
+                key,
+                {
+                  ...judgment,
+                  observations: [...new Set(ids)],
+                  ...(ids.length !== judgment.observations.length ? { level: null } : {}),
+                },
+              ];
+            }),
+          ),
+        } as SignalBasis)
+      : undefined;
+    if (
+      signalBasis &&
+      dimensionNames.some(
+        (key) =>
+          signalBasis.dimensions[key].level !== candidate.signalJudgment!.dimensions[key].level,
+      )
+    )
+      signalBasis.gaps.push({
+        reason: 'Rubric observation was excluded by the safe evidence boundary.',
+        decisive: true,
+        nextVerification: 'Inspect and bind the omitted observation to a safe original source.',
+      });
     const entity: Entity = {
       ...candidate,
       uri,
@@ -482,6 +545,7 @@ export async function acceptDiscovery(
       evidence,
       currentEvidence,
       currentChecks,
+      ...(signalBasis ? { signalBasis } : {}),
       assessment: assessEntity(
         {
           observations,
@@ -491,13 +555,19 @@ export async function acceptDiscovery(
           kind: candidate.kind,
           identity: candidate.identity,
           uri,
+          ...(signalBasis ? { signalBasis } : {}),
         },
         asOf,
+        proposal.assessmentPolicy === 'signal-strength-v7' || candidate.signalJudgment
+          ? 'signal-strength-v7'
+          : 'signal-strength-v6',
       ),
     };
     // Query-dependent fields never enter the reusable entity.
     const canonical = Object.fromEntries(
-      Object.entries(entity).filter(([key]) => !['match', 'discovery', 'priority'].includes(key)),
+      Object.entries(entity).filter(
+        ([key]) => !['match', 'discovery', 'priority', 'relevance', 'signalJudgment'].includes(key),
+      ),
     ) as unknown as Entity;
     if (entities.has(id)) {
       duplicates++;
@@ -527,7 +597,7 @@ export async function acceptDiscovery(
       prior.entity.currentEvidence = [
         ...new Set([...(prior.entity.currentEvidence ?? []), ...(entity.currentEvidence ?? [])]),
       ].sort();
-      prior.entity.assessment = assessEntity(prior.entity, asOf);
+      prior.entity.assessment = assessEntity(prior.entity, asOf, prior.entity.assessment.policy);
     } else {
       const parent = candidate.discovery?.parentUri
         ? normalizeConsiderUrl(candidate.discovery.parentUri).normalizedUrl
@@ -547,6 +617,52 @@ export async function acceptDiscovery(
       entities.set(id, {
         entity: canonical,
         match: candidate.match,
+        ...(candidate.relevance
+          ? {
+              relevance: {
+                ...candidate.relevance,
+                value:
+                  !proposal.interpretation ||
+                  !candidate.relevance.sources.length ||
+                  candidate.relevance.sources.some((index) => sources[index]?.state !== 'fetched')
+                    ? null
+                    : candidate.relevance.constraints.some(
+                          (item) =>
+                            item.state === 'conflicts' &&
+                            item.sources.length &&
+                            item.sources.every((index) => sources[index]?.state === 'fetched'),
+                        )
+                      ? 0
+                      : candidate.relevance.value === 100 &&
+                          (candidate.relevance.constraints.some(
+                            (item) =>
+                              item.state !== 'satisfied' ||
+                              !item.sources.length ||
+                              item.sources.some((index) => sources[index]?.state !== 'fetched'),
+                          ) ||
+                            proposal.interpretation.constraints
+                              .filter((item) => item.required)
+                              .some(
+                                (required) =>
+                                  !candidate.relevance!.constraints.some(
+                                    (item) =>
+                                      item.text === required.text && item.state === 'satisfied',
+                                  ),
+                              ))
+                        ? 50
+                        : candidate.relevance.value,
+              },
+            }
+          : proposal.assessmentPolicy === 'signal-strength-v7'
+            ? {
+                relevance: {
+                  value: null,
+                  reason: 'No supported query relevance assessment returned.',
+                  sources: [],
+                  constraints: [],
+                },
+              }
+            : {}),
         ...(candidate.priority
           ? {
               priority: {
@@ -565,9 +681,10 @@ export async function acceptDiscovery(
     }
   }
   const items = filterSearchItems(
-    [...entities.values()].map(({ entity, match, discovery, priority }) => ({
+    [...entities.values()].map(({ entity, match, discovery, priority, relevance }) => ({
       entity,
       match,
+      ...(relevance ? { relevance } : {}),
       ...(discovery ? { discovery } : {}),
       ...(priority ? { priority } : {}),
       ...saveDecision(entity, match, request.threshold ?? 75),
@@ -583,6 +700,7 @@ export async function acceptDiscovery(
       },
   );
   return {
+    ...(proposal.interpretation ? { interpretation: proposal.interpretation } : {}),
     ...(research.brief ? { brief: research.brief } : {}),
     ...(research.provisionalLeads.length ? { provisionalLeads: research.provisionalLeads } : {}),
     items,
@@ -848,7 +966,7 @@ export async function contextualizeResult(result: SearchResult, root: string) {
     ...(await loadEntities(resolve(root, 'signals/entities'))),
     ...(await loadEntities(resolve(root, '.signals/corpus/entities'))),
   ];
-  result.items = rankContextual(
+  result.items = filterSearchItems(
     contextualize(
       result.items,
       new Set(known.map((record) => record.entity.id)),

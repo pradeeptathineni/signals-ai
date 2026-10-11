@@ -3,6 +3,7 @@ import { Ajv2020 } from 'ajv/dist/2020.js';
 import { default as formats } from 'ajv-formats';
 import schema from '../../contracts/src/evidence-bundle-v1.schema.json' with { type: 'json' };
 import { normalizeConsiderUrl } from './url.js';
+import { parseQueryAssessment } from './query-exchange.js';
 
 export interface EvidenceBundle {
   schema_version: 1;
@@ -223,6 +224,12 @@ export function parseEvidenceBundle(
       );
   }
   const acquisition = bundle.extensions?.['signals.acquisition'];
+  if (bundle.extensions?.['signals-ai.query-assessment'])
+    parseQueryAssessment(
+      bundle.extensions['signals-ai.query-assessment'],
+      bundle.sources,
+      bundle.candidates,
+    );
   requireEvidence(
     !acquisition ||
       typeof acquisition !== 'object' ||

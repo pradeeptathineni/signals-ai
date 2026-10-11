@@ -3,23 +3,31 @@ import { Value } from 'typebox/value';
 import type { SearchResult } from '../../domain/src/search-contract.js';
 import { codexRunner } from './search-runner.js';
 import { activeObservations } from '../../domain/src/search-score.js';
+import type { LibraryFinding } from '../../domain/src/library-search.js';
+import type { Entity } from '../../domain/src/search-contract.js';
+
+function retainedStatements(entity: Entity) {
+  return activeObservations(entity, entity.assessment.policy)
+    .filter(
+      (observation) =>
+        observation.verified && ['supported', 'contradicted'].includes(observation.status),
+    )
+    .map((observation) => ({
+      entityId: entity.id,
+      observationId: observation.id,
+      evidenceId: observation.evidenceId,
+      statement: observation.statement,
+      quote: observation.quote,
+      feature: observation.feature,
+      entityName: entity.name,
+      status: String(observation.status),
+    }));
+}
 
 /** Keep retained synthesis available without upgrading it to verified source evidence. */
 export function frozenFollowupMaterial(result: SearchResult, ids: string[]) {
   const selected = result.items.filter((item) => !ids.length || ids.includes(item.entity.id));
-  const statements = selected.flatMap((item) => {
-    return activeObservations(item.entity, item.entity.assessment.policy)
-      .filter((observation) => observation.verified && observation.status === 'supported')
-      .map((observation) => ({
-        entityId: item.entity.id,
-        observationId: observation.id,
-        evidenceId: observation.evidenceId,
-        statement: observation.statement,
-        quote: observation.quote,
-        feature: observation.feature,
-        entityName: item.entity.name,
-      }));
-  });
+  const statements = selected.flatMap((item) => retainedStatements(item.entity));
   let material = statements.slice(0, 40);
   while (JSON.stringify(material).length > 18000) material = material.slice(0, -1);
   const context = selected.slice(0, 20).map(({ entity }) => ({
@@ -50,6 +58,66 @@ export async function answerFromEvidence(
   effort?: string,
 ) {
   const frozen = frozenFollowupMaterial(result, ids);
+  return answerFromRetainedMaterial(frozen, question, model, effort);
+}
+export function frozenLibraryMaterial(records: LibraryFinding[]) {
+  const material = records.flatMap((record) =>
+    record.native
+      ? retainedStatements(record.native).map((row) => ({
+          ...row,
+          entityId: record.key,
+          observationId: `${record.key}:${row.observationId}`,
+          evidenceId: `${record.key}:${row.evidenceId}`,
+        }))
+      : (record.legacy?.claims ?? [])
+          .filter((claim) => ['supported', 'observed'].includes(claim.status))
+          .map((claim) => ({
+            entityId: record.key,
+            observationId: `${record.key}:${claim.id}`,
+            evidenceId: claim.source_ids.join(','),
+            statement: claim.text,
+            quote: '',
+            feature: `historical-${claim.status}-${claim.freshness}`,
+            entityName: record.title,
+            status: claim.status,
+          })),
+  );
+  const selected = material.slice(0, 40);
+  while (JSON.stringify(selected).length > 18000) selected.pop();
+  const context = records.slice(0, 20).map((record) => ({
+    id: record.key,
+    name: record.title,
+    uri: record.uri,
+    description: record.description.slice(0, 1000),
+    capabilities: record.capabilities.slice(0, 10),
+    limits: (
+      record.native?.limits ??
+      record.legacy?.limitations ??
+      record.lead?.limits ??
+      []
+    ).slice(0, 10),
+  }));
+  while (JSON.stringify(context).length > 12000) context.pop();
+  return {
+    material: selected,
+    context,
+    priorSynthesis: undefined,
+    gaps: [
+      'Retained evidence only; no new source access or current-status check.',
+      ...(selected.length < material.length
+        ? [
+            `${material.length - selected.length} selected statements omitted by the discussion budget.`,
+          ]
+        : []),
+    ],
+  };
+}
+export async function answerFromRetainedMaterial(
+  frozen: ReturnType<typeof frozenFollowupMaterial>,
+  question: string,
+  model?: string,
+  effort?: string,
+) {
   const { material } = frozen;
   const schema = Type.Object(
     {

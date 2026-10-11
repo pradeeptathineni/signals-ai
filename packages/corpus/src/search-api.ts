@@ -29,10 +29,20 @@ import {
   selectionHistory,
 } from './search-store.js';
 import { runDueOnce, refreshRequest } from './search-scheduler.js';
-import { answerFromEvidence } from './search-followup.js';
+import {
+  answerFromEvidence,
+  answerFromRetainedMaterial,
+  frozenLibraryMaterial,
+} from './search-followup.js';
 import { checkPrimaryMaterial } from './search-reuse.js';
 import { selectSavedEntity } from './search-selection.js';
 import { loadLibrary, setLibrarySaved, retainedIntroducingParent } from './library.js';
+import { libraryPreferences, librarySearchSchema, matchLibrary } from './library-meaning.js';
+import { researchQuery } from '../../domain/src/research-query.js';
+import { loadPublicCorpus } from './public-corpus.js';
+import { saveQuery } from './research-store.js';
+import { saveLibraryLead } from './library-leads.js';
+import { personalSaveDecision } from '../../domain/src/search-score.js';
 import { previewProject, type ProjectPreview } from './project-preview.js';
 import {
   loadProjects,
@@ -174,7 +184,60 @@ export function searchApi(
       else if (route === 'settings')
         json(200, mutation ? await saveSettings(body, root) : await loadSettings(root));
       else if (route === 'library' && !mutation) json(200, { findings: await loadLibrary(root) });
-      else if (route === 'library-saved' && mutation) {
+      else if (route === 'question' && mutation) {
+        const schema = Type.Object(
+          { question: Type.String({ minLength: 1, maxLength: 2000 }) },
+          { additionalProperties: false },
+        );
+        if (!Value.Check(schema, body)) throw new Error('invalid_question');
+        const result = await researchQuery(
+          (await loadPublicCorpus(resolve(root, 'signals'))).options,
+          body.question,
+        );
+        const file = await saveQuery(
+          result,
+          process.env.SIGNALS_QUERY_DIRECTORY ?? resolve(root, '.signals/queries'),
+        );
+        json(200, { saved: true, id: file.split('/').at(-1) });
+      } else if (route === 'library-preferences')
+        json(200, await libraryPreferences(root, mutation ? body : undefined));
+      else if (route === 'library-search' && mutation) {
+        if (!Value.Check(librarySearchSchema, body)) throw new Error('invalid_library_search');
+        const preferences = await libraryPreferences(root);
+        const settings = await loadSettings(root);
+        const controller = new AbortController();
+        response.once('close', () => {
+          if (!response.writableEnded) controller.abort();
+        });
+        const busy = active;
+        const permitted = preferences.meaningMatching && !busy;
+        if (permitted) active = true;
+        try {
+          const result = await matchLibrary(
+            await loadLibrary(root, { scope: body.scope }),
+            body.query,
+            body.filters ?? {},
+            {
+              permitted,
+              model: settings.model || undefined,
+              effort: settings.effort || undefined,
+              signal: controller.signal,
+            },
+          );
+          json(
+            200,
+            busy
+              ? {
+                  ...result,
+                  state: 'unavailable',
+                  reason: 'Another AI job is active; literal results retained.',
+                }
+              : result,
+          );
+        } finally {
+          if (permitted) active = false;
+        }
+      } else if (route === 'library-saved' && mutation) {
         const schema = Type.Object(
           {
             key: Type.String({ minLength: 1, maxLength: 300 }),
@@ -470,6 +533,54 @@ export function searchApi(
         )
           .then(async (result) => {
             try {
+              const preference = (await libraryPreferences(root)).automaticSaving;
+              if (
+                route !== 'refresh' &&
+                preference?.enabled &&
+                !['failed', 'not_configured', 'cancelled'].includes(result.status)
+              ) {
+                const decisions = result.items.map((item) => {
+                  const decision = personalSaveDecision(
+                    item.entity,
+                    item.match,
+                    item.relevance,
+                    preference.signalThreshold,
+                  );
+                  const reasons = [
+                    ...decision.reasons,
+                    ...((item.relevance?.value ?? -1) < preference.relevanceThreshold
+                      ? ['configured_topic_threshold']
+                      : []),
+                  ];
+                  return { id: item.entity.id, eligible: !reasons.length, reasons };
+                });
+                const selected = new Set(
+                  decisions.filter((row) => row.eligible).map((row) => row.id),
+                );
+                const saved = await saveEntities(
+                  result.items.filter((item) => selected.has(item.entity.id)),
+                  'eligible',
+                  root,
+                  'private',
+                  preference.signalThreshold,
+                  false,
+                  { runId: result.runId, query: result.query, kind: 'one-off' },
+                );
+                await saveQuery(
+                  {
+                    kind: 'automatic-personal-saving',
+                    runId: result.runId,
+                    query: result.query,
+                    policy: preference,
+                    decisions,
+                    saved,
+                  },
+                  resolve(root, '.signals/queries'),
+                );
+                run.events.push(
+                  `Automatic private saving: ${saved.changed.length} saved, ${decisions.filter((row) => !row.eligible).length} excluded. Decisions retained in private query history.`,
+                );
+              }
               if (query.cache === 'private') await retainRun(result, root);
               if (
                 route === 'refresh' &&
@@ -525,6 +636,16 @@ export function searchApi(
         const run = runs.get(route.split('/')[1]!);
         run?.controller.abort();
         json(200, { cancelled: !!run });
+      } else if (route === 'save-lead' && mutation) {
+        const schema = Type.Object(
+          { runId: Type.String({ format: 'uuid' }), uri: Type.String({ maxLength: 2048 }) },
+          { additionalProperties: false },
+        );
+        if (!Value.Check(schema, body)) throw new Error('invalid_lead_selection');
+        const result = [...runs.values()].find((run) => run.result?.runId === body.runId)?.result;
+        const lead = result?.provisionalLeads?.find((lead) => lead.uri === body.uri);
+        if (!result || !lead) throw new Error('unknown_lead_selection');
+        json(200, await saveLibraryLead(root, lead, result.runId, result.query));
       } else if (route === 'save' && mutation) {
         if (!Value.Check(selection, body)) throw new Error('invalid_selection');
         const selected = body;
@@ -567,6 +688,39 @@ export function searchApi(
           : existing.filter((id) => !selected.ids.includes(id));
         await atomicJson(path, ids);
         json(200, { ids });
+      } else if (route === 'library-discussion' && mutation) {
+        const schema = Type.Object(
+          {
+            keys: Type.Array(Type.String({ maxLength: 300 }), {
+              minItems: 1,
+              maxItems: 20,
+              uniqueItems: true,
+            }),
+            question: Type.String({ minLength: 1, maxLength: 2000 }),
+          },
+          { additionalProperties: false },
+        );
+        if (!Value.Check(schema, body)) throw new Error('invalid_library_discussion');
+        const selected = (await loadLibrary(root)).filter((record) =>
+          body.keys.includes(record.key),
+        );
+        if (selected.length !== body.keys.length) throw new Error('unknown_library_identity');
+        if (active) throw new Error('ai_job_active');
+        active = true;
+        try {
+          const settings = await loadSettings(root);
+          json(
+            200,
+            await answerFromRetainedMaterial(
+              frozenLibraryMaterial(selected),
+              body.question,
+              settings.model || undefined,
+              settings.effort || undefined,
+            ),
+          );
+        } finally {
+          active = false;
+        }
       } else if (route === 'followup' && mutation) {
         if (!Value.Check(followupSchema, body)) throw new Error('invalid_followup');
         const question = body;

@@ -1,5 +1,7 @@
 import { expect, it } from 'vitest';
-import { frozenFollowupMaterial } from './search-followup.js';
+import { frozenFollowupMaterial, frozenLibraryMaterial } from './search-followup.js';
+import { loadEntities } from './search-store.js';
+import { projectNativeLibrary } from '../../domain/src/library-search.js';
 import type { SearchResult } from '../../domain/src/search-contract.js';
 
 const result = {
@@ -32,4 +34,20 @@ it('never adds unselected records or their prior synthesis to a scoped follow-up
   expect(frozen.priorSynthesis).toBeUndefined();
   expect(JSON.stringify(frozen)).not.toContain('excluded');
   expect(frozen.context[0]?.limits).toEqual(['selected unexecuted']);
+});
+
+it('keeps identical observation identities distinct across selected public and private records', async () => {
+  const [record] = await loadEntities();
+  const publicFinding = projectNativeLibrary(record!, 'public');
+  const privateFinding = projectNativeLibrary(record!, 'private');
+  const frozen = frozenLibraryMaterial([publicFinding, privateFinding]);
+  expect(frozen.material.length).toBeGreaterThan(0);
+  expect(new Set(frozen.material.map((row) => row.observationId)).size).toBe(
+    frozen.material.length,
+  );
+  expect(frozen.material.some((row) => row.entityId === publicFinding.key)).toBe(true);
+  expect(frozen.material.some((row) => row.entityId === privateFinding.key)).toBe(true);
+  expect(frozen.material.every((row) => row.observationId.startsWith(row.entityId + ':'))).toBe(
+    true,
+  );
 });

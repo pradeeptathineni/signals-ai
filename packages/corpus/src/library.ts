@@ -17,6 +17,7 @@ import {
 } from './search-store.js';
 import { loadPublicCorpus } from './public-corpus.js';
 import { loadPersonal, updatePersonal } from './search-personal.js';
+import { loadLibraryLeads } from './library-leads.js';
 
 const annotationSchema = Type.Object(
   {
@@ -31,7 +32,9 @@ const collectionSchema = Type.Object(
   {
     version: Type.Literal(1),
     collection: Type.Record(
-      Type.String({ pattern: '^(?:native|legacy):(?:public|private):[a-zA-Z0-9._:-]{1,200}$' }),
+      Type.String({
+        pattern: '^(?:native|legacy|lead):(?:public|private):[a-zA-Z0-9._:-]{1,200}$',
+      }),
       Type.Object(
         {
           saved: Type.Boolean(),
@@ -73,11 +76,30 @@ async function legacy(root: string) {
     throw error;
   }
 }
+/** Research can proceed with valid stores when another store fails, with explicit coverage gaps. */
+export async function loadResearchLibrary(root: string) {
+  const stores = await Promise.allSettled([
+    loadEntities(resolve(root, 'signals/entities')).then((rows) =>
+      rows.map((row) => projectNativeLibrary(row, 'public')),
+    ),
+    loadEntities(resolve(root, '.signals/corpus/entities')).then((rows) =>
+      rows.map((row) => projectNativeLibrary(row, 'private')),
+    ),
+    legacy(root),
+  ]);
+  return {
+    findings: stores.flatMap((store) => (store.status === 'fulfilled' ? store.value : [])),
+    gaps: stores.some((store) => store.status === 'rejected')
+      ? ['Some saved Corpus records could not be validated; native research remains available.']
+      : [],
+  };
+}
 /** Canonical facts are the only corpus; normalized rows are disposable browser projections. */
 export async function loadLibrary(
   root: string,
-  options: { scope?: 'local' | 'public' } = {},
+  options: { scope?: 'local' | 'public' | 'research' } = {},
 ): Promise<LibraryFinding[]> {
+  if (options.scope === 'research') return (await loadResearchLibrary(root)).findings;
   const publicRecords = await loadEntities(resolve(root, 'signals/entities'));
   const findings = [
     ...publicRecords.map((record) => projectNativeLibrary(record, 'public')),
@@ -86,6 +108,7 @@ export async function loadLibrary(
   if (options.scope === 'public') return findings;
   const privateRecords = await loadEntities(resolve(root, '.signals/corpus/entities'));
   findings.push(...privateRecords.map((record) => projectNativeLibrary(record, 'private')));
+  findings.push(...(await loadLibraryLeads(root)));
   const personal = await loadPersonal(root);
   const state = await collectionState(root);
   return findings.map((finding) => {
@@ -156,7 +179,7 @@ export async function setLibrarySaved(
     const state = await collectionState(root);
     state.collection[key] = {
       ...state.collection[key],
-      ...(finding.origin.format === 'legacy' ? patch : {}),
+      ...(finding.origin.format !== 'native' ? patch : {}),
       saved,
       updatedAt: new Date().toISOString(),
     };

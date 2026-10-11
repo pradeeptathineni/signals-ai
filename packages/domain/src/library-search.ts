@@ -19,7 +19,11 @@ export interface LibraryFinding {
   intrinsicStrength: { policy: string; score: number | null; legacyLevel?: 'high' | 'held' };
   license: { state: 'known' | 'unknown'; values: string[]; openSource: boolean | null };
   access: { state: 'known' | 'unknown'; freeToUse: boolean | null };
-  origin: { format: 'native' | 'legacy'; destination: 'public' | 'private'; recordId: string };
+  origin: {
+    format: 'native' | 'legacy' | 'lead';
+    destination: 'public' | 'private';
+    recordId: string;
+  };
   saved: boolean;
   notes?: string;
   feedback?: 'none' | 'skip' | 'mute' | 'useful';
@@ -27,6 +31,19 @@ export interface LibraryFinding {
   observedAt: string | null;
   native?: Entity;
   legacy?: PublicOption;
+  lead?: {
+    limits: string[];
+    query: string;
+    savedAt: string;
+    history: {
+      runId: string;
+      query: string;
+      savedAt: string;
+      name: string;
+      description: string;
+      limits: string[];
+    }[];
+  };
 }
 export interface LibraryFilters {
   kind?: string;
@@ -40,6 +57,7 @@ export interface LibraryHit {
   retrievalScore: number;
   matchedFields: string[];
   matchedTerms: string[];
+  meaningReason?: string;
 }
 const unique = (values: readonly string[]) => [...new Set(values.filter(Boolean))];
 // Recognized captured license identifiers, not an inference from host, price or popularity.

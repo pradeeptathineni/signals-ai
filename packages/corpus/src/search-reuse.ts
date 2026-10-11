@@ -1,13 +1,21 @@
-import { resolve } from 'node:path';
 import MiniSearch from 'minisearch';
 import type { Entity, SearchRequest, Source } from '../../domain/src/search-contract.js';
 import { activeObservations } from '../../domain/src/search-score.js';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
-import { loadEntities } from './search-store.js';
+import { loadResearchLibrary } from './library.js';
 import { fetchEvidence } from './search-fetch.js';
 
 const recordLimit = 5;
 const textLimit = 12000;
+type NativeFact = ReturnType<typeof sourceFacts>[number];
+type RetainedFact = Omit<NativeFact, 'status' | 'source'> & {
+  status: string;
+  freshness?: 'current' | 'due' | 'unknown';
+  source: Omit<NativeFact['source'], 'publisher' | 'origin'> & {
+    publisher: string | null | undefined;
+    origin: string | null | undefined;
+  };
+};
 
 function sourceFacts(entity: Entity) {
   return activeObservations(entity, entity.assessment.policy)
@@ -57,45 +65,59 @@ export async function researchCorpusSlice(request: SearchRequest, root: string) 
     method: 'lexical' as const,
     records: [] as {
       id: string;
+      key: string;
       name: string;
       uri: string;
-      kind: Entity['kind'];
+      kind: string;
       assessmentAsOf: string;
-      facts: ReturnType<typeof sourceFacts>;
+      facts: RetainedFact[];
       omittedFacts: number;
     }[],
     gaps: [] as string[],
   };
-  const loaded = await Promise.allSettled([
-    loadEntities(resolve(root, 'signals/entities')),
-    loadEntities(resolve(root, '.signals/corpus/entities')),
-  ]);
-  const records = new Map<string, Entity>();
-  for (const result of loaded) {
-    if (result.status === 'rejected') {
-      if (!slice.gaps.length)
-        slice.gaps.push(
-          'Some saved Corpus records could not be validated; native research remains available.',
-        );
-      continue;
-    }
-    for (const record of result.value) {
-      const prior = records.get(record.entity.id);
-      if (!prior || record.entity.assessment.asOf > prior.assessment.asOf)
-        records.set(record.entity.id, record.entity);
-    }
-  }
-  const candidates = [...records.values()].map((entity) => ({
-    entity,
-    facts: sourceFacts(entity),
+  const loaded = await loadResearchLibrary(root);
+  slice.gaps.push(...loaded.gaps);
+  const records = loaded.findings;
+  const candidates = records.map((finding) => ({
+    finding,
+    facts: finding.native
+      ? sourceFacts(finding.native)
+      : (finding.legacy?.claims ?? [])
+          .filter((claim) => ['supported', 'observed', 'contradicted'].includes(claim.status))
+          .flatMap((claim) =>
+            claim.source_ids.flatMap((id) => {
+              const source = finding.legacy!.sources.find((source) => source.id === id);
+              if (!source) return [];
+              return [
+                {
+                  observationId: claim.id,
+                  feature: 'historical-claim',
+                  status: claim.status,
+                  statement: claim.text,
+                  quote: '',
+                  independent: false,
+                  source: {
+                    evidenceId: source.id,
+                    uri: source.uri,
+                    title: source.title,
+                    publisher: source.independence_group ?? null,
+                    origin: source.independence_group ?? null,
+                    publishedAt: source.observed_at ?? null,
+                    fetchedAt: finding.legacy!.reviewedAt,
+                  },
+                  freshness: claim.freshness,
+                },
+              ];
+            }),
+          ),
   }));
   const index = new MiniSearch({ fields: ['name', 'text'] });
   index.addAll(
     candidates
       .filter((item) => item.facts.length)
-      .map(({ entity, facts }) => ({
-        id: entity.id,
-        name: entity.name,
+      .map(({ finding, facts }) => ({
+        id: finding.key,
+        name: finding.title,
         text: facts.map((fact) => `${fact.statement} ${fact.quote} ${fact.source.title}`).join(' '),
       })),
   );
@@ -107,20 +129,22 @@ export async function researchCorpusSlice(request: SearchRequest, root: string) 
   });
   for (const hit of hits) {
     if (slice.records.length >= recordLimit) break;
-    const { entity, facts } = candidates.find((item) => item.entity.id === hit.id)!;
+    const { finding, facts } = candidates.find((item) => item.finding.key === hit.id)!;
     const selected = [...facts]
       .sort(
         (a, b) =>
           Number(b.feature === 'defining') - Number(a.feature === 'defining') ||
-          Number(b.status === 'contradicted') - Number(a.status === 'contradicted'),
+          Number(b.status === 'contradicted' || b.feature === 'risk') -
+            Number(a.status === 'contradicted' || a.feature === 'risk'),
       )
       .slice(0, 6);
     const projection = {
-      id: entity.id,
-      name: entity.name,
-      uri: entity.uri,
-      kind: entity.kind,
-      assessmentAsOf: entity.assessment.asOf,
+      id: finding.id,
+      key: finding.key,
+      name: finding.title,
+      uri: finding.uri,
+      kind: finding.kind,
+      assessmentAsOf: finding.observedAt ?? '',
       facts: selected,
       omittedFacts: facts.length - selected.length,
     };
