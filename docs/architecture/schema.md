@@ -26,7 +26,8 @@ All of `.signals/` is ignored, excluded from public assets and denied by local/s
 | State                                             | Purpose                                                                                                                                  |
 | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | `settings.json`                                   | Interests, website scopes, acquisition groups, followed sources, runner references, budgets, disabled-default recurrence and publication |
-| `runs/`, query history and retained snapshots     | Immutable original answers, valid items, provisional leads, source text, gaps, usage and saved outcomes                                  |
+| `runs/` and `queries/`                            | Original answers, valid items, provisional leads, source text, gaps, usage and saved outcomes; saved questions need no retrieval receipt |
+| `acquisitions/`, `extractions/`, `source-cache/`  | Private original proposals and review receipts; fetched-text cache expires after one hour                                                |
 | `library-leads.json`                              | Unassessed URI identities and append-only saved contexts; never manufactured scored entities                                             |
 | `library-preferences.json`                        | Explicit metadata-egress permission and disabled-default personal autosaving                                                             |
 | `library-state.json`, `personal.json`             | Qualified saved selections, historical/native annotations and personal feedback                                                          |
@@ -43,4 +44,8 @@ Project source basis, editable context and decisions are distinct from entity ev
 
 Batch plans freeze compatible acquisition scopes; each interest retains separate assessment. Interrupted running questions become uncertain rather than being automatically repeated. Source access failure preserves the last successful material. Source health counts acquisition scans separately from result exposures; missing historical provenance does not create feedback credit.
 
-There are no SQL tables, ORM mirrors or database destinations. Retained file exports remain readable through the historical reader. [Product intent](../product.yaml) and [AI authoring context](../../.meta/context/README.md) describe the project rather than public evidence.
+There are no SQL tables, ORM mirrors, database destinations or database-history commands.
+Useful retired exports and implementation receipts belong in private planning archives,
+with original paths and verified hashes for recovery. Public historical records still
+use their declared decoding and assessment policies. [Product intent](../product.yaml)
+and [AI authoring context](../../.meta/context/README.md) describe the project rather than public evidence.

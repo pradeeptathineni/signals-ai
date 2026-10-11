@@ -38,8 +38,6 @@ import { checkPrimaryMaterial } from './search-reuse.js';
 import { selectSavedEntity } from './search-selection.js';
 import { loadLibrary, setLibrarySaved, retainedIntroducingParent } from './library.js';
 import { libraryPreferences, librarySearchSchema, matchLibrary } from './library-meaning.js';
-import { researchQuery } from '../../domain/src/research-query.js';
-import { loadPublicCorpus } from './public-corpus.js';
 import { saveQuery } from './research-store.js';
 import { saveLibraryLead } from './library-leads.js';
 import { personalSaveDecision } from '../../domain/src/search-score.js';
@@ -190,12 +188,8 @@ export function searchApi(
           { additionalProperties: false },
         );
         if (!Value.Check(schema, body)) throw new Error('invalid_question');
-        const result = await researchQuery(
-          (await loadPublicCorpus(resolve(root, 'signals'))).options,
-          body.question,
-        );
         const file = await saveQuery(
-          result,
+          { question: body.question },
           process.env.SIGNALS_QUERY_DIRECTORY ?? resolve(root, '.signals/queries'),
         );
         json(200, { saved: true, id: file.split('/').at(-1) });

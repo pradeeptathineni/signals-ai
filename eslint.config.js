@@ -11,8 +11,6 @@ export default tseslint.config(
       'playwright-report/**',
       'test-results/**',
       '.meta/context/local/**',
-      '.codex/context-cache/**',
-      '.codex/context-compression/raw/**',
     ],
   },
   eslint.configs.recommended,

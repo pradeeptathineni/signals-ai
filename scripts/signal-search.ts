@@ -27,7 +27,6 @@ const { values } = parseArgs({
   options: {
     query: { type: 'string' },
     profile: { type: 'string' },
-    route: { type: 'string' },
     save: { type: 'string' },
     cache: { type: 'string' },
     site: { type: 'string', multiple: true },
@@ -61,7 +60,7 @@ try {
     const request = parseRequest({
       query: values.query ?? (values['check-primary'] ? 'Check saved primary source' : undefined),
       profile: values.profile ?? 'wide',
-      route: values.route === 'assessed' ? 'native' : (values.route ?? 'native'),
+      route: 'native',
       save: values.save ?? 'never',
       cache: values.cache ?? 'memory',
       supplementalSites: values.site,

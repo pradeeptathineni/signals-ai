@@ -17,7 +17,7 @@
 
 Node HTTPS/DNS/filesystem/child-process primitives own safe acquisition, bounded project previews, file writes, the loopback API, headless supervision and interval scheduling. Linkedom does not grant transport authority; original outlinks are harvested before Readability. RSS entity declarations are rejected. Ajv does not coerce or insert defaults; domain checks own semantic references/privacy. Frozen schema bytes are excluded from formatting to preserve their digest.
 
-Headless research supervises the user's installed authenticated Codex CLI; invoking Agent Skills hosts use their own permitted tools. Optional external acquisition/extraction providers have [separate reviewed pins and constraints](providers.md). Cataloging a tool never installs it. The historical optional loopback model is explicitly configured and operates only on retained knowledge.
+Headless research supervises the user's installed authenticated Codex CLI; invoking Agent Skills hosts use their own permitted tools. Optional external acquisition/extraction providers have [separate reviewed pins and constraints](providers.md). Cataloging a tool never installs it.
 
 ## Development
 

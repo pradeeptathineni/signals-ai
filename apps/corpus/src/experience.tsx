@@ -682,10 +682,7 @@ export function Experience() {
                     {state.mode === 'library' && (
                       <details>
                         <summary>Save this question</summary>
-                        <p>
-                          Save this question with its historical reviewed corpus matches privately.
-                          This performs no model call.
-                        </p>
+                        <p>Save this question privately for later.</p>
                         <button
                           type="button"
                           disabled={!state.query.trim()}

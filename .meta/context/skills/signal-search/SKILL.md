@@ -25,6 +25,6 @@ Return JSON to machine callers and useful candidates, limits and source gaps to 
 Save only on request through the shared writer. Manual saving and automatic admission
 are distinct; findings grant no publication or installation authority. Explicit
 `--review` is a bounded specialist over frozen evidence, not an ordinary second pass.
-Earlier brief versions and `--route assessed` remain compatibility readers/aliases.
+Stored earlier brief versions retain their declared decoding and policy meanings.
 Other hosts use the same protocol with their permitted tools; a host without acquisition
 reports live search unavailable.

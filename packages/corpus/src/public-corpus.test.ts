@@ -1,13 +1,13 @@
-import { mkdtemp, readFile, writeFile, symlink, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, symlink, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it } from 'vitest';
 import { evidenceDigest } from '../../domain/src/evidence-exchange.js';
 import { claimFreshness, filterPublicOptions } from '../../domain/src/public-corpus.js';
 import { loadPublicCorpus } from './public-corpus.js';
+import { encodePublicEvidence } from './public-record.js';
 
 const directories: string[] = [];
-const loadLegacy = (root: string) => loadPublicCorpus(root, undefined, { allowLegacy: true });
 afterEach(async () => {
   await Promise.all(
     directories.splice(0).map((path) => rm(path, { recursive: true, force: true })),
@@ -17,23 +17,17 @@ async function copyRecord(change: (bundle: Record<string, unknown>) => void = ()
   const root = await mkdtemp(join(tmpdir(), 'signals-public-test-'));
   directories.push(root);
   const corpus = await loadPublicCorpus();
-  const record = corpus.bundles[0]!;
-  const bundle = JSON.parse(record.bytes);
+  const original = corpus.bundles[0]!;
+  const record = JSON.parse(await readFile(join('signals', original.admission.file), 'utf8'));
+  const bundle = record.evidence;
   change(bundle);
-  const bytes = JSON.stringify(bundle);
-  const admission = {
-    ...record.admission,
-    file: 'record.json',
-    digest: evidenceDigest(bytes),
-    quality: undefined,
-  };
-  await writeFile(join(root, admission.file), bytes);
-  await writeFile(join(root, `${admission.file}.sha256`), `${admission.digest}\n`);
-  await writeFile(
-    join(root, 'manifest.json'),
-    JSON.stringify({ schemaVersion: 1, admissions: [admission] }),
-  );
-  return { root, admission, bundle };
+  const bytes = await encodePublicEvidence(bundle, record.encoding);
+  record.review.digest = evidenceDigest(bytes);
+  record.review.quality.evidenceDigest = record.review.digest;
+  const file = join(root, 'practices', 'record.json');
+  await mkdir(join(root, 'practices'));
+  await writeFile(file, JSON.stringify(record));
+  return { root, file, record };
 }
 
 it('finds real reviewed options using combined exact filters and literal text', async () => {
@@ -66,32 +60,31 @@ it('rejects private metadata, fixture promotion, ambiguous identities and incomp
     },
   ]) {
     const { root } = await copyRecord(change);
-    await expect(loadLegacy(root)).rejects.toThrow();
+    await expect(loadPublicCorpus(root)).rejects.toThrow();
   }
-  const { root, admission } = await copyRecord();
-  await writeFile(
-    join(root, 'manifest.json'),
-    JSON.stringify({ schemaVersion: 1, admissions: [{ ...admission, claimReviews: [] }] }),
-  );
-  await expect(loadLegacy(root)).rejects.toThrow('freshness assessment');
-  await writeFile(
-    join(root, 'manifest.json'),
-    JSON.stringify({ schemaVersion: 1, admissions: [admission, admission] }),
-  );
-  await expect(loadLegacy(root)).rejects.toThrow('Duplicate');
+  const { root, file, record } = await copyRecord();
+  const original = JSON.stringify(record);
+  record.review.claimReviews = [];
+  await writeFile(file, JSON.stringify(record));
+  await expect(loadPublicCorpus(root)).rejects.toThrow('freshness assessment');
+  await writeFile(file, original);
+  await writeFile(join(root, 'practices', 'duplicate.json'), original);
+  await expect(loadPublicCorpus(root)).rejects.toThrow('Duplicate');
 });
 
 it('rejects interrupted or tampered bytes and file paths escaping the reviewed directory', async () => {
-  const { root, admission } = await copyRecord();
-  const file = join(root, admission.file);
+  const { root, file, record } = await copyRecord();
+  record.evidence.mode = 'fixture';
+  await writeFile(file, JSON.stringify(record));
+  await expect(loadPublicCorpus(root)).rejects.toThrow('digest mismatch');
   await writeFile(file, (await readFile(file, 'utf8')).slice(0, -4));
-  await expect(loadLegacy(root)).rejects.toThrow('digest mismatch');
+  await expect(loadPublicCorpus(root)).rejects.toThrow();
   await rm(file);
   const outside = await mkdtemp(join(tmpdir(), 'signals-public-outside-'));
   directories.push(outside);
   await writeFile(join(outside, 'record.json'), '{}');
   await symlink(join(outside, 'record.json'), file);
-  await expect(loadLegacy(root)).rejects.toThrow('escapes Corpus');
+  await expect(loadPublicCorpus(root)).rejects.toThrow('escapes Corpus');
 });
 
 it('keeps freshness tied to source observation and claim volatility', async () => {

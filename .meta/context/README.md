@@ -9,14 +9,16 @@ Read those sources when a change crosses their boundaries; do not copy them into
 | ---------------------------------------------------- | ------------------------------------------------------------------------ |
 | Change code, dependencies, names or product behavior | [authoring.md](authoring.md)                                             |
 | Broad analysis or noisy tool output                  | [context-engineering skill](skills/signals-context-engineering/SKILL.md) |
+| Reconcile accumulated code, guidance and local state | [repo-squash skill](skills/repo-squash/SKILL.md)                         |
 | Discover public knowledge using the invoking AI      | [signal-search skill](skills/signal-search/SKILL.md)                     |
 
 `AGENTS.md` routes repository instructions here. `.agents/skills` contains discovery
 entrypoints; `.codex/hooks.json` adapts the optional output compressor. Those files route
 here rather than maintaining separate procedures. `pack.json` and `compression.json`
 configure existing tools. Generated maps, normalized/redacted command recovery and
-command metrics belong in ignored `local/`. Older recovery state remains ignored in
-`.codex`. None outranks source; command metrics can contain private arguments.
+command metrics belong in ignored `local/`. None outranks source; command metrics
+can contain private arguments. `npm run clean` clears this generated output; archive
+needed recovery and diagnostic receipts in planning first.
 
 Keep project constraints here, reusable procedures in focused skills, and volatile
 plans/results in `signals-ai-planning`. Git preserves older decisions; current guidance

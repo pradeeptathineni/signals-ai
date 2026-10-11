@@ -41,14 +41,6 @@ if (operation === 'check') {
     'disposition',
   ]);
   for (const argument of args) {
-    if (argument.startsWith('--domain=')) {
-      filters.category = argument.slice(9);
-      continue;
-    }
-    if (argument.startsWith('--tag=')) {
-      filters.concept = argument.slice(6);
-      continue;
-    }
     const match = /^--([a-zA-Z]+)=(.*)$/.exec(argument);
     if (match?.[1] === 'githubOnly' && ['true', 'false'].includes(match[2]!)) {
       filters.githubOnly = match[2] === 'true';

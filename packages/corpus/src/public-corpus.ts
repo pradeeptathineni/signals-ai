@@ -1,9 +1,8 @@
 import { readFile, realpath, readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { isAbsolute, relative, resolve } from 'node:path';
+import { relative, resolve } from 'node:path';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import { default as formats } from 'ajv-formats';
-import { parseEvidenceBundle } from '../../domain/src/evidence-exchange.js';
 import { readPublicRecord } from './public-record.js';
 import { assessSignalQuality, signalReviewSchema } from '../../domain/src/signal-quality.js';
 import {
@@ -65,11 +64,7 @@ const ajv = new Ajv2020({ allErrors: true, strict: true });
 const validate = ajv.compile<{ schemaVersion: 1; admissions: PublicAdmission[] }>(schema);
 const defaultRoot = fileURLToPath(new URL('../../../signals/', import.meta.url));
 
-export async function loadPublicCorpus(
-  root = defaultRoot,
-  asOf = new Date().toISOString(),
-  compatibility: { allowLegacy?: boolean } = {},
-) {
+export async function loadPublicCorpus(root = defaultRoot, asOf = new Date().toISOString()) {
   if (!Number.isFinite(Date.parse(asOf))) throw new Error('Invalid freshness evaluation date.');
   const rootPath = await realpath(root);
   const records = new Map<string, Awaited<ReturnType<typeof readPublicRecord>>>();
@@ -87,33 +82,21 @@ export async function loadPublicCorpus(
           throw new Error('Invalid signal type folder.');
         await collect(path, depth + 1);
       } else if (depth === 1 && entry.name.endsWith('.json')) {
-        if (legacy) throw new Error('Competing single-record and legacy manifest Corpus masters.');
         if (records.size >= 1000) throw new Error('Corpus exceeds record limit.');
         const file = relative(rootPath, path).replace(/\\/g, '/');
         if (file.startsWith('entities/')) continue;
         records.set(file, await readPublicRecord(await readFile(path, 'utf8'), file));
-      } else if (!legacy && !(directory === rootPath && entry.name === 'README.md')) {
+      } else if (!(directory === rootPath && entry.name === 'README.md')) {
         throw new Error('Unexpected Corpus file; drafts stay outside the public collection.');
       }
     }
   }
-  const legacy = await readFile(resolve(rootPath, 'manifest.json'), 'utf8').catch(
-    (error: NodeJS.ErrnoException) => {
-      if (error.code !== 'ENOENT') throw error;
-      return null;
-    },
-  );
-  if (legacy && (!compatibility.allowLegacy || rootPath === (await realpath(defaultRoot))))
-    throw new Error(
-      'Legacy Corpus requires an explicit external compatibility read; signals/ has one native authority.',
-    );
   await collect(rootPath);
-  if (!legacy && !records.size)
-    throw new Error('Empty canonical Corpus cannot replace published knowledge.');
-  // A narrow legacy reader preserves external manifest collections without a second master.
-  const manifest: unknown = legacy
-    ? JSON.parse(legacy)
-    : { schemaVersion: 1, admissions: [...records.values()].map((record) => record.admission) };
+  if (!records.size) throw new Error('Empty canonical Corpus cannot replace published knowledge.');
+  const manifest: unknown = {
+    schemaVersion: 1,
+    admissions: [...records.values()].map((record) => record.admission),
+  };
   if (!validate(manifest)) throw new Error('Public admission manifest schema mismatch.');
   const bundles = [];
   const options: PublicOption[] = [];
@@ -122,14 +105,7 @@ export async function loadPublicCorpus(
   for (const admission of manifest.admissions) {
     if (files.has(admission.file)) throw new Error('Duplicate public admission.');
     files.add(admission.file);
-    const path = await realpath(resolve(rootPath, admission.file));
-    const inside = relative(rootPath, path);
-    if (inside.startsWith('..') || isAbsolute(inside))
-      throw new Error('Public record path escapes Corpus.');
-    const bytes = records.get(admission.file)?.bytes ?? (await readFile(path, 'utf8'));
-    if (legacy && (await readFile(`${path}.sha256`, 'utf8')).trim() !== admission.digest)
-      throw new Error('Public sidecar disagrees with the admission digest.');
-    const bundle = parseEvidenceBundle(bytes, admission.digest);
+    const { bytes, bundle } = records.get(admission.file)!;
     if (!/^[a-zA-Z0-9-]+$/.test(bundle.bundle_id)) throw new Error('Unsafe public download name.');
     // The interchange permits inert metadata; the public collection does not.
     // Review plus this closed field boundary replaces regex-only publication checks.
@@ -164,7 +140,7 @@ export async function loadPublicCorpus(
       throw new Error('Signal review date is in the future.');
     if (admission.state !== 'withdrawn') {
       const projected = projectPublicOptions(bundle, admission, asOf);
-      if (!legacy && (!quality || quality.some((option) => option.level !== 'high')))
+      if (!quality || quality.some((option) => option.level !== 'high'))
         throw new Error(
           'Automatic Corpus admission requires a separate high-signal review of every option.',
         );

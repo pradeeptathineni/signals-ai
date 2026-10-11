@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
-import { saveQuery, readRetainedTable, admitRecord } from './research-store.js';
+import { saveQuery, admitRecord } from './research-store.js';
 import { encodePublicEvidence } from './public-record.js';
 import { loadPublicCorpus } from './public-corpus.js';
 import type { EvidenceBundle } from '../../domain/src/evidence-exchange.js';
@@ -26,31 +26,6 @@ it('saves private questions without touching public knowledge and refuses symlin
   });
   await symlink(join(root, 'queries'), join(root, 'alias'));
   await expect(saveQuery({}, join(root, 'alias'))).rejects.toThrow('symlink');
-});
-it('reads exact migrated rows and rejects tampering or a path escape', async () => {
-  const root = await temp(),
-    folder = join(root, 'snapshot', 'database');
-  await mkdir(join(folder, 'catalog'), { recursive: true });
-  const bytes = '{"id":"old-id","policy":"historical"}\n';
-  await writeFile(join(folder, 'catalog', 'claims.jsonl'), bytes);
-  await writeFile(
-    join(folder, 'manifest.json'),
-    JSON.stringify({
-      files: { 'catalog/claims.jsonl': createHash('sha256').update(bytes).digest('hex') },
-      counts: { 'catalog.claims': 1, 'catalog.empty': 0 },
-    }),
-  );
-  expect(await readRetainedTable('snapshot', 'database', 'catalog.claims', root)).toEqual([
-    { id: 'old-id', policy: 'historical' },
-  ]);
-  expect(await readRetainedTable('snapshot', 'database', 'catalog.empty', root)).toEqual([]);
-  await writeFile(join(folder, 'catalog', 'claims.jsonl'), '{}\n');
-  await expect(readRetainedTable('snapshot', 'database', 'catalog.claims', root)).rejects.toThrow(
-    'hash',
-  );
-  await expect(readRetainedTable('../other', 'database', 'catalog.claims', root)).rejects.toThrow(
-    'selection',
-  );
 });
 it('refuses unreviewed admission and preserves every old published file', async () => {
   const root = await temp();

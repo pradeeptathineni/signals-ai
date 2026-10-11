@@ -19,10 +19,9 @@ test('a local user saves an ordinary question without writing evidence artifacts
   const file = `private-query-probe/${body.id}`;
   try {
     const value = JSON.parse(await readFile(file, 'utf8')) as {
-      result: { question: string; items: Array<{ id: string }> };
+      result: { question: string };
     };
-    expect(value.result.question).toBe('toilet dye');
-    expect(value.result.items.map((o: { id: string }) => o.id)).toEqual(['option-water-leaks']);
+    expect(value.result).toEqual({ question: 'toilet dye' });
   } finally {
     await unlink(file);
   }

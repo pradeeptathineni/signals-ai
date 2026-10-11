@@ -94,13 +94,13 @@ Publication defaults to local-only. `npm run discovery -- publish` performs an e
 
 ```sh
 npm run corpus -- check
-npm run corpus -- search '--query=water meter' --domain=Household
-npm run research -- corpus-query 'How can I recover verbose test output?'
+npm run corpus -- search '--query=water meter' --category=Household
+npm run research -- library-query 'How can I recover verbose test output?'
 npm run verify
 ```
 
-`corpus-query` explicitly reads the historical public collection; `library-query` reads the unified current collection. The historical query's optional `--model` organizes only that retained universe through an explicitly configured loopback model. `corpus search` accepts exact type/category/concept/sourceClass/freshness/disposition filters and `--textMode=literal` or `ranked`. `corpus digest FILE.json` checks frozen evidence encoding. `research admit DRAFT.json TYPE` validates and admits a reviewed historical-format record; `research history SNAPSHOT DATABASE TABLE` reads retained file exports without a database service.
+`library-query` reads the unified current collection with the same literal matching and optional metadata-only meaning matching as the workspace. `corpus search` inspects historical-format public records with exact type/category/concept/sourceClass/freshness/disposition filters and `--textMode=literal` or `ranked`. `corpus digest FILE.json` checks frozen evidence encoding. `research admit DRAFT.json TYPE` validates and admits a reviewed historical-format record.
 
-`verify` checks structure, privacy, evidence replay and isolated development/built browser fixtures without a model service. `test:built` requires a current build. `eval:corpus` reports literal/ranked retrieval coverage over the concept catalog; matches are not graded relevance or a quality benchmark. These checks establish behavior under their conditions; live research quality, independent review and human usefulness require separate evidence. `clean` removes generated build/test output only.
+`verify` checks structure, privacy, evidence replay and isolated development/built browser fixtures without a model service. `test:built` requires a current build. `library:coverage` reports public Library lexical coverage over the concept catalog, including native and historical findings; matches are not graded relevance or a quality benchmark. Its diagnostic output stays in ignored authoring context. These checks establish behavior under their conditions; live research quality, independent review and human usefulness require separate evidence. `clean` removes generated build/test output and `.meta/context/local/` maps, diagnostics and command recovery; archive needed receipts first. It preserves private product state.
 
 See [product intent](docs/product.yaml), [architecture](ARCHITECTURE.md), [data map](docs/architecture/schema.md), [dependencies](docs/dependencies.md) and [AI authoring context](.meta/context/README.md). Signals is pre-1 software. Candidate installation/execution, arbitrary crawling, hosted authentication and cloud/model fallback are outside its authority.

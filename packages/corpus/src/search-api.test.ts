@@ -1,5 +1,5 @@
 import { createServer, request as httpRequest } from 'node:http';
-import { mkdtemp, realpath, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { it, expect } from 'vitest';
@@ -9,6 +9,39 @@ import { signalSearch } from './signal-search.js';
 import { loadEntities, retainRun } from './search-store.js';
 import { budgets, type SearchResult } from '../../domain/src/search-contract.js';
 import { randomUUID } from 'node:crypto';
+
+it('saves only the private question input without requiring a Corpus or invoking research', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-question-api-')));
+  const api = searchApi(root, async () => {
+    throw new Error('research_must_not_run');
+  });
+  const server = createServer((request, response) => {
+    void api(request, response);
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('no_port');
+  const base = `http://127.0.0.1:${address.port}/signals-ai/__signals/api/`;
+  try {
+    const { token } = (await (await fetch(`${base}session`)).json()) as { token: string };
+    const response = await fetch(`${base}question`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-signals-token': token },
+      body: JSON.stringify({ question: 'What would be useful to learn?' }),
+    });
+    expect(response.status).toBe(200);
+    const { id } = (await response.json()) as { id: string };
+    expect(id).toMatch(/^[a-f0-9-]+\.json$/);
+    const saved = JSON.parse(await readFile(join(root, '.signals/queries', id), 'utf8'));
+    expect(saved).toMatchObject({ recordVersion: 1 });
+    expect(saved.result).toEqual({ question: 'What would be useful to learn?' });
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 it('keeps replay follow-ups behind mutation and retained-identity guards without invoking discovery', async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-followup-api-')));

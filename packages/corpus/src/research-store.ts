@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { lstat, mkdir, readFile, realpath, writeFile, link, unlink } from 'node:fs/promises';
-import { join, resolve, relative, dirname } from 'node:path';
+import { lstat, mkdir, realpath, writeFile, link, unlink } from 'node:fs/promises';
+import { join, resolve, dirname } from 'node:path';
 import { readPublicRecord } from './public-record.js';
 import { loadPublicCorpus } from './public-corpus.js';
 
@@ -84,41 +84,4 @@ export async function admitRecord(raw: string, type: string, root = resolve('sig
     const { rmdir } = await import('node:fs/promises');
     await rmdir(lock);
   }
-}
-export async function readRetainedTable(
-  container: string,
-  database: string,
-  table: string,
-  root = resolve('.signals/retained'),
-) {
-  if (
-    ![container, database].every((name) => /^[a-zA-Z0-9_-]+$/.test(name)) ||
-    !/^\w+\.\w+$/.test(table)
-  )
-    throw new Error('Invalid retained table selection.');
-  const folder = join(root, container, database);
-  const manifest = JSON.parse(await readFile(join(folder, 'manifest.json'), 'utf8')) as {
-    files: Record<string, string>;
-    counts: Record<string, number>;
-  };
-  const [schema, name] = table.split('.');
-  const file = `${schema}/${name}.jsonl`;
-  if (!manifest.files[file]) {
-    if (manifest.counts[table] === 0) return [];
-    throw new Error('Unknown retained table.');
-  }
-  const path = join(folder, file);
-  const inside = relative(await realpath(folder), await realpath(path));
-  if (inside.startsWith('..')) throw new Error('Retained table escapes storage.');
-  const bytes = await readFile(path, 'utf8');
-  if (createHash('sha256').update(bytes).digest('hex') !== manifest.files[file])
-    throw new Error('Retained data hash mismatch.');
-  const rows = bytes.trim()
-    ? bytes
-        .trimEnd()
-        .split('\n')
-        .map((line) => JSON.parse(line) as unknown)
-    : [];
-  if (rows.length !== manifest.counts[table]) throw new Error('Retained row count mismatch.');
-  return rows;
 }

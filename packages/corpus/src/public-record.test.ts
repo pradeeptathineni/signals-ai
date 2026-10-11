@@ -39,10 +39,7 @@ it('refuses mixed masters, unknown files and an accidental empty publication', a
       await readFile('signals/practices/git-history.json'),
     );
     await writeFile(join(root, 'manifest.json'), '{"schemaVersion":1,"admissions":[]}');
-    await expect(loadPublicCorpus(root)).rejects.toThrow('Legacy');
-    await expect(loadPublicCorpus(root, undefined, { allowLegacy: true })).rejects.toThrow(
-      'Competing',
-    );
+    await expect(loadPublicCorpus(root)).rejects.toThrow('Unexpected');
     await rm(join(root, 'manifest.json'));
     await writeFile(join(root, 'draft.md'), 'Unreviewed prose.');
     await expect(loadPublicCorpus(root)).rejects.toThrow('Unexpected');

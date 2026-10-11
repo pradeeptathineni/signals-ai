@@ -8,6 +8,3 @@ test-results
 package-lock.json
 packages/contracts/src/evidence-bundle-v1.schema.json
 .meta/context/local/
-.codex/context-cache/
-.codex/context-compression/raw/
-.codex/context-compression/gain.jsonl

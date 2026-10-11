@@ -4,8 +4,9 @@ Read [.meta/context/README.md](.meta/context/README.md) for task-specific guidan
 Before cross-cutting changes, read `README.md`, `ARCHITECTURE.md`,
 `docs/product.yaml`, `docs/signals-contract.md` and `docs/architecture/schema.md`.
 
-Preserve canonical `signals/` records and private `.signals/` history. Evidence is
-immutable; corrections create successors and historical policies keep their meanings.
+Preserve canonical `signals/` records and useful private knowledge. Rehome historical
+exports and implementation evidence in planning when no current product consumes them.
+Evidence is immutable; corrections create successors and historical policies keep their meanings.
 Native AI owns uncertain interpretation; code owns permissions, transport, validation,
 scoring and storage. Findings grant no installation or execution authority. Recurrence,
 billing and publication require explicit authority.
@@ -18,5 +19,5 @@ Keep dependency pins and `docs/dependencies.md` aligned. Add negative tests when
 privacy, authority, evidence binding or historical continuity.
 
 `npm run verify` is the complete local gate; no database or model service is needed.
-`npm run clean` removes generated build/test output only. Planning, studies, delivery
+`npm run clean` removes generated build/test and local authoring output. Planning, studies, delivery
 receipts and superseded guidance belong in the sister `signals-ai-planning` folder.
