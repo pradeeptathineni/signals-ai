@@ -1,8 +1,16 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  CandidateSummary,
+  EvidencePanel,
+  HomeOverview,
+  ComparisonView,
+  FrozenDiscussion,
+} from './candidate-views.js';
 import {
   createLibraryIndex,
   type LibraryFinding,
   type LibraryFilters,
+  type LibraryHit,
 } from '../../../packages/domain/src/library-search.js';
 import { Workbench } from './workbench.js';
 import './experience.css';
@@ -15,14 +23,15 @@ import type { Project } from '../../../packages/corpus/src/project-contract.js';
 
 const base = import.meta.env.BASE_URL;
 const local = (window as Window & { __SIGNALS_LOCAL__?: boolean }).__SIGNALS_LOCAL__ === true;
-const primaryViews = ['Search', 'Projects', 'Library', 'Following'] as const;
+const primaryViews = ['Home', 'Search', 'Projects', 'Library', 'Following'] as const;
 type View = (typeof primaryViews)[number] | 'Activity' | 'Settings';
 type LocationState = {
   view: View;
   query: string;
-  mode: 'library' | 'research';
+  mode: 'library' | 'research' | 'combined';
   kind: string;
   acquisition: LibraryFilters['acquisition'];
+  destination: '' | 'public' | 'private';
   sort: string;
   project: string;
   detail: string;
@@ -59,22 +68,30 @@ function previewMatches(
 }
 function strengthLabel(finding: LibraryFinding) {
   const strength = finding.intrinsicStrength;
-  return `${finding.origin.format === 'legacy' ? 'Legacy review' : 'Native intrinsic signal'} (${strength.policy}): ${strength.score ?? 'unknown'}${strength.legacyLevel ? ` · review gate: ${strength.legacyLevel}` : ''}`;
+  return `${finding.origin.format === 'legacy' ? 'Legacy review' : finding.origin.format === 'lead' ? 'Unassessed lead' : 'Native intrinsic signal'} (${strength.policy}): ${strength.score ?? 'unknown'}${strength.legacyLevel ? ` · review gate: ${strength.legacyLevel}` : ''}`;
 }
 function locationState(): LocationState {
   const params = new URLSearchParams(window.location.search);
-  const view = params.get('view') ?? 'Search';
+  const view =
+    params.get('view') ?? (local && !params.has('mode') && !params.has('q') ? 'Home' : 'Search');
   return {
     view: (local ? [...primaryViews, 'Activity', 'Settings'] : ['Search', 'Library']).includes(view)
       ? (view as View)
       : 'Search',
     query: params.get('q') ?? '',
-    mode: local && params.get('mode') === 'research' ? 'research' : 'library',
+    mode:
+      local && ['research', 'combined'].includes(params.get('mode') ?? '')
+        ? (params.get('mode') as LocationState['mode'])
+        : 'library',
     kind: params.get('kind') ?? '',
     acquisition: ['open-source', 'free-to-use'].includes(params.get('access') ?? '')
       ? (params.get('access') as LibraryFilters['acquisition'])
       : 'all',
     sort: params.get('sort') ?? 'relevance',
+    destination:
+      local && ['public', 'private'].includes(params.get('destination') ?? '')
+        ? (params.get('destination') as LocationState['destination'])
+        : '',
     project: local ? (params.get('project') ?? '') : '',
     detail: params.get('detail') ?? '',
     panel: local ? (params.get('panel') ?? '') : '',
@@ -91,6 +108,7 @@ function writeLocation(state: LocationState, replace: boolean) {
     kind: state.kind,
     access: state.acquisition,
     sort: state.sort,
+    destination: state.destination,
     project: state.project,
     detail: state.detail,
     panel: state.panel,
@@ -113,6 +131,9 @@ function date(value: string | null) {
 }
 export function Experience() {
   const [state, setState] = useState(locationState);
+  const currentState = useRef(state);
+  currentState.current = state;
+  const activeReopen = useRef(state.mode === 'research' ? state.run : '');
   const [records, setRecords] = useState<LibraryFinding[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState('');
@@ -139,7 +160,35 @@ export function Experience() {
     }[];
   } | null>(null);
   const [answerBusy, setAnswerBusy] = useState(false);
-  async function api<T>(route: string, body?: unknown): Promise<T> {
+  const [recent, setRecent] = useState<
+    { runId: string; query: string; status: string; candidates: number }[]
+  >([]);
+  const [interests, setInterests] = useState<{ id: string; query: string; enabled: boolean }[]>([]);
+  const [selections, setSelections] = useState<
+    { query: string; queryId?: string; at: string; selected: string[] }[]
+  >([]);
+  const [meaningAllowed, setMeaningAllowed] = useState(false);
+  const [autoSaving, setAutoSaving] = useState({
+    enabled: false,
+    signalThreshold: 75,
+    relevanceThreshold: 75,
+  });
+  const [meaningBusy, setMeaningBusy] = useState(false);
+  const [meaningResult, setMeaningResult] = useState<{
+    query: string;
+    hits: LibraryHit[];
+    reason: string;
+    state: string;
+    omitted: number;
+  } | null>(null);
+  const [meaningController, setMeaningController] = useState<AbortController | null>(null);
+  const evidenceOpener = useRef<HTMLElement | null>(null);
+  const detailed = records.find((record) => record.key === state.detail);
+  function closeEvidence() {
+    navigate({ detail: '' });
+    evidenceOpener.current?.focus();
+  }
+  async function api<T>(route: string, body?: unknown, signal?: AbortSignal): Promise<T> {
     let authorization = token;
     if (body !== undefined && !authorization) {
       const response = await fetch(`${base}__signals/api/session`);
@@ -151,11 +200,12 @@ export function Experience() {
     const response = await fetch(
       `${base}__signals/api/${route}`,
       body === undefined
-        ? {}
+        ? { signal }
         : {
             method: 'POST',
             headers: { 'content-type': 'application/json', 'x-signals-token': authorization },
             body: JSON.stringify(body),
+            signal,
           },
     );
     const value: unknown = await response.json();
@@ -223,9 +273,52 @@ export function Experience() {
     setProjects(result.projects);
     setOpportunities(retained.opportunities);
   }
+  async function reloadHome() {
+    const [history, settings, preferences] = await Promise.all([
+      api<{ runs: typeof recent; selections: typeof selections }>('history'),
+      api<{ queries: typeof interests }>('settings'),
+      api<{ meaningMatching: boolean; automaticSaving?: typeof autoSaving }>('library-preferences'),
+    ]);
+    setRecent(history.runs);
+    setSelections(history.selections);
+    setInterests(settings.queries);
+    setMeaningAllowed(preferences.meaningMatching);
+    setAutoSaving(
+      preferences.automaticSaving ?? {
+        enabled: false,
+        signalThreshold: 75,
+        relevanceThreshold: 75,
+      },
+    );
+  }
+  async function searchLibrary() {
+    if (!local || !state.query.trim()) return;
+    meaningController?.abort();
+    const controller = new AbortController();
+    setMeaningController(controller);
+    setMeaningBusy(true);
+    setMeaningResult(null);
+    try {
+      const result = await api<Omit<NonNullable<typeof meaningResult>, 'query'>>(
+        'library-search',
+        {
+          query: state.query,
+          scope: state.destination === 'public' ? 'public' : 'local',
+          filters,
+        },
+        controller.signal,
+      );
+      if (!controller.signal.aborted) setMeaningResult({ ...result, query: state.query });
+    } catch (failure) {
+      if (!controller.signal.aborted) throw failure;
+    } finally {
+      if (!controller.signal.aborted) setMeaningBusy(false);
+    }
+  }
   useEffect(() => {
     void action(reloadLibrary);
     if (local) void reloadProjects().catch((failure: unknown) => setError(String(failure)));
+    if (local) void reloadHome().catch((failure: unknown) => setError(String(failure)));
     const back = () => {
       const next = locationState();
       setProjectResearch((current) => (previewLocationMatches(current, next) ? current : null));
@@ -236,11 +329,35 @@ export function Experience() {
     return () => window.removeEventListener('popstate', back);
   }, []);
   function navigate(change: Partial<LocationState>, replace = false) {
+    if (
+      (change.view && change.view !== 'Search') ||
+      change.mode === 'library' ||
+      change.mode === 'combined'
+    ) {
+      activeReopen.current = '';
+      setReopenRun('');
+    }
     const next = { ...state, ...change };
     setProjectResearch((current) => (previewMatches(current, next, projects) ? current : null));
     setState(next);
     writeLocation(next, replace);
     setMessage('');
+    if (change.query !== undefined && change.query !== state.query) {
+      meaningController?.abort();
+      setMeaningBusy(false);
+      setMeaningResult(null);
+    }
+    if (
+      change.kind !== undefined ||
+      change.acquisition !== undefined ||
+      change.destination !== undefined ||
+      change.view !== undefined ||
+      change.mode !== undefined
+    ) {
+      meaningController?.abort();
+      setMeaningBusy(false);
+      setMeaningResult(null);
+    }
   }
   function selectFinding(key: string) {
     setAnswer(null);
@@ -261,22 +378,43 @@ export function Experience() {
   const filters: LibraryFilters = {
     kind: state.kind || undefined,
     acquisition: state.acquisition,
+    destination: state.destination || undefined,
     ...(local && state.view === 'Library' ? { saved: true } : {}),
   };
   const hits = useMemo(() => {
-    const values = index.search(state.query, filters);
+    const values =
+      meaningResult?.query === state.query && ['completed', 'partial'].includes(meaningResult.state)
+        ? meaningResult.hits.flatMap((hit) => {
+            const finding = records.find((record) => record.key === hit.finding.key);
+            return finding ? [{ ...hit, finding }] : [];
+          })
+        : index.search(state.query, filters);
     if (state.sort === 'title')
       values.sort((a, b) => a.finding.title.localeCompare(b.finding.title));
     if (state.sort === 'strength')
       values.sort(
         (a, b) =>
           a.finding.intrinsicStrength.policy.localeCompare(b.finding.intrinsicStrength.policy) ||
-          (b.finding.intrinsicStrength.score ?? -1) - (a.finding.intrinsicStrength.score ?? -1),
+          a.finding.kind.localeCompare(b.finding.kind) ||
+          (a.finding.native?.assessment.rubric ?? '').localeCompare(
+            b.finding.native?.assessment.rubric ?? '',
+          ) ||
+          (b.finding.intrinsicStrength.score ?? -1) - (a.finding.intrinsicStrength.score ?? -1) ||
+          a.finding.key.localeCompare(b.finding.key),
       );
     if (state.sort === 'observed')
       values.sort((a, b) => (b.finding.observedAt ?? '').localeCompare(a.finding.observedAt ?? ''));
     return values;
-  }, [index, state.query, state.kind, state.acquisition, state.sort, state.view]);
+  }, [
+    index,
+    state.query,
+    state.kind,
+    state.acquisition,
+    state.destination,
+    state.sort,
+    state.view,
+    meaningResult,
+  ]);
   const kinds = [...new Set(records.map((record) => record.kind))].sort();
   const compared = records.filter((finding) => selected.includes(finding.key));
   const powered =
@@ -290,7 +428,7 @@ export function Experience() {
             : 'Interests'
           : state.view === 'Library' && state.panel === 'inbox'
             ? 'Inbox'
-            : state.mode === 'research'
+            : state.view === 'Search' && state.mode !== 'library'
               ? 'Search'
               : null;
   useEffect(() => {
@@ -318,7 +456,7 @@ export function Experience() {
       </a>
       <aside className="desk-rail">
         <a className="desk-brand" href={base}>
-          Signals<span>A personal research desk</span>
+          Signals<span>Find. Understand. Keep.</span>
         </a>
         <nav aria-label="Signals destinations">
           {(local ? primaryViews : (['Search', 'Library'] as const)).map((view) => (
@@ -346,11 +484,6 @@ export function Experience() {
         )}
         <div className="desk-rail-note">
           <strong>{local ? 'Your local workspace' : 'Public library · read only'}</strong>
-          <p>
-            {local
-              ? 'Read and organize without a model. Research starts when you ask.'
-              : 'Approved findings, evidence and primary sources. No account or model call.'}
-          </p>
         </div>
       </aside>
       <main className="desk-main" id="desk-content" tabIndex={-1}>
@@ -377,15 +510,16 @@ export function Experience() {
             {message}
           </p>
         )}
-        {(state.view === 'Search' || state.view === 'Library') && (
+        {(state.view === 'Home' || state.view === 'Search' || state.view === 'Library') && (
           <>
             <div className="desk-heading">
-              <h1>{state.view === 'Library' ? 'Your library' : 'Find something useful.'}</h1>
-              <p>
+              <h1>
                 {state.view === 'Library'
-                  ? 'Saved knowledge, with evidence you can return to.'
-                  : 'Start with what you already have. Research a gap when you need more.'}
-              </p>
+                  ? 'Your library'
+                  : state.view === 'Home'
+                    ? 'Worth knowing. Worth keeping.'
+                    : 'Find something useful.'}
+              </h1>
             </div>
             {state.view === 'Library' && local && (
               <nav className="desk-tabs" aria-label="Library views">
@@ -404,18 +538,30 @@ export function Experience() {
               </nav>
             )}
             {state.panel !== 'inbox' && (
-              <section className="desk-search" aria-label="Finding search">
-                <label htmlFor="desk-query">Find something useful</label>
+              <form
+                className="desk-search"
+                aria-label="Finding search"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (state.view === 'Home') navigate({ view: 'Search' });
+                  if (state.mode === 'library' || state.mode === 'combined')
+                    void action(searchLibrary);
+                }}
+              >
+                <label className="desk-query-label" htmlFor="desk-query">
+                  Find something useful
+                </label>
                 <input
                   id="desk-query"
                   type="search"
                   value={state.query}
                   onChange={(event) => navigate({ query: event.target.value }, true)}
-                  placeholder="A question, capability or name…"
+                  placeholder="What do you want to find?"
                 />
                 <div className="desk-search-options">
-                  <div className="desk-tabs" aria-label="Search scope">
+                  <nav className="desk-tabs" aria-label="Search scope">
                     <button
+                      type="button"
                       aria-pressed={state.mode === 'library'}
                       onClick={() => navigate({ mode: 'library' })}
                     >
@@ -423,68 +569,179 @@ export function Experience() {
                     </button>
                     {local && (
                       <button
+                        type="button"
+                        aria-label="Research online"
                         aria-pressed={state.mode === 'research'}
                         onClick={() => navigate({ view: 'Search', mode: 'research', panel: '' })}
                       >
-                        Research online
+                        Online
                       </button>
                     )}
-                  </div>
+                    {local && (
+                      <button
+                        type="button"
+                        aria-pressed={state.mode === 'combined'}
+                        onClick={() => navigate({ view: 'Search', mode: 'combined', panel: '' })}
+                      >
+                        Combined
+                      </button>
+                    )}
+                  </nav>
                   <span>
                     {state.mode === 'library'
-                      ? 'No model call'
-                      : 'Review provider and budget below before starting.'}
+                      ? 'Search saved knowledge.'
+                      : state.mode === 'combined'
+                        ? 'Saved knowledge + new research.'
+                        : 'Find something new.'}
                   </span>
-                </div>
-                {local && (
-                  <label className="desk-project-scope">
-                    For:
-                    <select
-                      aria-label="Project scope"
-                      value={state.project}
-                      onChange={(event) => navigate({ project: event.target.value })}
-                    >
-                      <option value="">Everything</option>
-                      {projects.map((project) => (
-                        <option key={project.id} value={project.id}>
-                          {project.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-                {local && state.mode === 'library' && (
-                  <details>
-                    <summary>Keep a historical corpus question</summary>
-                    <p>
-                      Save this question with its historical reviewed corpus matches privately. This
-                      performs no model call.
-                    </p>
-                    <button
-                      disabled={!state.query.trim()}
-                      onClick={() =>
-                        void action(async () => {
-                          const response = await fetch(`${base}__signals/query`, {
-                            method: 'POST',
-                            headers: { 'content-type': 'application/json' },
-                            body: JSON.stringify({ question: state.query }),
-                          });
-                          if (!response.ok)
-                            throw new Error('The historical question could not be saved.');
-                          const saved = (await response.json()) as { id: string };
-                          setMessage(`Question saved privately: ${saved.id}`);
-                        })
-                      }
-                    >
-                      Save question locally
+                  {state.mode !== 'research' && (
+                    <button disabled={!state.query.trim() || meaningBusy}>
+                      {meaningBusy ? 'Matching meaning…' : 'Search Library'}
                     </button>
+                  )}
+                  {meaningBusy && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        meaningController?.abort();
+                        setMeaningBusy(false);
+                        setMeaningResult({
+                          query: state.query,
+                          hits: [],
+                          state: 'cancelled',
+                          omitted: 0,
+                          reason: 'Meaning matching cancelled. Literal matches remain available.',
+                        });
+                      }}
+                    >
+                      Cancel meaning matching
+                    </button>
+                  )}
+                </div>
+                {local && state.mode !== 'research' && (
+                  <details className="desk-privacy">
+                    <summary>AI matching {meaningAllowed ? 'on' : 'off'}</summary>
+                    <p>
+                      One bounded no-web operation on submission. Your question and up to 200
+                      retained record IDs, titles, descriptions, kinds, capabilities and tags may
+                      leave this machine for your authenticated AI provider. Private notes and
+                      original evidence are excluded. Literal search remains available.
+                    </p>
+                    <label className="check">
+                      <input
+                        type="checkbox"
+                        checked={meaningAllowed}
+                        onChange={(event) => {
+                          const allowed = event.target.checked;
+                          void action(async () => {
+                            await api('library-preferences', { meaningMatching: allowed });
+                            setMeaningAllowed(allowed);
+                          });
+                        }}
+                      />
+                      Permit meaning matching with my AI host
+                    </label>
                   </details>
                 )}
-              </section>
+                {meaningResult?.query === state.query && (
+                  <section role="status" className="desk-meta">
+                    <details>
+                      <summary>
+                        {['completed', 'partial'].includes(meaningResult.state)
+                          ? 'Matches updated'
+                          : 'Literal matches available'}
+                      </summary>
+                      <p>
+                        {meaningResult.reason}
+                        {meaningResult.omitted
+                          ? ` ${meaningResult.omitted} records were outside the bounded AI scope.`
+                          : ''}{' '}
+                        Retrieval matching is separate from query relevance and Signal.
+                      </p>
+                    </details>
+                  </section>
+                )}
+                {local && state.view !== 'Home' && (
+                  <details className="desk-search-more" open={Boolean(state.project)}>
+                    <summary>Search options</summary>
+                    <label className="desk-project-scope">
+                      For:
+                      <select
+                        aria-label="Project scope"
+                        value={state.project}
+                        onChange={(event) => navigate({ project: event.target.value })}
+                      >
+                        <option value="">Everything</option>
+                        {projects.map((project) => (
+                          <option key={project.id} value={project.id}>
+                            {project.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {state.mode === 'library' && (
+                      <details>
+                        <summary>Save this question</summary>
+                        <p>
+                          Save this question with its historical reviewed corpus matches privately.
+                          This performs no model call.
+                        </p>
+                        <button
+                          type="button"
+                          disabled={!state.query.trim()}
+                          onClick={() =>
+                            void action(async () => {
+                              const saved = await api<{ id: string }>('question', {
+                                question: state.query,
+                              });
+                              setMessage(`Question saved privately: ${saved.id}`);
+                            })
+                          }
+                        >
+                          Save question locally
+                        </button>
+                      </details>
+                    )}
+                  </details>
+                )}
+              </form>
             )}
-            {!powered && (
+            {state.view === 'Home' && (
+              <HomeOverview
+                records={records}
+                interests={interests}
+                recent={recent}
+                selections={selections}
+                openLibrary={() => navigate({ view: 'Library' })}
+                openFollowing={() => navigate({ view: 'Following' })}
+                inspect={(key) => navigate({ view: 'Search', detail: key })}
+                reopen={(run) => {
+                  setReopenRun(run.runId);
+                  navigate({ view: 'Search', mode: 'research', query: run.query, run: run.runId });
+                }}
+              />
+            )}
+            {state.view !== 'Home' && (!powered || state.mode === 'combined') && (
               <>
                 <div className="desk-filters">
+                  {local && (
+                    <label>
+                      Visibility scope
+                      <select
+                        aria-label="Visibility scope"
+                        value={state.destination}
+                        onChange={(event) =>
+                          navigate({
+                            destination: event.target.value as LocationState['destination'],
+                          })
+                        }
+                      >
+                        <option value="">All local knowledge</option>
+                        <option value="public">Public Corpus</option>
+                        <option value="private">Private Library</option>
+                      </select>
+                    </label>
+                  )}
                   <label>
                     Resource kind
                     <select
@@ -521,22 +778,28 @@ export function Experience() {
                       value={state.sort}
                       onChange={(event) => navigate({ sort: event.target.value })}
                     >
-                      <option value="relevance">Relevance to your query</option>
+                      <option value="relevance">Retrieval match</option>
                       <option value="title">Name</option>
-                      <option value="strength">Score within policy groups</option>
+                      <option value="strength">Score within policy and type groups</option>
                       <option value="observed">Last observed</option>
                     </select>
                   </label>
                   <button
                     onClick={() =>
-                      navigate({ query: '', kind: '', acquisition: 'all', sort: 'relevance' })
+                      navigate({
+                        query: '',
+                        kind: '',
+                        acquisition: 'all',
+                        destination: '',
+                        sort: 'relevance',
+                      })
                     }
                   >
                     Reset filters
                   </button>
                 </div>
                 <div className="desk-section-line">
-                  <h2>{state.view === 'Library' ? 'Saved findings' : 'From the corpus'}</h2>
+                  <h2>{state.view === 'Library' ? 'Saved findings' : 'Library results'}</h2>
                   <p aria-live="polite">
                     {loaded
                       ? `${hits.length} ${hits.length === 1 ? 'finding' : 'findings'}`
@@ -544,91 +807,44 @@ export function Experience() {
                   </p>
                 </div>
                 {compared.length > 0 && (
-                  <section className="desk-comparison" aria-label="Compare selected findings">
-                    <h2>Compare purposes and evidence</h2>
-                    <p>
-                      Scores from different policies are separate judgments and are not directly
-                      comparable.
-                    </p>
-                    <div>
-                      {compared.map((finding) => (
-                        <article key={finding.key}>
-                          <h3>{finding.title}</h3>
-                          <p>{finding.description}</p>
-                          <p>
-                            {strengthLabel(finding)}.{' '}
-                            {finding.native?.limits[0] ?? 'Open evidence for limitations.'}
-                          </p>
-                        </article>
-                      ))}
-                    </div>
-                    <button onClick={() => navigate({ compare: '' })}>Clear comparison</button>
-                    {local && compared.every((finding) => finding.native) && (
-                      <form
-                        onSubmit={(event) => {
-                          event.preventDefault();
+                  <ComparisonView findings={compared} onClear={() => navigate({ compare: '' })}>
+                    {local && (
+                      <FrozenDiscussion
+                        question={followup}
+                        busy={answerBusy}
+                        answer={answer}
+                        onQuestion={setFollowup}
+                        onSubmit={() => {
                           void action(async () => {
+                            const basis = state.compare;
                             setAnswerBusy(true);
                             try {
-                              setAnswer(
-                                await api('followup', {
-                                  ids: compared.map((finding) => finding.id),
-                                  destinations: compared.map(
-                                    (finding) => finding.origin.destination,
-                                  ),
+                              const response = await api<NonNullable<typeof answer>>(
+                                'library-discussion',
+                                {
+                                  keys: compared.map((finding) => finding.key),
                                   question: followup,
-                                }),
+                                },
                               );
+                              if (currentState.current.compare === basis) setAnswer(response);
                             } finally {
                               setAnswerBusy(false);
                             }
                           });
                         }}
-                      >
-                        <label>
-                          Ask selected retained evidence
-                          <input
-                            required
-                            value={followup}
-                            onChange={(event) => setFollowup(event.target.value)}
-                          />
-                        </label>
-                        <button disabled={answerBusy}>
-                          {answerBusy
-                            ? 'Reading retained evidence…'
-                            : 'Explain from retained evidence'}
-                        </button>
-                        <p>
-                          One deliberate, bounded no-web AI call. Browsing and comparison need no
-                          model.
-                        </p>
-                      </form>
+                      />
                     )}
-                    {answer && (
-                      <section aria-label="Retained evidence answer">
-                        <p>{answer.answer}</p>
-                        {answer.statements.map((statement) => (
-                          <details key={statement.observationId}>
-                            <summary>{statement.statement}</summary>
-                            <blockquote>{statement.quote}</blockquote>
-                          </details>
-                        ))}
-                      </section>
-                    )}
-                  </section>
+                  </ComparisonView>
                 )}
                 <section className="desk-results" aria-label="Finding results">
-                  {hits.slice(0, visibleCount).map(({ finding, matchedFields }) => (
+                  {hits.slice(0, visibleCount).map(({ finding, meaningReason }) => (
                     <article
                       className="desk-finding"
                       key={finding.key}
                       data-finding-key={finding.key}
                     >
-                      <div className="desk-finding-head">
-                        <h3>{finding.title}</h3>
-                        <span>{finding.kind.replaceAll('_', ' ')}</span>
-                      </div>
-                      <p className="desk-summary">{finding.description}</p>
+                      <CandidateSummary finding={finding} />
+                      {meaningReason && <p className="desk-fit">{meaningReason}</p>}
                       {state.project && (
                         <ProjectFit
                           projectId={state.project}
@@ -636,16 +852,14 @@ export function Experience() {
                           opportunities={opportunities}
                         />
                       )}
-                      <p className="desk-meta">
-                        {strengthLabel(finding)} · observed {date(finding.observedAt)}
-                        {finding.native?.limits[0] ? ` · ${finding.native.limits[0]}` : ''}
+                      <p className="desk-meta" title={strengthLabel(finding)}>
+                        {finding.native?.evidence[0]?.publisher ??
+                          (finding.lead ? 'Saved link' : 'Historical review')}{' '}
+                        · {date(finding.native?.evidence[0]?.fetchedAt ?? finding.observedAt)}
                       </p>
-                      {local && (
-                        <p className="desk-meta">
-                          {finding.origin.destination === 'private'
-                            ? 'Private finding'
-                            : 'Public finding'}{' '}
-                          · {finding.saved ? 'In your saved collection' : 'Available in the corpus'}
+                      {(finding.native?.limits[0] ?? finding.lead?.limits[0]) && (
+                        <p className="desk-limit">
+                          {finding.native?.limits[0] ?? finding.lead?.limits[0]}
                         </p>
                       )}
                       <div className="desk-actions">
@@ -669,20 +883,24 @@ export function Experience() {
                           aria-pressed={selected.includes(finding.key)}
                           onClick={() => selectFinding(finding.key)}
                         >
-                          {selected.includes(finding.key) ? 'Selected for comparison' : 'Compare'}
+                          {selected.includes(finding.key) ? 'Selected' : 'Compare'}
                         </button>
                       </div>
                       <details open={state.detail === finding.key}>
                         <summary
                           onClick={(event) => {
                             event.preventDefault();
+                            evidenceOpener.current = event.currentTarget;
                             navigate({ detail: state.detail === finding.key ? '' : finding.key });
                           }}
                         >
                           Evidence & details
                         </summary>
+                        <span className="desk-visually-hidden">{strengthLabel(finding)}</span>
                         {state.detail === finding.key && (
-                          <FindingDetail finding={finding} matchedFields={matchedFields} />
+                          <span className="desk-visually-hidden">
+                            Evidence opened beside your results.
+                          </span>
                         )}
                       </details>
                       {local && finding.native && state.detail === finding.key && (
@@ -875,6 +1093,77 @@ export function Experience() {
             </nav>
           </>
         )}
+        {local && state.view === 'Settings' && (
+          <section className="desk-personal-preferences" aria-label="Personal Library preferences">
+            <h2>Personal Library</h2>
+            <p>
+              Manual saving accepts any returned item. Automatic personal saving is off by default
+              and never publishes to the public Corpus.
+            </p>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void action(async () => {
+                  await api('library-preferences', {
+                    meaningMatching: meaningAllowed,
+                    automaticSaving: autoSaving,
+                  });
+                  setMessage(
+                    'Personal preferences saved. Public admission and recurrence are separate.',
+                  );
+                });
+              }}
+            >
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={autoSaving.enabled}
+                  onChange={(event) =>
+                    setAutoSaving({ ...autoSaving, enabled: event.target.checked })
+                  }
+                />
+                Automatically save qualifying research results privately
+              </label>
+              <div className="desk-filters">
+                <label>
+                  Minimum Signal
+                  <input
+                    aria-label="Automatic saving Signal threshold"
+                    type="number"
+                    min={0}
+                    max={100}
+                    required
+                    value={autoSaving.signalThreshold}
+                    onChange={(event) =>
+                      setAutoSaving({ ...autoSaving, signalThreshold: event.target.valueAsNumber })
+                    }
+                  />
+                </label>
+                <label>
+                  Minimum relevance
+                  <select
+                    aria-label="Automatic saving relevance threshold"
+                    value={autoSaving.relevanceThreshold}
+                    onChange={(event) =>
+                      setAutoSaving({
+                        ...autoSaving,
+                        relevanceThreshold: Number(event.target.value),
+                      })
+                    }
+                  >
+                    <option value={75}>75 · Direct match</option>
+                    <option value={100}>100 · Meets inspected constraints</option>
+                  </select>
+                </label>
+              </div>
+              <p className="desk-meta">
+                Requires completed assessment, resolved identity and no decisive unresolved
+                contradiction. Exclusions remain inspectable. Changes apply when saved.
+              </p>
+              <button>Save personal preferences</button>
+            </form>
+          </section>
+        )}
         {local && workbenchStarted && (
           <div hidden={!powered} className="desk-powered">
             <Workbench
@@ -893,6 +1182,8 @@ export function Experience() {
               providedProfile={approvedResearch?.request.profile}
               monitorRun={monitorRun}
               onOpenResult={(runId, restoredQuery) => {
+                if (restoredQuery !== undefined && activeReopen.current !== runId) return;
+                if (restoredQuery === undefined) activeReopen.current = runId;
                 setProjectResearch(null);
                 if (restoredQuery !== undefined)
                   navigate(
@@ -913,7 +1204,7 @@ export function Experience() {
                   navigate({ view: 'Search', mode: 'research', panel: '', run: runId });
               }}
               onCompleted={(runId) => {
-                const next = { ...state, run: runId };
+                const next = { ...currentState.current, run: runId };
                 setState(next);
                 writeLocation(next, true);
                 void action(reloadLibrary);
@@ -921,14 +1212,19 @@ export function Experience() {
             />
           </div>
         )}
+        {detailed && (
+          <EvidencePanel title={detailed.title} onClose={closeEvidence}>
+            <FindingDetail
+              finding={detailed}
+              matchedFields={
+                hits.find((hit) => hit.finding.key === detailed.key)?.matchedFields ?? []
+              }
+            />
+          </EvidencePanel>
+        )}
         <footer className="desk-footer">
-          <p>
-            {local
-              ? 'Findings remain data. Saving or requesting a setup plan never runs the resource.'
-              : 'Search and read approved evidence here. The local Signals workbench adds projects, private notes, capture and deliberate research.'}
-          </p>
           <a href={`${base}library.json`} download="signals-library.json">
-            Download the public library
+            Export public Library
           </a>
         </footer>
       </main>
@@ -990,49 +1286,81 @@ function FindingDetail({
 }) {
   return (
     <div className="desk-detail">
-      <p>
-        {finding.intrinsicStrength.policy}: signal strength records an evidence policy judgment; it
-        is separate from query relevance and does not prove usefulness.
-      </p>
-      <p>
-        License: {finding.license.state === 'known' ? finding.license.values.join(', ') : 'Unknown'}
-        . Access:{' '}
-        {finding.access.state === 'unknown'
-          ? 'Unknown'
-          : finding.access.freeToUse
-            ? 'Free to use'
-            : 'Not marked free to use'}
-        .
-      </p>
-      {matchedFields.length > 0 && (
+      <p className="desk-detail-description">{finding.description}</p>
+      <details>
+        <summary>About this item</summary>
         <p>
-          Search matched: {matchedFields.join(', ')}. This is lexical retrieval, not a suitability
-          assessment.
+          {finding.intrinsicStrength.policy}: signal strength records an evidence policy judgment;
+          it is separate from query relevance and does not prove usefulness.
         </p>
-      )}
-      {local && (
         <p>
-          {finding.origin.destination === 'private'
-            ? 'Private retained record'
-            : 'Public corpus record'}{' '}
-          · {finding.id}
+          License:{' '}
+          {finding.license.state === 'known' ? finding.license.values.join(', ') : 'Unknown'}.
+          Access:{' '}
+          {finding.access.state === 'unknown'
+            ? 'Unknown'
+            : finding.access.freeToUse
+              ? 'Free to use'
+              : 'Not marked free to use'}
+          .
         </p>
-      )}
-      {finding.native && (
-        <>
-          <h4>Evidence and limits</h4>
+        {matchedFields.length > 0 && (
+          <p>
+            Search matched: {matchedFields.join(', ')}. This is lexical retrieval, not a suitability
+            assessment.
+          </p>
+        )}
+        {local && (
+          <p>
+            {finding.origin.destination === 'private'
+              ? 'Private retained record'
+              : 'Public corpus record'}{' '}
+            · {finding.id}
+          </p>
+        )}
+      </details>
+      {finding.lead && (
+        <section>
+          <h4>Saved lead · not assessed</h4>
+          <p>
+            Saved {date(finding.lead.savedAt)} from “{finding.lead.query}”. Personal saving adds no
+            evidence or Signal.
+          </p>
           <ul>
-            {finding.native.limits.map((limit) => (
+            {finding.lead.limits.map((limit) => (
               <li key={limit}>{limit}</li>
             ))}
           </ul>
+          <p>
+            The original link is available above. Research and source inspection are separate
+            actions.
+          </p>
+        </section>
+      )}
+      {finding.native && (
+        <>
+          <h4>What to know</h4>
+          <p>{finding.native.limits[0] ?? 'No limitations recorded.'}</p>
+          <details>
+            <summary>All limitations ({finding.native.limits.length})</summary>
+            <ul>
+              {finding.native.limits.map((limit) => (
+                <li key={limit}>{limit}</li>
+              ))}
+            </ul>
+          </details>
           {finding.native.evidence.map((source) => (
-            <section key={source.id}>
+            <details className="desk-source" key={source.id}>
+              <summary>{source.title}</summary>
               <a href={source.uri} target="_blank" rel="noreferrer">
-                {source.title}
+                Open source ↗
               </a>
               <p>
-                {source.state} · {source.publisher} · observed {date(source.fetchedAt)}
+                {source.state} · {source.publisher} · {source.family}
+              </p>
+              <p className="desk-meta">
+                Publication: {date(source.publishedAt)} · fetched: {date(source.fetchedAt)} ·
+                origin: {source.origin}
               </p>
               <p>{source.excerpt || source.reason}</p>
               <details>
@@ -1050,14 +1378,51 @@ function FindingDetail({
                         {observation.verified ? 'Matched passage' : 'Unmatched passage'}. Text
                         matching does not establish factual entailment.
                       </p>
+                      <p className="desk-meta">
+                        {observation.independent
+                          ? 'Independent evidence reported'
+                          : 'Independence not established'}{' '}
+                        · model observation
+                      </p>
                     </div>
                   ))}
               </details>
-            </section>
+            </details>
           ))}
           <details>
             <summary>Assessment factors and history</summary>
-            <pre>{JSON.stringify(finding.native.assessment, null, 2)}</pre>
+            <p>
+              {finding.native.assessment.rubric ?? finding.kind} ·{' '}
+              {finding.native.assessment.disposition ?? finding.native.assessment.state}
+            </p>
+            <table className="desk-assessment-table">
+              <thead>
+                <tr>
+                  <th scope="col">Dimension</th>
+                  <th scope="col">Points</th>
+                  <th scope="col">Evidence state</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(finding.native.assessment.features).map(([dimension, feature]) => (
+                  <tr key={dimension}>
+                    <th scope="row">{dimension}</th>
+                    <td>{feature.contribution.toFixed(2)}</td>
+                    <td>{feature.state}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {finding.native.assessment.reasons?.map((reason) => (
+              <p key={reason}>{reason}</p>
+            ))}
+            {finding.native.assessment.nextVerification && (
+              <p>Next verification: {finding.native.assessment.nextVerification}</p>
+            )}
+            <details>
+              <summary>Full stored assessment</summary>
+              <pre>{JSON.stringify(finding.native.assessment, null, 2)}</pre>
+            </details>
           </details>
         </>
       )}

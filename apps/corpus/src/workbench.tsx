@@ -22,6 +22,7 @@ import type { PersonalState } from '../../../packages/domain/src/search-priority
 import type { InboxEntry } from '../../../packages/corpus/src/search-inbox.js';
 import type { runDueOnce } from '../../../packages/corpus/src/search-scheduler.js';
 import { rejectedNativeLeads } from '../../../packages/domain/src/search-rejected.js';
+import { ScoreView } from './candidate-views.js';
 
 const local = (window as Window & { __SIGNALS_LOCAL__?: boolean }).__SIGNALS_LOCAL__ === true;
 const base = import.meta.env.BASE_URL;
@@ -1369,39 +1370,42 @@ export function Workbench({
                       </section>
                     )}
                   </details>
-                  <p>{ready}</p>
-                  <label>
-                    Capture a public URL
-                    <input
-                      type="url"
-                      value={captureUrl}
-                      onChange={(event) => setCaptureUrl(event.target.value)}
-                      placeholder="https://…"
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    disabled={busy || sourceBusy || !token || !captureUrl.trim()}
-                    onClick={() =>
-                      void action(() =>
-                        start(
-                          undefined,
-                          query.trim() ||
-                            'Capture this resource and describe its supported uses and limits.',
-                          undefined,
-                          context,
-                          [captureUrl],
-                        ),
-                      )
-                    }
-                  >
-                    Capture URL
-                  </button>
-                  <p>
-                    {providedProfile ?? settings?.profile ?? 'wide'} budget:{' '}
-                    {JSON.stringify(budgets[providedProfile ?? settings?.profile ?? 'wide'])}.
-                    Review before saving; results retained privately.
-                  </p>
+                  <details className="desk-research-options" open={Boolean(providedContext)}>
+                    <summary>Research options</summary>
+                    <p>{ready}</p>
+                    <label>
+                      Capture a public URL
+                      <input
+                        type="url"
+                        value={captureUrl}
+                        onChange={(event) => setCaptureUrl(event.target.value)}
+                        placeholder="https://…"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      disabled={busy || sourceBusy || !token || !captureUrl.trim()}
+                      onClick={() =>
+                        void action(() =>
+                          start(
+                            undefined,
+                            query.trim() ||
+                              'Capture this resource and describe its supported uses and limits.',
+                            undefined,
+                            context,
+                            [captureUrl],
+                          ),
+                        )
+                      }
+                    >
+                      Capture URL
+                    </button>
+                    <p>
+                      {providedProfile ?? settings?.profile ?? 'wide'} budget:{' '}
+                      {JSON.stringify(budgets[providedProfile ?? settings?.profile ?? 'wide'])}.
+                      Review before saving; results retained privately.
+                    </p>
+                  </details>
                   <div className="actions">
                     <button disabled={busy || sourceBusy || !token || !query.trim()} type="submit">
                       {embedded ? 'Start online research' : 'Start search'}
@@ -1490,24 +1494,32 @@ export function Workbench({
                 </ol>
               </details>
             )}
-            {tab === 'Search' && (result?.brief ?? earlyBrief)?.text && (
-              <section className="research-brief" aria-label="Research brief">
-                <h2>What this could help you do</h2>
-                <Brief text={(result?.brief ?? earlyBrief)!.text} />
+            {tab === 'Search' && result?.interpretation && (
+              <details className="desk-interpretation">
+                <summary>How your question was understood</summary>
+                <p>{result.interpretation.need}</p>
                 <p>
-                  {busy
-                    ? 'Original answer ready; source checks and saved-record preparation are pending. '
-                    : 'Retained from this research session. '}
-                  Inspect supporting evidence and limitations before acting.
+                  Resource types: {result.interpretation.resourceTypes.join(', ') || 'Unspecified'}.
+                  Time window: {result.interpretation.timeWindow ?? 'Unspecified'}.
                 </p>
-              </section>
+                <ul>
+                  {result.interpretation.constraints.map((constraint) => (
+                    <li key={constraint.text}>
+                      {constraint.text} · {constraint.required ? 'required' : 'preferred'}
+                    </li>
+                  ))}
+                </ul>
+                <p>
+                  Edit your question and start again to correct this. The earlier result is kept.
+                </p>
+              </details>
             )}
             {tab === 'Search' && result?.provisionalLeads && result.provisionalLeads.length > 0 && (
               <section aria-label="Leads with metadata gaps">
                 <h2>Leads with metadata gaps</h2>
                 <p>
-                  The brief remains readable. These leads need the listed record corrections before
-                  saving.
+                  These leads remain unassessed. Save a link privately now; inspect its evidence
+                  when useful.
                 </p>
                 <ul>
                   {result.provisionalLeads.map((lead, index) => (
@@ -1516,6 +1528,19 @@ export function Workbench({
                       <p>{lead.description}</p>
                       <p>{lead.uri}</p>
                       <p>{lead.limits.join(' ')}</p>
+                      {local && (
+                        <button
+                          onClick={() =>
+                            void action(async () => {
+                              await api('save-lead', { runId: result.runId, uri: lead.uri });
+                              setMessage(`${lead.name} saved privately as an unassessed lead.`);
+                              onCompleted?.(result.runId);
+                            })
+                          }
+                        >
+                          Save lead privately
+                        </button>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -1656,7 +1681,9 @@ export function Workbench({
                     >
                       <option value="">All matches</option>
                       {['direct', 'related', 'unknown', 'out-of-scope'].map((value) => (
-                        <option key={value}>{value}</option>
+                        <option key={value} value={value}>
+                          {value === 'newest' ? 'Assessment time' : value}
+                        </option>
                       ))}
                     </select>
                   </label>
@@ -1714,64 +1741,67 @@ export function Workbench({
               </p>
             </section>
             {local && result && tab === 'Search' && (
-              <div className="actions">
-                <button
-                  disabled={!selected.length}
-                  onClick={() =>
-                    void action(async () => {
-                      setInbox(
-                        await api<InboxEntry[]>('inbox', { runId: result.runId, ids: selected }),
+              <details className="desk-bulk-actions" open={selected.length > 0}>
+                <summary>Save and organize selected items</summary>
+                <div className="actions">
+                  <button
+                    disabled={!selected.length}
+                    onClick={() =>
+                      void action(async () => {
+                        setInbox(
+                          await api<InboxEntry[]>('inbox', { runId: result.runId, ids: selected }),
+                        );
+                        setMessage('Selected candidates added to the private promising inbox.');
+                      })
+                    }
+                  >
+                    Keep selected in inbox
+                  </button>
+                  <button
+                    disabled={!selected.length}
+                    onClick={() => {
+                      void action(() => save(selected, 'manual'));
+                    }}
+                  >
+                    Save selected ({selected.length})
+                  </button>
+                  <button
+                    disabled={!eligible.length}
+                    onClick={() => {
+                      void action(() =>
+                        save(
+                          eligible.map((item) => item.entity.id),
+                          'eligible',
+                        ),
                       );
-                      setMessage('Selected candidates added to the private promising inbox.');
-                    })
-                  }
-                >
-                  Keep selected in inbox
-                </button>
-                <button
-                  disabled={!selected.length}
-                  onClick={() => {
-                    void action(() => save(selected, 'manual'));
-                  }}
-                >
-                  Save selected ({selected.length})
-                </button>
-                <button
-                  disabled={!eligible.length}
-                  onClick={() => {
-                    void action(() =>
-                      save(
-                        eligible.map((item) => item.entity.id),
-                        'eligible',
-                      ),
-                    );
-                  }}
-                >
-                  Save eligible remaining in filtered results ({eligible.length})
-                </button>
-                <button
-                  disabled={!selected.length}
-                  onClick={() => {
-                    void action(async () => {
-                      await api('dismiss', { ids: selected, dismissed: true });
-                      setMessage('Selected identities dismissed from automatic saving.');
-                    });
-                  }}
-                >
-                  Dismiss selected
-                </button>
-                <button
-                  disabled={!selected.length}
-                  onClick={() => {
-                    void action(async () => {
-                      await api('dismiss', { ids: selected, dismissed: false });
-                      setMessage('Dismissals reset.');
-                    });
-                  }}
-                >
-                  Reset dismissals
-                </button>
-              </div>
+                    }}
+                  >
+                    Save eligible remaining in filtered results ({eligible.length})
+                  </button>
+                  <button
+                    disabled={!selected.length}
+                    onClick={() => {
+                      void action(async () => {
+                        await api('dismiss', { ids: selected, dismissed: true });
+                        setMessage('Selected identities dismissed from automatic saving.');
+                      });
+                    }}
+                  >
+                    Dismiss selected
+                  </button>
+                  <button
+                    disabled={!selected.length}
+                    onClick={() => {
+                      void action(async () => {
+                        await api('dismiss', { ids: selected, dismissed: false });
+                        setMessage('Dismissals reset.');
+                      });
+                    }}
+                  >
+                    Reset dismissals
+                  </button>
+                </div>
+              </details>
             )}
             {compared.length === 2 && (
               <section aria-label="Compare entities">
@@ -1829,7 +1859,7 @@ export function Workbench({
                       {item.entity.name}
                     </a>
                   </h2>
-                  <p>{item.entity.description}</p>
+                  <p className="desk-summary">{item.entity.description}</p>
                   {tab === 'Corpus' && (
                     <p>
                       {corpusDestinations.get(item.entity) === 'private' ? 'Private' : 'Public'}{' '}
@@ -1839,10 +1869,43 @@ export function Workbench({
                   <p>
                     {item.entity.kind} · {saved.has(item.entity.id) ? 'Saved' : 'Unsaved'}
                   </p>
-                  <p>{item.match.reason}</p>
+                  <p className="desk-fit">{item.match.reason}</p>
+                  <div className="desk-scoreline">
+                    <ScoreView score={item.relevance?.value ?? null} label="Relevance" />
+                    <ScoreView score={item.entity.assessment.score} label="Signal" />
+                    {item.entity.assessment.score === null && (
+                      <span className="desk-assessment-state">
+                        {item.entity.assessment.disposition ?? item.entity.assessment.state}
+                      </span>
+                    )}
+                  </div>
+                  <details>
+                    <summary>Assessment basis</summary>
+                    <p className="desk-meta">
+                      {item.relevance?.reason ??
+                        'Numeric relevance not assessed in this historical result.'}{' '}
+                      · {item.entity.assessment.policy} ·{' '}
+                      {item.entity.assessment.rubric ?? item.entity.kind}
+                    </p>
+                  </details>
+                  {item.entity.limits[0] && <p className="desk-limit">{item.entity.limits[0]}</p>}
+                  {local && tab === 'Search' && (
+                    <button
+                      disabled={busy || saved.has(item.entity.id)}
+                      onClick={() => void action(() => save([item.entity.id], 'manual'))}
+                    >
+                      {saved.has(item.entity.id) ? 'Saved' : 'Save'}
+                    </button>
+                  )}
+                  {item.entity.assessment.nextVerification && (
+                    <p className="desk-fit">
+                      Next verification: {item.entity.assessment.nextVerification}
+                    </p>
+                  )}
                   {item.change && <p>Compared with saved evidence: {item.change}.</p>}
                   {item.priority && (
-                    <section aria-label={`Why ${item.entity.name} matters`}>
+                    <details aria-label={`Why ${item.entity.name} matters`}>
+                      <summary>Contextual usefulness and suggested action</summary>
                       <p>
                         <strong>Suggested next action: {item.priority.action}</strong>
                       </p>
@@ -1884,7 +1947,7 @@ export function Workbench({
                           </a>
                         </p>
                       ))}
-                    </section>
+                    </details>
                   )}
                   {item.discovery && (
                     <p>
@@ -2101,6 +2164,20 @@ export function Workbench({
                   ? 'Start a search or reset filters; unknown scores are retained.'
                   : 'Save an acquired result to add an entity.'}
               </p>
+            )}
+            {tab === 'Search' && (result?.brief ?? earlyBrief)?.text && (
+              <section className="research-brief" aria-label="Research brief">
+                <details open={!items.length}>
+                  <summary>Research explanation and next steps</summary>
+                  <Brief text={(result?.brief ?? earlyBrief)!.text} />
+                  <p>
+                    {busy
+                      ? 'Original answer ready; source checks and saved-record preparation are pending. '
+                      : 'Retained from this research session. '}
+                    Inspect supporting evidence and limitations before acting.
+                  </p>
+                </details>
+              </section>
             )}
             {result && tab === 'Search' && (
               <>

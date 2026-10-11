@@ -1,7 +1,8 @@
 import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
-import { mkdtemp, writeFile, rm, realpath } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm, realpath, mkdir } from 'node:fs/promises';
+import { AxeBuilder } from '@axe-core/playwright';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { loadEntities } from '../../packages/corpus/src/search-store.js';
 import { loadPublicCorpus } from '../../packages/corpus/src/public-corpus.js';
 import {
@@ -37,6 +38,180 @@ async function registerScopedProject(request: APIRequestContext, folder: string,
   return (await saved.json()) as Project;
 }
 
+test('interactive checkpoint preserves result place, comparison, scopes and submitted meaning consent', async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(60000);
+  const artifact = resolve('../signals-ai-planning/reconciliation-20261010/ui-checkpoint');
+  await mkdir(artifact, { recursive: true });
+  const { token } = (await (await request.get('__signals/api/session')).json()) as {
+    token: string;
+  };
+  const headers = { origin: 'http://127.0.0.1:5189', 'x-signals-token': token };
+  const originalSettings = (await (await request.get('__signals/api/settings')).json()) as {
+    queries: { id: string; query: string }[];
+  };
+  const settings = {
+    ...originalSettings,
+    queries: [
+      ...originalSettings.queries,
+      {
+        id: 'checkpoint-interest',
+        query: 'checkpoint retained evidence',
+        enabled: true,
+        everyDays: 7,
+        offsetMinutes: 0,
+        concepts: [],
+      },
+    ],
+  };
+  expect((await request.post('__signals/api/settings', { headers, data: settings })).ok()).toBe(
+    true,
+  );
+  const labelFixture = async (floating = false) =>
+    page.evaluate((floating) => {
+      document.querySelector('[data-checkpoint-label]')?.remove();
+      const label = document.createElement('p');
+      label.dataset.checkpointLabel = 'true';
+      label.textContent = 'UI fixture replay · approved public records · no new discovery';
+      label.style.cssText =
+        'font-size:12px;color:#6b4226;background:#f7ecdc;padding:8px 12px;border-radius:6px' +
+        (floating ? ';position:fixed;top:8px;left:12px;right:12px;z-index:30;margin:0' : '');
+      document.querySelector('.desk-main')?.prepend(label);
+    }, floating);
+  try {
+    await page.goto('');
+    await expect(
+      page.getByRole('heading', { name: 'Worth knowing. Worth keeping.' }),
+    ).toBeVisible();
+    await navigate(page, 'Search');
+    await page
+      .getByLabel('Find something useful', { exact: true })
+      .fill('checkpoint retained evidence');
+    await page.getByRole('button', { name: 'Research online', exact: true }).click();
+    await page.getByRole('button', { name: 'Start online research', exact: true }).click();
+    await expect(page.locator('.entity-card')).toHaveCount(2);
+    await page.locator('.entity-card input[type=checkbox]').first().check();
+    await page.getByRole('button', { name: /^Save selected/ }).click();
+    await navigate(page, 'Home');
+    await page.reload();
+    const discoveries = page.getByRole('region', { name: 'Followed interest discoveries' });
+    await expect(discoveries).toContainText('Retained from “checkpoint retained evidence”');
+    await expect(discoveries).toContainText('Source observed');
+    await labelFixture();
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.screenshot({ path: join(artifact, 'desktop-home.png'), fullPage: true });
+    await navigate(page, 'Search');
+    await page.getByLabel('Find something useful', { exact: true }).fill('');
+    const rows = page.locator('.desk-results .desk-finding');
+    await rows.nth(0).getByRole('button', { name: 'Compare', exact: true }).click();
+    await rows.nth(1).getByRole('button', { name: 'Compare', exact: true }).click();
+    await expect(
+      page.getByRole('region', { name: 'Compare selected findings' }).locator('article'),
+    ).toHaveCount(2);
+    const opener = rows.nth(0).getByText('Evidence & details', { exact: true });
+    await opener.click();
+    const panel = page.getByRole('region', { name: 'Evidence panel' });
+    await expect(panel).toBeVisible();
+    await expect(panel.getByRole('heading', { level: 2 })).toBeFocused();
+    await labelFixture(true);
+    await page.screenshot({
+      path: join(artifact, 'desktop-evidence-comparison.png'),
+      fullPage: false,
+    });
+    await page.keyboard.press('Escape');
+    await expect(panel).toHaveCount(0);
+    await expect(opener).toBeFocused();
+    await page.setViewportSize({ width: 834, height: 1112 });
+    await opener.click();
+    await page.screenshot({
+      path: join(artifact, 'tablet-evidence-comparison.png'),
+      fullPage: false,
+    });
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    await page.getByRole('button', { name: 'Close evidence', exact: true }).click();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await opener.click();
+    await page.screenshot({
+      path: join(artifact, 'narrow-evidence-comparison.png'),
+      fullPage: false,
+    });
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    const accessibility = await new AxeBuilder({ page }).include('.desk-shell').analyze();
+    expect(
+      accessibility.violations.filter((violation) =>
+        ['critical', 'serious'].includes(violation.impact ?? ''),
+      ),
+    ).toEqual([]);
+    await page.getByRole('button', { name: 'Close evidence', exact: true }).click();
+    await page.getByRole('button', { name: 'Combined', exact: true }).click();
+    await expect(page.getByRole('region', { name: 'Finding results' })).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Start online research', exact: true }),
+    ).toBeVisible();
+    await page
+      .getByRole('navigation', { name: 'Search scope' })
+      .getByRole('button', { name: 'Library', exact: true })
+      .click();
+    let meaningCalls = 0;
+    await page.route('**/__signals/api/library-search', async (route) => {
+      meaningCalls++;
+      await route.fulfill({
+        json: {
+          hits: [],
+          state: 'disabled',
+          reason: 'Meaning matching is disabled; literal results retained.',
+          omitted: 0,
+          usage: null,
+        },
+      });
+    });
+    await page
+      .getByLabel('Find something useful', { exact: true })
+      .fill('a remembered purpose with unfamiliar wording');
+    expect(meaningCalls).toBe(0);
+    await page.getByRole('button', { name: 'Search Library', exact: true }).click();
+    await expect.poll(() => meaningCalls).toBe(1);
+    await expect(page.getByRole('status')).toContainText('Meaning matching is disabled');
+    await writeFile(
+      join(artifact, 'interaction-proof.json'),
+      JSON.stringify(
+        {
+          evidenceClass: 'isolated-public-replay-fixture',
+          liveDiscovery: false,
+          humanApproval: 'pending',
+          screenshots: [
+            'desktop-home.png',
+            'desktop-evidence-comparison.png',
+            'narrow-evidence-comparison.png',
+            'tablet-evidence-comparison.png',
+          ],
+          interactions: [
+            'followed provenance',
+            'two-record comparison',
+            'side evidence',
+            'keyboard focus and Escape restoration',
+            'narrow overflow',
+            'combined retained and explicit research',
+            'no meaning matching on keystroke',
+            'one submitted meaning operation',
+          ],
+          seriousAxeViolations: 0,
+        },
+        null,
+        2,
+      ) + '\n',
+    );
+  } finally {
+    await request.post('__signals/api/settings', { headers, data: originalSettings });
+  }
+});
+
 test('cold browsing, scoped save, notes and URL restoration require no research or readiness', async ({
   page,
 }) => {
@@ -45,9 +220,13 @@ test('cold browsing, scoped save, notes and URL restoration require no research 
     if (/\/(search|capture|refresh|followup|provider-health)$/.test(request.url()))
       paidCalls.push(request.url());
   });
-  await page.goto('');
+  await page.goto('?view=Search');
   await expect(page.locator('.desk-finding').first()).toBeVisible();
-  await expect(page.getByText('No model call', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText('Search saved knowledge.', {
+      exact: true,
+    }),
+  ).toBeVisible();
   const first = page.locator('.desk-finding').first();
   const key = await first.getAttribute('data-finding-key');
   const title = await first.getByRole('heading', { level: 3 }).innerText();
@@ -187,6 +366,7 @@ test('withdrawn project previews cannot cross scope, question, navigation or his
     await sendGeneral('General research with my deliberate draft', 'My deliberate manual draft');
     await navigate(page, 'Search');
     await page.getByLabel('Find something useful', { exact: true }).fill('');
+    await page.getByText('Search options', { exact: true }).click();
     await page.getByLabel('Project scope', { exact: true }).selectOption(projectA.id);
     const finding = page.locator('.desk-finding').first();
     await finding.getByText('Connect to selected project', { exact: true }).click();
@@ -220,7 +400,7 @@ test('native and legacy numeric scores stay labeled and grouped by their origina
   await page.route('**/__signals/api/library', (route) =>
     route.fulfill({ json: { findings: [native, legacy] } }),
   );
-  await page.goto('');
+  await page.goto('?view=Search');
   await page.getByLabel('Sort', { exact: true }).selectOption('strength');
   const rows = page.locator('.desk-finding');
   expect(
@@ -231,10 +411,10 @@ test('native and legacy numeric scores stay labeled and grouped by their origina
       .map((finding) => finding.key),
   );
   await expect(page.locator(`[data-finding-key="${native.key}"]`)).toContainText(
-    `Native intrinsic signal (${native.intrinsicStrength.policy}): ${native.intrinsicStrength.score}`,
+    native.intrinsicStrength.policy,
   );
   await expect(page.locator(`[data-finding-key="${legacy.key}"]`)).toContainText(
-    `Legacy review (${legacy.intrinsicStrength.policy}): ${legacy.intrinsicStrength.score}`,
+    legacy.intrinsicStrength.policy,
   );
   await rows.nth(0).getByRole('button', { name: 'Compare', exact: true }).click();
   await rows.nth(1).getByRole('button', { name: 'Compare', exact: true }).click();

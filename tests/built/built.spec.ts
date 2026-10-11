@@ -5,7 +5,8 @@ test('built same-origin question saves, repeat visits and protected mutations', 
 }) => {
   await page.goto('./?view=Search');
   await page.getByLabel('Find something useful', { exact: true }).fill('portable evidence');
-  await page.getByText('Keep a historical corpus question', { exact: true }).click();
+  await page.getByText('Search options', { exact: true }).click();
+  await page.getByText('Save this question', { exact: true }).click();
   const save = page.waitForResponse(
     (r) => r.url().endsWith('/api/question') && r.request().method() === 'POST',
   );
@@ -14,7 +15,8 @@ test('built same-origin question saves, repeat visits and protected mutations', 
   expect(reply.status()).toBe(200);
   expect(await reply.json()).toMatchObject({ saved: true });
   await page.reload();
-  await page.getByText('Keep a historical corpus question', { exact: true }).click();
+  await page.getByText('Search options', { exact: true }).click();
+  await page.getByText('Save this question', { exact: true }).click();
   await page.getByRole('button', { name: 'Save question locally' }).click();
   await expect(page.getByText(/^Question saved privately/)).toBeVisible();
   const session = (await (await request.get('__signals/api/session')).json()) as { token: string };
