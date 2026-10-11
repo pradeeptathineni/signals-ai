@@ -7,7 +7,8 @@ test('a local user saves an ordinary question without writing evidence artifacts
 }) => {
   await page.goto('./?view=Search');
   await page.getByLabel('Find something useful', { exact: true }).fill('toilet dye');
-  await page.getByText('Keep a historical corpus question', { exact: true }).click();
+  await page.getByText('Search options', { exact: true }).click();
+  await page.getByText('Save this question', { exact: true }).click();
   const reply = page.waitForResponse(
     (r) => r.url().endsWith('/__signals/api/question') && r.request().method() === 'POST',
   );

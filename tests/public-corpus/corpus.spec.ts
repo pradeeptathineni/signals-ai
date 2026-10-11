@@ -43,7 +43,7 @@ test('public browsing searches the entire approved library without local or mode
   await expect(page.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Projects', exact: true })).toHaveCount(0);
   const downloadEvent = page.waitForEvent('download');
-  await page.getByRole('link', { name: 'Download the public library' }).click();
+  await page.getByRole('link', { name: 'Export public Library', exact: true }).click();
   const stream = await (await downloadEvent).createReadStream();
   const parts: Buffer[] = [];
   for await (const part of stream) parts.push(Buffer.from(part as Uint8Array));
