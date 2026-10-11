@@ -5,11 +5,11 @@ test('a local user saves an ordinary question without writing evidence artifacts
   page,
   request,
 }) => {
-  await page.goto('./');
+  await page.goto('./?view=Search');
   await page.getByLabel('Find something useful', { exact: true }).fill('toilet dye');
   await page.getByText('Keep a historical corpus question', { exact: true }).click();
   const reply = page.waitForResponse(
-    (r) => r.url().endsWith('/__signals/query') && r.request().method() === 'POST',
+    (r) => r.url().endsWith('/__signals/api/question') && r.request().method() === 'POST',
   );
   await page.getByRole('button', { name: 'Save question locally' }).click();
   await expect(page.getByText(/^Question saved privately/)).toBeVisible();
@@ -25,7 +25,7 @@ test('a local user saves an ordinary question without writing evidence artifacts
   } finally {
     await unlink(file);
   }
-  const denied = await request.post('__signals/query', {
+  const denied = await request.post('__signals/api/question', {
     headers: { origin: 'https://example.com', 'content-type': 'application/json' },
     data: { question: 'Cross-origin write' },
   });

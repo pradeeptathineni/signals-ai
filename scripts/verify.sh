@@ -20,3 +20,4 @@ npm run security:audit
 npm run test:corpus
 npm run test:local-query
 npm run test:workbench
+npm run test:built

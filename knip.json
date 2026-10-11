@@ -1,4 +1,4 @@
 {
   "ignoreBinaries": ["codex"],
-  "entry": ["tests/workbench/server.ts"]
+  "entry": ["tests/workbench/server.ts", "tests/built/server.ts"]
 }

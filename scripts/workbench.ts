@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import { readFile, realpath, lstat } from 'node:fs/promises';
 import { resolve, relative, extname } from 'node:path';
 import { searchApi } from '../packages/corpus/src/search-api.js';
-const api = searchApi();
+const api = searchApi(resolve(process.env.SIGNALS_WORKSPACE ?? process.cwd()));
 const assets = await realpath(resolve('dist/public-site'));
 const port = Number(process.env.SIGNALS_PORT ?? 5178);
 if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('Invalid local port.');
