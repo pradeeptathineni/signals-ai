@@ -10,6 +10,9 @@ export default tseslint.config(
       'coverage/**',
       'playwright-report/**',
       'test-results/**',
+      '.meta/context/local/**',
+      '.codex/context-cache/**',
+      '.codex/context-compression/raw/**',
     ],
   },
   eslint.configs.recommended,
@@ -25,6 +28,32 @@ export default tseslint.config(
       '@typescript-eslint/consistent-type-imports': 'error',
       '@typescript-eslint/no-floating-promises': 'error',
       '@typescript-eslint/no-misused-promises': 'error',
+    },
+  },
+  {
+    files: ['apps/corpus/src/**/*.{ts,tsx}', 'packages/*/src/**/*.{ts,tsx}'],
+    ignores: ['**/*.test.ts', '**/*.test.tsx'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                '**/test-fixtures/**',
+                '**/test-fixtures',
+                '**/tests/**',
+                '**/*.test.*',
+                '**/*.spec.*',
+                '**/evaluation.*',
+                '**/qrels/**',
+                '**/golden-set/**',
+              ],
+              message: 'Runtime behavior must not depend on evaluation answers or test fixtures.',
+            },
+          ],
+        },
+      ],
     },
   },
   {

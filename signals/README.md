@@ -1,36 +1,13 @@
-# Git-backed Signals
+# Public knowledge records
 
-Each JSON file under a signal type is one reviewed research finding. Pages is the human view;
-the browser and CLI derive the same options, claims and source bindings from these records.
+`signals/entities/*.json` contains reusable native entities. `signals/<type>/*.json` contains reviewed historical findings. Both are canonical public knowledge; browser indexes, interchange downloads and Pages are generated under `dist/`.
 
-```text
-signals/
-  practices/git-history.json
-  standards/source-lineage.json
-  tools/text-retrieval.json
-```
+Native entities use stable URI identities independent of kind, name or question. They retain immutable source evidence, model observations and a declared assessment policy. Active native brief v5 selects `signal-strength-v8`; earlier policies retain their original meaning. Query relevance, project decisions, personal notes and saved question context belong outside public entities.
 
-Types provide one level of organization. Add news, languages, plugins or another useful type
-when actual records require it. Domain is the review's `category` metadata, and tags are the
-evidence need's `concept_ids`; neither needs a duplicated directory hierarchy or fixed ontology.
-One finding can compare multiple options supported by its shared source set.
+Historical type folders provide one level of organization. Domain/category and concept tags are metadata rather than duplicate directory trees. One historical finding may compare several options from shared sources. Its `signal-review-v1` admission requires a separately attributed review with every relevance, evidence, usefulness and clarity rating at least 3/4 and no fatal blocker or unresolved material claim.
 
-Ask an ordinary question through your research agent or local view. The agent acquires primary
-sources and generates the record; humans do not define evidence receipts, hashes or ratings.
-The automatic admission command checks source/identity/privacy boundaries and a separately
-attributed model review. Every relevance, evidence, usefulness and clarity rating must be at least
-3/4; blockers or uncertain material claims hold the draft. A score is review policy, not probability.
+Humans ask questions; agents acquire sources and construct assessments. Native automatic admission requires supported defining evidence, resolved identity, direct relevance and the configured intrinsic strength threshold. Private manual saving can retain unassessed leads. Saving and publication are separate operations.
 
-New records use `encoding: pretty-json-v1`. Evidence digests verify unchanged bytes for consumers;
-they do not prove truth. Agents use the Git research protocol and admission command, then verify
-the preview and diff. Merely saving a private question does not admit knowledge.
+Evidence digests verify bytes, not truth. Corrections append native judgment successors or create newly reviewed historical finding identities. Frozen source dates and first-fetch bytes do not change when reviewed. `review.state: withdrawn` excludes historical options from default results while preserving their exact downloads and history.
 
-`review.state: withdrawn` removes options from default results while preserving their exact
-downloads and history. Correcting frozen evidence requires new identities and review; existing
-pins retain their original bytes. Review dates never refresh source observations. JSON indexes,
-sidecars and Pages assets are generated only in `dist/`, not stored as sibling masters.
-
-Keep drafts, private questions and raw acquisition outside this public collection. Unknown
-files, fields, duplicate keys, ambiguous identities, private extensions and incomplete reviews
-fail validation. There is no database service or compatibility option. Retained private history
-lives in ignored `.signals/retained/` files and preserves historical meanings.
+Keep private questions, annotations, raw acquisition and retained local history under ignored `.signals/`. Unknown files/fields, duplicate keys, ambiguous identities, private extensions and incomplete reviews fail public validation. See the [assessment contract](../docs/signals-contract.md) and [data map](../docs/architecture/schema.md).

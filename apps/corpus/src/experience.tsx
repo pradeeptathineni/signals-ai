@@ -1167,8 +1167,6 @@ export function Experience() {
         {local && workbenchStarted && (
           <div hidden={!powered} className="desk-powered">
             <Workbench
-              legacyCorpus={null}
-              embedded
               requestedTab={powered ?? 'Search'}
               question={state.query}
               reopenRun={reopenRun}

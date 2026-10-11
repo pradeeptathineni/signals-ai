@@ -15,7 +15,7 @@ import {
 
 const scriptPath = fileURLToPath(new URL('./run-context-pack.mjs', import.meta.url));
 const repositoryConfig = JSON.parse(
-  readFileSync(new URL('../repomix.config.json', import.meta.url), 'utf8'),
+  readFileSync(new URL('../.meta/context/pack.json', import.meta.url), 'utf8'),
 );
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
@@ -63,17 +63,18 @@ test('rejects implicit Git, dot-ignore, default patterns, and unsafe output path
   changed.ignore.useGitignore = true;
   changed.ignore.useDotIgnore = true;
   changed.ignore.useDefaultPatterns = true;
-  changed.output.filePath = '.codex/{alternate,hostile}/pack.xml';
+  changed.output.filePath = '.meta/context/{alternate,hostile}/pack.xml';
   const errors = validateContextPackConfig(changed).join('\n');
   assert.match(errors, /implicit Git, dot-ignore, and package-default patterns/u);
   assert.match(errors, /prohibited brace expansion/u);
 });
 
 test('finds implicit .repomixignore files in every non-Git repository directory', () => {
-  const root = mkdtempSync(join(tmpdir(), 'maestro-context-ignore-'));
+  const root = mkdtempSync(join(tmpdir(), 'signals-context-ignore-'));
   try {
     const searchedDirectories = [
       ['.codex'],
+      ['.meta', 'context', 'local'],
       ['coverage'],
       ['dist'],
       ['node_modules', 'fixture'],

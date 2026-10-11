@@ -1,4 +1,4 @@
-schema_version: 3
+schema_version: 4
 project: signals-ai
 mission:
   Discover, explain, retain, and keep current worthwhile knowledge for personal interests and projects,
@@ -19,13 +19,6 @@ features:
       Research a question or interest, discover and type worthwhile findings, assess their evidence,
       score signal strength, and rank and explain their relevance—including unfamiliar options beyond supplied
       names and sources.
-    assessment:
-      delivery: working
-      value: 2
-      scope: 'Three actual interest briefs, saved findings, unseeded scheduler research and a held-out nontechnical need.'
-      assessed_ref: 332b0fe93511614f0f624b77a37a30a04b45d8e0
-      evidence: ['private:early-save-receipt.json', 'packages/corpus/src/search-native.test.ts']
-      limitations: 'Functional scope only; no general productivity or personal usefulness claim.'
   - id: interests
     name: Interests & query lists
     role: core
@@ -33,14 +26,6 @@ features:
     intent:
       Define personal, project, and exploratory interests, their constraints, and when they deserve
       new research.
-    assessment:
-      delivery: working
-      value: 2
-      scope: 'Editable interests and sharing opt-out; two identical due questions coalesced into one actual native task.'
-      assessed_ref: 332b0fe93511614f0f624b77a37a30a04b45d8e0
-      evidence:
-        ['packages/corpus/src/search-query-list.test.ts', 'tests/workbench/workbench.spec.ts']
-      limitations: 'Functional scope only; no general productivity or personal usefulness claim.'
   - id: source-settings
     name: Source settings
     role: supporting
@@ -48,13 +33,6 @@ features:
     intent:
       Manage suggested websites, communities, feeds, and scopes per user or interest without restricting
       all discovery to that list.
-    assessment:
-      delivery: working
-      value: 1
-      scope: 'Per-interest suggested sources and safe access configuration; source list remains advisory.'
-      assessed_ref: 332b0fe93511614f0f624b77a37a30a04b45d8e0
-      evidence: ['packages/corpus/src/search-follow-settings.test.ts']
-      limitations: 'Functional scope only; no general productivity or personal usefulness claim.'
   - id: source-discovery
     name: Source discovery & following
     role: core
@@ -62,13 +40,6 @@ features:
     intent:
       Find productive new sources, follow selected ones, and track their usefulness while continuing
       to explore elsewhere.
-    assessment:
-      delivery: working
-      value: 2
-      scope: 'Followed-source scan, denied/unchanged retention and contribution denominators; live early discovery outside seeds.'
-      assessed_ref: 332b0fe93511614f0f624b77a37a30a04b45d8e0
-      evidence: ['packages/corpus/src/search-sources.test.ts', 'private:early-findings.py']
-      limitations: 'Functional scope only; no general productivity or personal usefulness claim.'
   - id: evidence
     name: Evidence & cross-referencing
     role: core
@@ -76,17 +47,6 @@ features:
     intent:
       Check important claims, connect supporting and conflicting evidence, distinguish independent
       origins, and expose gaps and limitations.
-    assessment:
-      delivery: working
-      value: 1
-      scope: 'Source-bound evidence, partial item gaps and immutable successors for two real semantic judgment errors.'
-      assessed_ref: 332b0fe93511614f0f624b77a37a30a04b45d8e0
-      evidence:
-        [
-          'packages/corpus/src/search-native.test.ts',
-          'packages/corpus/src/search-review-regressions.test.ts',
-        ]
-      limitations: 'Quote occurrence is checked deterministically; semantic support and independence remain fallible native judgments. FR-03/FR-05 were corrected without rewriting evidence.'
   - id: classification
     name: Classification & relationships
     role: core
@@ -94,13 +54,6 @@ features:
     intent:
       Organize findings across domains and resource kinds, linking alternatives, related ideas, and
       the needs they address.
-    assessment:
-      delivery: working
-      value: 1
-      scope: 'Typed portable records, concept/domain metadata and comparison links; interpretation is native.'
-      assessed_ref: 332b0fe93511614f0f624b77a37a30a04b45d8e0
-      evidence: ['packages/domain/src/signal-quality.test.ts', 'tests/workbench/workbench.spec.ts']
-      limitations: 'Functional scope only; no general productivity or personal usefulness claim.'
   - id: ranking
     name: Scoring & ranking
     role: core
@@ -108,13 +61,6 @@ features:
     intent:
       Explain supported signal strength separately from relevance, novelty, and suitability; keep
       promising low-evidence and older options discoverable.
-    assessment:
-      delivery: working
-      value: 2
-      scope: 'Versioned intrinsic reducer, unknown components and separate relevance; corrected unsupported credit falls to zero.'
-      assessed_ref: 332b0fe93511614f0f624b77a37a30a04b45d8e0
-      evidence: ['packages/domain/src/signal-quality.test.ts', 'private:early-save-receipt.json']
-      limitations: 'Functional scope only; no general productivity or personal usefulness claim.'
   - id: briefs
     name: Briefs & comparisons
     role: core
@@ -122,13 +68,6 @@ features:
     intent:
       Show why findings matter, what they could enable, how alternatives differ, and a sensible next
       action.
-    assessment:
-      delivery: working
-      value: 2
-      scope: 'Original native Markdown before validation, alternatives and next actions; no rewrite stage.'
-      assessed_ref: 332b0fe93511614f0f624b77a37a30a04b45d8e0
-      evidence: ['packages/corpus/src/signal-search.test.ts', 'tests/workbench/workbench.spec.ts']
-      limitations: 'Functional scope only; no general productivity or personal usefulness claim.'
   - id: local-corpus
     name: Local corpus
     role: core
@@ -136,13 +75,6 @@ features:
     intent:
       Own and retain findings, sources, assessments, project links, and personal notes locally in
       portable, searchable records.
-    assessment:
-      delivery: working
-      value: 2
-      scope: 'Private save/reopen and existing public Git Corpus; no duplicate canonical database.'
-      assessed_ref: 332b0fe93511614f0f624b77a37a30a04b45d8e0
-      evidence: ['packages/corpus/src/search-private.test.ts', 'private:early-save-receipt.json']
-      limitations: 'Functional scope only; no general productivity or personal usefulness claim.'
   - id: inbox
     name: Capture & inbox
     role: core
@@ -150,14 +82,6 @@ features:
     intent:
       Accept manual links and automated discoveries; let the user inspect, save, annotate, dismiss,
       or mute them.
-    assessment:
-      delivery: working
-      value: 1
-      scope: 'URL capture, saved inbox dismissal, annotations, feedback and muting; capture constraints regression.'
-      assessed_ref: 332b0fe93511614f0f624b77a37a30a04b45d8e0
-      evidence:
-        ['packages/corpus/src/search-portal-actions.test.ts', 'tests/workbench/workbench.spec.ts']
-      limitations: 'Functional scope only; no general productivity or personal usefulness claim.'
   - id: corpus-search
     name: Corpus search & follow-ups
     role: core
@@ -166,18 +90,6 @@ features:
       Retrieve retained knowledge through immediate literal matching and, when permitted, one bounded
       no-web meaning match; distinguish local retrieval from explicit new research and grounded
       follow-ups over selected evidence.
-    assessment:
-      delivery: working
-      value: 2
-      scope: 'Offline retrieval and retained-only follow-up; repaired concrete worksheet after the original failed follow-up.'
-      assessed_ref: 332b0fe93511614f0f624b77a37a30a04b45d8e0
-      evidence:
-        [
-          'packages/corpus/src/search-reuse.test.ts',
-          'packages/corpus/src/search-followup.test.ts',
-          'private:verdict-repaired-followup-quality-first.json',
-        ]
-      limitations: 'Original follow-up failure is retained. Repaired answer restores the task without an established speed advantage. Restricted subsets receive no whole-run synthesis or gaps.'
   - id: refresh
     name: Refresh & change tracking
     role: core
@@ -185,18 +97,6 @@ features:
     intent:
       Recheck retained knowledge and distinguish meaningful updates, unchanged material, superseded
       information, and unresolved claims.
-    assessment:
-      delivery: working
-      value: 2
-      scope: 'Two actual three-source conditional maintenance passes (six checks total), all HTTP 304, with zero inference; controlled denial preserves last good state.'
-      assessed_ref: 332b0fe93511614f0f624b77a37a30a04b45d8e0
-      evidence:
-        [
-          'packages/corpus/src/search-scheduler.test.ts',
-          'packages/corpus/src/search-review-regressions.test.ts',
-          'private:job-proof/actual-maintenance.json',
-        ]
-      limitations: 'Functional scope only; no general productivity or personal usefulness claim.'
   - id: feedback
     name: Feedback & personalization
     role: core
@@ -204,13 +104,6 @@ features:
     intent:
       Use explicit feedback and observed outcomes to improve suggestions without confusing new-to-corpus
       findings with personal novelty or usefulness.
-    assessment:
-      delivery: working
-      value: 1
-      scope: 'Explicit notes/usefulness/novelty/outcome feedback and actual first-party trial receipt; missing feedback does not mean approval.'
-      assessed_ref: 332b0fe93511614f0f624b77a37a30a04b45d8e0
-      evidence: ['packages/corpus/src/search-private.test.ts', 'tests/workbench/workbench.spec.ts']
-      limitations: 'Functional scope only; no general productivity or personal usefulness claim.'
   - id: local-portal
     name: Local portal
     role: supporting
@@ -218,13 +111,6 @@ features:
     intent:
       Provide a clear workspace for Search, Projects, Library and Following, with evidence, costs,
       progress, jobs and settings revealed where they matter.
-    assessment:
-      delivery: working
-      value: 1
-      scope: 'Seven connected local workbench sections, accessible fixture flow and small-screen layout.'
-      assessed_ref: 332b0fe93511614f0f624b77a37a30a04b45d8e0
-      evidence: ['tests/workbench/workbench.spec.ts', 'private:capture-regression.log']
-      limitations: 'Functional scope only; no general productivity or personal usefulness claim.'
   - id: public-corpus
     name: Public corpus
     role: supporting
@@ -232,13 +118,6 @@ features:
     intent:
       Publish only approved canonical findings through a read-only searchable site with no paid inference
       for ordinary browsing and no private project or runtime information.
-    assessment:
-      delivery: working
-      value: 1
-      scope: 'Validated static read-only projection from public canonical records; private findings excluded.'
-      assessed_ref: 332b0fe93511614f0f624b77a37a30a04b45d8e0
-      evidence: ['tests/public-corpus/corpus.spec.ts', 'packages/corpus/src/public-export.test.ts']
-      limitations: 'Functional scope only; no general productivity or personal usefulness claim.'
   - id: interfaces
     name: CLI & tool interfaces
     role: supporting
@@ -246,18 +125,6 @@ features:
     intent:
       Expose search, capture, retrieval, refresh, and export to people, agents, and scripts without
       requiring the portal.
-    assessment:
-      delivery: working
-      value: 1
-      scope: 'Compatible CLI, local API and native skill; explicit historical Corpus retrieval.'
-      assessed_ref: 332b0fe93511614f0f624b77a37a30a04b45d8e0
-      evidence:
-        [
-          'scripts/signal-search.ts',
-          'scripts/discovery.ts',
-          '.agents/skills/signal-search/SKILL.md',
-        ]
-      limitations: 'Functional scope only; no general productivity or personal usefulness claim.'
   - id: ai-runtime
     name: BYO-AI & runtime routing
     role: supporting
@@ -265,13 +132,6 @@ features:
     intent:
       Use the invoking AI or an authorized headless host, choosing available tools, models, effort,
       and research depth appropriate to the task.
-    assessment:
-      delivery: working
-      value: 1
-      scope: 'Invoking native AI or configured authenticated headless Codex; depth/model/effort explicit.'
-      assessed_ref: 332b0fe93511614f0f624b77a37a30a04b45d8e0
-      evidence: ['packages/corpus/src/search-runner-root.test.ts', 'private:COMPARISON-CONTRACT.md']
-      limitations: 'Functional scope only; no general productivity or personal usefulness claim.'
   - id: jobs
     name: Scheduled & batch research
     role: core
@@ -279,17 +139,6 @@ features:
     intent:
       Run query lists, source following, and refresh on demand or on schedule, sharing compatible
       research without merging incompatible conclusions.
-    assessment:
-      delivery: working
-      value: 2
-      scope: 'Actual finite due activation with duplicate coalescing; controlled lease, cancellation, resume and interrupted uncertain state.'
-      assessed_ref: 332b0fe93511614f0f624b77a37a30a04b45d8e0
-      evidence:
-        [
-          'packages/corpus/src/search-query-list.test.ts',
-          'packages/corpus/src/search-scheduler.test.ts',
-        ]
-      limitations: 'Functional scope only; no general productivity or personal usefulness claim.'
   - id: exchange
     name: Context & project integration
     role: core
@@ -297,17 +146,6 @@ features:
     intent:
       Supply findings, evidence, and changes to Context and other projects, preserving their purpose
       without granting execution authority.
-    assessment:
-      delivery: working
-      value: 2
-      scope: 'Frozen evidence export, normal Context profile lifecycle/assessment, actual Hypothesis store property and first-party feedback.'
-      assessed_ref: 332b0fe93511614f0f624b77a37a30a04b45d8e0
-      evidence:
-        [
-          'packages/corpus/src/public-export.test.ts',
-          'private:reciprocal-source/outcome/consumer-receipt.json',
-        ]
-      limitations: 'Four setup failures and one baseline startup failure retained. Final 24 deterministic and 32 generated cases passed. Undo preserves an edited managed file as a conflict; no automatic dependency adoption or independent corroboration.'
   - id: history
     name: History & recovery
     role: supporting
@@ -315,13 +153,6 @@ features:
     intent:
       Preserve identities, user annotations, meaningful revisions, and older evidence across export,
       migration, restoration, and implementation changes.
-    assessment:
-      delivery: working
-      value: 2
-      scope: 'Verified byte-preserving reference copy and Git bundle; historical score policy unchanged.'
-      assessed_ref: 332b0fe93511614f0f624b77a37a30a04b45d8e0
-      evidence: ['private:restore-verification.json', 'private:reference-manifest.json']
-      limitations: 'Functional scope only; no general productivity or personal usefulness claim.'
   - id: method-evolution
     name: Research improvement
     role: core
@@ -329,46 +160,13 @@ features:
     intent:
       Compare discovery routes and operating choices, retain useful specializations, and replace costly
       or ineffective behavior using actual results.
-    assessment:
-      delivery: working
-      value: 2
-      scope: 'Quality-first same-need comparison, failed/repaired follow-up, faster arm and held-out task chose Sol low as the complete default.'
-      assessed_ref: 332b0fe93511614f0f624b77a37a30a04b45d8e0
-      evidence: ['private:COMPARISON-CONTRACT.md', 'private:verdict-timing-and-default.json']
-      limitations: 'No speed advantage. Faster Luna omitted required exercise; no promotion. One attempt per arm, different later revisions, served model/charges and human usefulness unknown.'
-  - id: product-ledger
-    name: Product ledger
-    role: supporting
-    type: evaluation
-    intent:
-      Show intended features, delivery status, scoped value evidence, and unresolved weaknesses without
-      hiding core failures behind an overall score.
-    assessment:
-      delivery: working
-      value: 1
-      scope: 'All 23 stable requirement rows, separate delivery/value/scope and evidence; no aggregate score.'
-      assessed_ref: 332b0fe93511614f0f624b77a37a30a04b45d8e0
-      evidence: ['docs/product.yaml', 'docs/PRODUCT.md']
-      limitations: 'Functional scope only; no general productivity or personal usefulness claim.'
   - id: safeguards
-    name: All
+    name: Safeguards
     role: guardrail
     type: security
     intent:
       Enforce privacy, safe access, data integrity, authority, resource limits, cancellation, and
       overlap controls; report failures and uncertainty honestly.
-    assessment:
-      delivery: working
-      value: 1
-      scope: 'Privacy, safe transport, immutable evidence, authority, cancellation/budgets and overlap checks.'
-      assessed_ref: 332b0fe93511614f0f624b77a37a30a04b45d8e0
-      evidence:
-        [
-          'packages/corpus/src/search-api.test.ts',
-          'packages/corpus/src/search-private.test.ts',
-          'private:verify-final-candidate.log',
-        ]
-      limitations: 'Exact development Handlebars security patch verified; existing narrowly scoped Repomix advisory waiver remains visible. Tested safeguards do not establish perfect semantic accuracy.'
   - id: projects
     name: Projects
     role: core
@@ -376,13 +174,6 @@ features:
     intent:
       Register selected GitHub repositories, VCS checkouts or local folders and maintain editable,
       permission-scoped project context for useful corpus-backed recommendations.
-    assessment:
-      delivery: working
-      value: 2
-      scope: 'Actual pinned GitHub Labs README and explicit non-Git study folder; bounded previews, editable constraints, snapshot history and disconnect.'
-      assessed_ref: 8c0095e05bd73f4d60fa070614d38e4e02baeb16
-      evidence: ['packages/corpus/src/projects.test.ts', 'private:experience-20261008/after.json']
-      limitations: 'Agent-verified functional scope only; personal usefulness unassessed. Local working-copy cleanliness is unknown, not treated as a verified commit. Finite document allowlist is not a whole-repository audit.'
   - id: project-opportunities
     name: Project opportunities
     role: core
@@ -390,16 +181,3 @@ features:
     intent:
       Connect actual project needs to retained or newly researched knowledge, tools, practices and ideas,
       with evidence, constraints, decisions and next actions in the local portal.
-    assessment:
-      delivery: working
-      value: 2
-      scope: 'All 13 Context originals migrated unchanged; actual Labs learning and Boston winter-study associations retain evidence, need, reason and personal decision. Frozen Context v3 plan-only handoff.'
-      assessed_ref: 8c0095e05bd73f4d60fa070614d38e4e02baeb16
-      evidence:
-        [
-          'packages/corpus/src/projects.test.ts',
-          'private:experience-20261008/migration-final.json',
-          'private:experience-20261008/DATA-MIGRATION.json',
-          'private:experience-20261008/CONTEXT-HANDOFF.json',
-        ]
-      limitations: 'No automatic semantic fit or human usefulness claim. AI setup requests grant plan-only authority to Context.'

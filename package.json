@@ -34,7 +34,6 @@
     "security:audit:test": "node --test scripts/dependency-audit-policy.test.mjs",
     "security:secrets": "node scripts/secret-check.mjs",
     "test": "vitest run --config vitest.config.ts",
-    "test:anti-overfit": "node scripts/check-query-special-cases.mjs",
     "test:provenance": "node --import tsx packages/corpus/src/audit.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "verify": "bash scripts/verify.sh",

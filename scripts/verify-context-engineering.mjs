@@ -1,19 +1,21 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { spawnSync } from 'node:child_process';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import process from 'node:process';
-import { URL } from 'node:url';
+import { fileURLToPath, URL } from 'node:url';
 
 const require = createRequire(import.meta.url);
 const { compressObservation } = require('@linger-alpha/cca/src/compression/compressor.js');
+const { loadConfig } = require('@linger-alpha/cca/src/config/paths.js');
 
 const repositoryRoot = new URL('../', import.meta.url);
 const hookConfig = JSON.parse(await readFile(new URL('.codex/hooks.json', repositoryRoot), 'utf8'));
 const manifest = JSON.parse(await readFile(new URL('package.json', repositoryRoot), 'utf8'));
 const packConfig = JSON.parse(
-  await readFile(new URL('repomix.config.json', repositoryRoot), 'utf8'),
+  await readFile(new URL('.meta/context/pack.json', repositoryRoot), 'utf8'),
 );
 const hook = hookConfig.hooks?.PostToolUse?.[0];
 const hookCommand = hook?.hooks?.[0]?.command ?? '';
@@ -25,7 +27,29 @@ assert.match(
   'hook must resolve the active repository',
 );
 assert.match(hookCommand, /CCA_CONFIG_PATH/, 'hook must isolate state inside the repository');
+assert.match(hookCommand, /cd "\$repo_root"/, 'relative compressor paths require repository cwd');
 assert.doesNotMatch(hookCommand, /\/Users\//, 'hook must not contain a developer-specific path');
+
+// Resolve through CCA itself: moving its config changes the upstream default storage base.
+const rootPath = fileURLToPath(repositoryRoot);
+const previousConfigPath = process.env.CCA_CONFIG_PATH;
+try {
+  process.env.CCA_CONFIG_PATH = fileURLToPath(
+    new URL('.meta/context/compression.json', repositoryRoot),
+  );
+  const compression = loadConfig();
+  for (const path of [compression.rawDir, compression.metricsPath]) {
+    assert.ok(resolve(rootPath, path).startsWith(join(rootPath, '.meta/context/local/')));
+    assert.equal(
+      spawnSync('git', ['check-ignore', '--quiet', path], { cwd: rootPath }).status,
+      0,
+      'raw recovery and command metrics must remain ignored',
+    );
+  }
+} finally {
+  if (previousConfigPath === undefined) delete process.env.CCA_CONFIG_PATH;
+  else process.env.CCA_CONFIG_PATH = previousConfigPath;
+}
 assert.equal(
   manifest.scripts?.['context:pack'],
   'node scripts/run-context-pack.mjs',
@@ -39,7 +63,7 @@ assert.equal(
 assert.equal(packConfig.output?.compress, true, 'code context should be structural by default');
 assert.ok(packConfig.output?.tokenBudget <= 30_000, 'context packs require a bounded token budget');
 
-const rawDirectory = await mkdtemp(join(tmpdir(), 'maestro-context-fidelity-'));
+const rawDirectory = await mkdtemp(join(tmpdir(), 'signals-context-fidelity-'));
 try {
   const repeatedLine = 'progress: compiling deterministic workspace fixture';
   const completion = 'Build completed successfully in 8.2s';

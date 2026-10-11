@@ -1,36 +1,46 @@
 # Data map
 
-Active native brief v5 retains an inspectable query interpretation and separate query-relevance-v1 values. Entities can carry source-bound `signalBasis` for deterministic signal-strength-v8 replay; historical v0–v7 remain unchanged (brief v4 selects v7). `signals-ai.query-assessment` exchange version 1 uses exported source IDs, validated against the bundle rather than raw run indexes. See ADR-017 and the shared domain schemas.
+Public JSON is canonical knowledge. Local JSON is private working state. Indexes and Pages assets are disposable projections. Closed schemas reject unknown fields, duplicate keys, forged bindings, ambiguous identities and score tampering.
 
-Private `library-leads.json` retains unassessed URI identities and append-only saved contexts. Leads never become scored entities or public assets. `library-preferences.json` owns explicit metadata-egress permission and disabled-by-default automatic private saving. Automatic-saving receipts include per-item admission/exclusion reasons in private query history. Meaning matching hydrates original records and changes no evidence or intrinsic score.
+| Data               | Authority and shape                                                                                                                                    |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Native entity      | `signals/entities/entity-<URI hash>.json`; closed recordVersion2 wrapper with user-saved or eligible-saved state                                       |
+| Identity           | Canonical URI and aliases; independent of kind/query/name; repository roots use conservative GitHub identity                                           |
+| Evidence           | Source URI/publisher/family/origin, publication date, fetch time, raw/excerpt digests, acquisition state and matched excerpts                          |
+| Observation        | Model statement/indicator/status/independence, evidence ID, quote, span flag, derivation, basis and judgment successors                                |
+| Assessment         | Declared policy and explicit asOf; features/bindings, nullable score, missing dimensions and reasons                                                   |
+| Query result       | schemaVersion2 run/question, original brief, interpreted need, items with separate relevance/priority/discovery/delta, gaps, budgets, usage and counts |
+| Historical finding | `signals/<type>/*.json`; recordVersion1 frozen schema1 evidence with original signal-review-v1                                                         |
+| Exchange           | Frozen schema1 evidence; native strengths, fetch dates and query/advisory meanings in separate extensions                                              |
+| Generated view     | `dist/` contains public library/entities, historical indexes/downloads and Pages assets                                                                |
+| Concepts           | `concepts.json` is the Signals catalog; `config/context-concepts.json` is a source-digested Context research snapshot                                  |
 
-The corpus-first workspace adds a derived `library.json` from approved public native/legacy inputs. Local retrieval additionally reads private native records and a bounded private collection annotation ledger; neither enters public assets. Project registration, source snapshots, contextual opportunities and imported Context records remain under `.signals/`. Their identifiers, source basis, decisions and evidence references are separate from intrinsic entity evidence and scores. Context migration preserves the original record object and source digest, with no inferred admission or installation authority. See ADR-016 and the closed project/library contracts.
+Active native brief v5 carries `query-relevance-v1` and `signal-strength-v8`. The entity's source-bound `signalBasis` permits deterministic type-rubric replay. Historical v0–v7 keep their declared meanings; brief v4 selects v7. Query assessment exchange validates exported source IDs against the bundle. Query relevance, priority, discovery trails, personal decisions and entity deltas never become intrinsic evidence. See the [assessment contract](../signals-contract.md).
 
-`projects.json` owns explicit registration, current context, immutable imported source objects and
-personal opportunity decisions. Private append-only project history retains each source/context
-basis before edits, refresh or disconnect, up to 64 entries per project; a full history rejects the
-change instead of dropping old context. `library-state.json` owns saved selection and legacy
-annotations. Native annotations remain in `personal.json`. Stable format/destination-qualified
-library keys prevent ambiguous native/legacy or public/private identity selection. Context v3
-requests preserve namespaced opportunity IDs and enforce its separate text/count/byte limits;
-omitted references remain in the original local record and are counted outside the portable request.
+Evidence is append-only. `excerptDigest` distinguishes projections, `normalizer: text-v2` binds normalized text, `currentEvidence` selects snapshots, and `currentChecks` binds actual reacquisition. New observation `identityVersion2` includes claim wording. Corrections create successor judgments; cyclic supersession and unbound/forged spans fail validation. Original dates and frozen downloads remain unchanged. Per-file atomic writes serialize through a cooperating writer lock.
 
-Native brief v3 adds the original Markdown answer before compact candidate metadata. Run snapshots retain optional `brief` and invalid `provisionalLeads`; they never turn invalid leads into entities. Legacy native v1/v2/full proposals remain ingestion-only decoders. `settings.acquisitionGroups` holds inspectable native-authored pool suggestions with per-interest opt-out; batch plans freeze compatible scopes. Per-interest final assessments remain separate. Due job receipts retain conditional primary-check results and source state retains the last successful material after access failure.
+## Private state
 
-Query items add optional discovery parent/query provenance, contextual priority/actions/constraints/relationships and a delta against the saved entity. None of these fields enter the intrinsic canonical entity. `.signals/personal.json`, `inbox.json`, `source-state.json` and `providers.json` are private, schema-validated state, excluded from assets and exchange. Native schema-v1 exchange remains frozen; `signals-ai.contextual-priority` is an optional advisory extension (schema_version 1), accepting contextual-priority-v1/v2 without private notes/feedback. V2 holds ungrounded use/wrap/adapt proposals at study with null priority and preserves `proposedAction` on the query item. Such leads remain candidates but are excluded from recommendations. Discovery's optional `provenanceBasis` and `proposedIntroducedBy` distinguish deterministic binding from a model assertion. Source health adds optional `scans`, `resultExposures` and per-entity explicit `feedbackByEntity` while continuing to read historical records.
+All of `.signals/` is ignored, excluded from public assets and denied by local/static serving. Public admission additionally rejects private bytes. Private history may retain source text containing credential-shaped documentation placeholders; structure, identity and evidence bindings still validate.
 
-| Data            | Authority and shape                                                                                                                               |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Native entity   | signals/entities/entity-<URI hash>.json, closed recordVersion2 wrapper with user-saved or eligible-saved state                                    |
-| Identity        | Canonical URI and aliases; kind/query/name independent ID; conservative GitHub repository identity only for repository roots                      |
-| Evidence        | Source URI/publisher/family/origin, original publication date, fetch time, raw digest, acquisition state and short matched excerpts               |
-| Observation     | Model statement/indicator/status/independence, evidence ID, quote, span flag, model derivation, basis ID and judgment successors                  |
-| Assessment      | signal-strength-v8 with bound type rubrics and limited inspected applicability; v0–v7 replay, explicit asOf, features/bindings and nullable score |
-| Query result    | schemaVersion2 run ID/question, entity items with separate relevance, source-family coverage, gaps, budgets, usage and counts                     |
-| Legacy finding  | signals/<type>/*.json, recordVersion1 frozen schema1 evidence and original signal-review-v1                                                       |
-| Exchange        | Frozen evidence schema1, original source dates; native strength and fetch dates in separate extensions                                            |
-| Generated views | Public native entities.json plus existing typed legacy Corpus/index/downloads; disposable Pages assets                                            |
-| Private state   | .signals/settings.json, runs, queries, discovery-state, leases/locks/dismissals and retained immutable snapshots                                  |
-| Concepts        | concepts.json retains 134 Signals definitions; config/context-concepts.json snapshots all 140 Context concept definitions for research            |
+| State                                             | Purpose                                                                                                                                  |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `settings.json`                                   | Interests, website scopes, acquisition groups, followed sources, runner references, budgets, disabled-default recurrence and publication |
+| `runs/`, query history and retained snapshots     | Immutable original answers, valid items, provisional leads, source text, gaps, usage and saved outcomes                                  |
+| `library-leads.json`                              | Unassessed URI identities and append-only saved contexts; never manufactured scored entities                                             |
+| `library-preferences.json`                        | Explicit metadata-egress permission and disabled-default personal autosaving                                                             |
+| `library-state.json`, `personal.json`             | Qualified saved selections, historical/native annotations and personal feedback                                                          |
+| `selections.json`                                 | Saved identities associated with run/question/interest/concepts, including unchanged entities                                            |
+| `projects.json` and project history               | Registrations, current context, immutable imported originals and personal opportunity decisions                                          |
+| `inbox.json`                                      | Promising leads and dismissals, separate from Corpus admission                                                                           |
+| `source-state.json`                               | Last successful material, checks, scans, result exposures and verified per-entity parent feedback                                        |
+| `providers.json`                                  | Optional closed provider settings; see [providers](../providers.md)                                                                      |
+| Discovery/batch state, attempts, locks and leases | Frozen lists/pools, due slots, overlap control, resume and interrupted uncertainty                                                       |
 
-There are no active SQL tables, ORM mirrors or database destinations. Native entity schemas reject unknown fields, invalid URI/evidence IDs, unbound/forged spans, score tampering and cyclic judgment supersession. Corpus admission additionally rejects private bytes. Private query history keeps source text, including credential-shaped documentation placeholders, while replay still validates structure, identity and evidence bindings. New observations use identityVersion2 to bind the claim wording as well as its quote and judgment; a corrected claim creates a successor. Unmarked historical observations retain their original identity decoder. Scores replay from accepted model observations and explicit time; they are not factual proof. Per-entity writes are atomic, with a serialized cooperating writer. Historical evidence/downloads and retained snapshots keep their original bytes and policy meanings.
+Format/destination-qualified Library keys prevent native/historical or public/private collisions. Meaning matching hydrates original records and changes no evidence or intrinsic scores. Automatic private-saving receipts retain item-level admission/exclusion reasons. No-save memory mode bypasses private persistence.
+
+Project source basis, editable context and decisions are distinct from entity evidence. History retains each context before edit, refresh or disconnect, up to 64 entries per project; a full history rejects further changes rather than dropping context. Context imports retain original objects/digests without inferred admission. Context v3 requests preserve namespaced opportunity IDs and enforce separate text/count/byte limits; omitted references remain local and are counted.
+
+Batch plans freeze compatible acquisition scopes; each interest retains separate assessment. Interrupted running questions become uncertain rather than being automatically repeated. Source access failure preserves the last successful material. Source health counts acquisition scans separately from result exposures; missing historical provenance does not create feedback credit.
+
+There are no SQL tables, ORM mirrors or database destinations. Retained file exports remain readable through the historical reader. [Product intent](../product.yaml) and [AI authoring context](../../.meta/context/README.md) describe the project rather than public evidence.

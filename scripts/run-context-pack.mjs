@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL, URL } from 'node:url';
 
 const repositoryRoot = fileURLToPath(new URL('../', import.meta.url));
-const configUrl = new URL('../repomix.config.json', import.meta.url);
+const configUrl = new URL('../.meta/context/pack.json', import.meta.url);
 const repomixBin = fileURLToPath(
   new URL('../node_modules/repomix/bin/repomix.cjs', import.meta.url),
 );

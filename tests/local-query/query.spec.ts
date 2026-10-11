@@ -50,4 +50,14 @@ test('a local user saves an ordinary question without writing evidence artifacts
   } finally {
     await unlink(privateFile);
   }
+  await mkdir('.meta/context/local', { recursive: true });
+  const contextFile = resolve('.meta/context/local/privacy-probe.json');
+  await writeFile(contextFile, '{"private":"local authoring context"}');
+  try {
+    const blocked = await request.get(`/signals-ai/@fs${contextFile}`);
+    expect(blocked.status()).toBe(403);
+    expect(await blocked.text()).not.toContain('local authoring context');
+  } finally {
+    await unlink(contextFile);
+  }
 });

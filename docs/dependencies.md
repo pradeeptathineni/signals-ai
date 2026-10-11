@@ -1,95 +1,36 @@
-# Dependency baseline
+# Dependencies
 
-The corpus-first experience reuses MiniSearch 7.2.0 for one native/legacy metadata index,
-React 19.3.0 for the local desk, and the existing Playwright/axe infrastructure. Project previews
-use the existing safe fetch and Node filesystem primitives; no crawler, GitHub SDK, database,
-auth service or agent runtime was added. The portable Context request is data only. Dependency
-and lockfile versions are unchanged by ADR-016.
+`package.json` and `package-lock.json` pin exact reviewed versions. The supported toolchain is Node 24.19+ within Node 24 and npm 12.1+ within npm 12. `npm run security:dependencies` checks installed direct versions and MIT, Apache-2.0, ISC or MPL-2.0 licences. `security:audit` applies the advisory policy; `security:secrets` checks publication boundaries.
 
-The 2026-10-08 gate identified Handlebars JavaScript-injection advisories
-[GHSA-8r5x-fm3f-whwj](https://github.com/advisories/GHSA-8r5x-fm3f-whwj),
-[GHSA-p8wg-vrv2-v86f](https://github.com/advisories/GHSA-p8wg-vrv2-v86f) and
-[GHSA-xw65-4hp5-5hc7](https://github.com/advisories/GHSA-xw65-4hp5-5hc7) in the development-only
-`repomix@1.18.1 -> handlebars` path. The lockfile pins the patched
-`handlebars@4.7.10` (MIT), within Repomix's existing compatible range; direct versions remain
-unchanged. Two advisories are critical and one is moderate. The shipped application does not
-include this template compiler. The original exact Repomix/braces exception and its rejection of
-additional advisories remain unchanged; this patched dependency receives no waiver.
+## Runtime
 
-The 2026-10-05 gate identified [GHSA-68fv-2mgg-jv7q](https://github.com/advisories/GHSA-68fv-2mgg-jv7q) in the development path `Vite -> PostCSS -> source-map-js`. The lockfile now pins the patched `source-map-js@1.2.2` (BSD-3-Clause); direct versions remain unchanged. The existing exact Repomix exception was not broadened. Build/browser checks and the audit policy verify the updated tree.
+| Package              | Version | License    | Purpose                                        |
+| -------------------- | ------: | ---------- | ---------------------------------------------- |
+| React / React DOM    |  19.3.0 | MIT        | Local workbench and static public view         |
+| TypeBox              |  1.3.34 | MIT        | Closed typed record/request validation         |
+| Ajv                  |  8.20.0 | MIT        | Frozen draft-2020 peer schema validation       |
+| ajv-formats          |   3.0.1 | MIT        | Peer schema formats                            |
+| MiniSearch           |   7.2.0 | MIT        | In-memory native/historical metadata retrieval |
+| @mozilla/readability |   0.6.0 | Apache-2.0 | Static document extraction                     |
+| linkedom             | 0.18.13 | ISC        | Inert DOM without script/resource execution    |
+| rss-parser           |  3.13.0 | MIT        | RSS/Atom parsing from safely fetched bytes     |
 
-The reset adds exact `@mozilla/readability@0.6.0` (Apache-2.0), `linkedom@0.18.13` (ISC) and `rss-parser@3.13.0` (MIT). Linkedom supplies an inert DOM with no page script/resource execution; original outlinks are harvested before Readability. RSS/Atom uses `parseString` on safe fetched bytes, with entity declarations rejected. Live MDN/GitHub/RSS trials and negative fixtures passed; transport/DNS ownership remains in Signals.
+Node HTTPS/DNS/filesystem/child-process primitives own safe acquisition, bounded project previews, file writes, the loopback API, headless supervision and interval scheduling. Linkedom does not grant transport authority; original outlinks are harvested before Readability. RSS entity declarations are rejected. Ajv does not coerce or insert defaults; domain checks own semantic references/privacy. Frozen schema bytes are excluded from formatting to preserve their digest.
 
-The optional headless adapter supervises the user's installed
-Codex CLI (0.160.0 observed 2026-10-05); its existing authentication stays outside Signals. Native
-Agent Skills callers use their own permitted tools. Node HTTPS/DNS/child-process primitives own the
-bounded adapter, pinned connections and interval scheduler. Croner/queues and a new service estate
-were rejected for the shipped interval contract. Structured provider schemas omit `uniqueItems`
-because the installed endpoint rejected it; the unchanged domain validator enforces uniqueness.
+Headless research supervises the user's installed authenticated Codex CLI; invoking Agent Skills hosts use their own permitted tools. Optional external acquisition/extraction providers have [separate reviewed pins and constraints](providers.md). Cataloging a tool never installs it. The historical optional loopback model is explicitly configured and operates only on retained knowledge.
 
-Record export reuses the existing exact-pinned Prettier 3.9.9 to preserve previously published
-interchange bytes. Native JSON parsing plus duplicate-key rejection and the existing schema
-validators enforce the closed record format. No database or new parser dependency is needed
-for the public product. Combined indexes and interchange downloads are build output only.
+## Development
 
-The public Corpus preview reuses exact-pinned React/Vite, TypeBox's interpreted value checker,
-Ajv, Playwright and axe. MiniSearch 7.2.0 (MIT, no external dependencies) adds ranked in-memory
-word retrieval after full-question evaluation exposed all-word matching gaps. ADR-010 explains
-the retained exact filters and limits. GitHub Pages actions are pinned to reviewed upstream commits in
-`.github/workflows/pages.yml`; they upload only the validated static public output.
+Vite 8.3.1, TypeScript 6.0.3, Playwright 1.63.0, Vitest 5.0.2 and Prettier 3.9.9 are pinned development tools. Prettier also encodes historical public downloads reproducibly. ESLint and axe check code/accessibility; Knip 6.38.0 and jscpd 5.3.3 inspect unused structure and duplication. Repomix 1.18.1 creates bounded source maps, and CCA 0.2.0 supports a reversible context hook. CCA recovery preserves normalized/redacted text rather than promising original stdout/stderr bytes. See [AI authoring context](../.meta/context/README.md) for use boundaries.
 
-Evidence interchange v1 adds `ajv@8.20.0` and `ajv-formats@3.0.1` (MIT), reviewed
-2026-10-05. A separate Ajv draft-2020 instance validates the frozen peer schema without
-coercion or default insertion; semantic reference/privacy checks remain in the domain.
-The exact schema bytes are excluded from formatting to preserve the interchange digest.
+GitHub Pages actions are pinned to reviewed upstream commits in `.github/workflows/pages.yml`. They upload validated static public output only. No database driver/service, crawler SDK, hosted authentication or general agent runtime is installed.
 
-The runtime and verification packages are exact-pinned in `package.json` and `package-lock.json`.
-The database retirement removes Fastify, PostgreSQL/Drizzle, Graphile, G6, jsdom,
-TanStack Query, OpenTelemetry, undici and AI SDK from the installed product. Cataloging a toolkit
-does not install it. Structured model calls use bounded native fetch to an explicitly configured
-loopback endpoint. The current runtime dependency set is:
+## Advisory policy
 
-| Package           | Version | License | Relevant Node declaration |
-| ----------------- | ------: | ------- | ------------------------- |
-| React / React DOM |  19.3.0 | MIT     | compatible                |
-| TypeBox           |  1.3.34 | MIT     | compatible                |
-| Ajv               |  8.20.0 | MIT     | compatible                |
-| ajv-formats       |   3.0.1 | MIT     | compatible                |
-| MiniSearch        |   7.2.0 | MIT     | ES2018 Node and browsers  |
+The lockfile pins patched `handlebars@4.7.10` and `source-map-js@1.2.2`. Neither receives an advisory waiver.
 
-Development-only Phase 06 tools are exact-pinned: `repomix@1.18.1` (MIT) for bounded repository
-maps, `@linger-alpha/cca@0.2.0` (MIT) for a reversible project hook, `knip@6.38.0` (ISC) for unused
-code/dependencies, and `jscpd@5.3.3` (MIT) for clone detection. None grants runtime execution
-authority or makes a catalog candidate trusted.
+The one exact development exception is [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) through `repomix@1.18.1 → globby@16.2.4 → micromatch@4.0.8 → braces@3.0.3`. Repomix is excluded from the shipped application. The `context:pack` wrapper rejects caller arguments, disables Git/dot-ignore/package-default patterns, refuses implicit ignore files and prohibits brace expansion and oversized configured patterns/output paths. It uses a fixed argument array.
 
-On 2026-10-02 GitHub reviewed `GHSA-vfj7-8cjw-p6xm`, a high-severity stack-exhaustion advisory
-against every published `braces` version through the current `3.0.3`; upstream has no patched
-release as of 2026-10-03. Maestro reaches it only through the exact development path
-`repomix@1.18.1 -> globby@16.2.4 -> micromatch@4.0.8 -> braces@3.0.3`. The shipped application does
-not include Repomix. `context:pack` uses a wrapper that rejects caller arguments, disables Git,
-dot-ignore, and package-default pattern sources, refuses implicit `.repomixignore` files, prohibits
-brace expansion and oversized patterns (including the output path) in the reviewed repository
-configuration, and invokes Repomix with a fixed argument array. `security:audit` therefore requires
-that one exact audit payload and
-installed path while no fix exists; even an unexpectedly clean report fails while the vulnerable
-path remains. It rejects malformed or inconsistent audit metadata, nested high/critical advisories,
-any additional high/critical advisory, runtime reachability, version/path change, invocation change,
-or changed fix metadata so a patched release must be reviewed and adopted rather than silently
-remaining excepted.
+The audit gate requires the exact advisory payload/path while that vulnerable path remains. It rejects malformed/inconsistent metadata, additional high/critical advisories, nested advisories, runtime reachability, changed versions/paths/invocation or changed fix metadata. A patched release must be reviewed rather than silently remaining excepted. Even an unexpectedly clean report fails while the known vulnerable path is installed.
 
-Vite 8.3.1, TypeScript 6.0.3, Playwright 1.63.0, Vitest 5.0.2, Prettier 3.9.9 and the lint/structure
-tools remain development dependencies. Node 24.19 and npm 12.1 are the tested toolchain.
-
-The verification gate checks that all direct packages remain at their exact reviewed versions and
-use the reviewed MIT, Apache-2.0, ISC, or MPL-2.0 licenses. The 2026-09-29 installed-tree audit
-reported zero known vulnerabilities; the later, explicitly bounded no-fix exception is documented
-above. These are time-scoped dependency checks, not a claim that the application or dependencies
-are universally safe. CI and the local verification gate repeat them.
-
-Npm's local build-script policy may block optional `esbuild`/`fsevents` lifecycle scripts. Maestro
-does not require a global policy change: the pinned Vite build and browser gate are used to verify
-the effective installation.
-
-CCA recovery files contain normalized/redacted text. They preserve useful tested observations;
-they do not promise original byte-for-byte stdout/stderr. No billing savings or general task-quality
-benefit has been measured. Historical Phase 06 integrations remain in Git history only.
+Dependency checks describe their inspected tree and advisory data; they do not establish universal safety. npm may block optional esbuild/fsevents lifecycle scripts; the effective installation is checked through the pinned build/browser gate without changing global policy.

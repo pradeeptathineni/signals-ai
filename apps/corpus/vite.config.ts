@@ -48,6 +48,7 @@ export default defineConfig({
         '**/.git/**',
         '**/.signals/**',
         '**/.context-ai/lock.json',
+        '**/.meta/**',
         `${fileURLToPath(new URL('../../.codex', import.meta.url)).replaceAll('\\', '/')}/**`,
         `${queryDirectory}/**`,
       ],

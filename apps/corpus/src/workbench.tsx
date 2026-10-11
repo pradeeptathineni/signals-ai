@@ -8,7 +8,6 @@ import {
 } from '../../../packages/domain/src/search-score.js';
 import { budgets, kinds, channels } from '../../../packages/domain/src/search-vocabulary.js';
 import type {
-  SearchItem,
   SearchResult,
   ProvisionalLead,
 } from '../../../packages/domain/src/search-contract.js';
@@ -24,12 +23,10 @@ import type { runDueOnce } from '../../../packages/corpus/src/search-scheduler.j
 import { rejectedNativeLeads } from '../../../packages/domain/src/search-rejected.js';
 import { ScoreView } from './candidate-views.js';
 
-const local = (window as Window & { __SIGNALS_LOCAL__?: boolean }).__SIGNALS_LOCAL__ === true;
 const base = import.meta.env.BASE_URL;
 const settingsTabs = ['Settings', 'Interests', 'Sources', 'Jobs'];
+type WorkbenchPanel = 'Search' | 'Inbox' | 'Interests' | 'Sources' | 'Jobs' | 'Settings';
 export function Workbench({
-  legacyCorpus,
-  embedded = false,
   requestedTab,
   question,
   reopenRun,
@@ -41,9 +38,7 @@ export function Workbench({
   providedProfile,
   monitorRun,
 }: {
-  legacyCorpus: ReactNode;
-  embedded?: boolean;
-  requestedTab?: string;
+  requestedTab?: WorkbenchPanel;
   question?: string;
   reopenRun?: string;
   onCompleted?: (runId: string) => void;
@@ -54,7 +49,7 @@ export function Workbench({
   providedProfile?: 'quick' | 'wide';
   monitorRun?: string;
 }) {
-  const [tab, setTab] = useState(local ? 'Search' : 'Corpus');
+  const [tab, setTab] = useState<WorkbenchPanel>('Search');
   const [token, setToken] = useState(''),
     [ready, setReady] = useState('Checking runner…');
   const [settings, setSettings] = useState<SearchSettings | null>(null);
@@ -127,13 +122,9 @@ export function Workbench({
   >([]);
   const [message, setMessage] = useState(''),
     [error, setError] = useState('');
-  const [corpus, setCorpus] = useState<(StoredEntity & { destination: 'public' | 'private' })[]>(
-      [],
-    ),
-    [saved, setSaved] = useState(new Set<string>());
+  const [saved, setSaved] = useState(new Set<string>());
   const [selected, setSelected] = useState<string[]>([]),
     [filters, setFilters] = useState<SearchFilters>({});
-  const [corpusSelection, setCorpusSelection] = useState<string[]>([]);
   const [followup, setFollowup] = useState(''),
     [answer, setAnswer] = useState<null | {
       answer: string;
@@ -213,53 +204,44 @@ export function Workbench({
     return value as T;
   }
   async function reloadCorpus() {
-    const records = local
-      ? await api<StoredEntity[]>('corpus')
-      : await fetch(`${base}entities.json`).then((response) =>
-          response.ok ? (response.json() as Promise<StoredEntity[]>) : [],
-        );
-    const scoped = records.map((record) => ({ ...record, destination: 'public' as const }));
-    const privateRecords = local ? await api<StoredEntity[]>('private-corpus') : [];
-    const combined = [
-      ...scoped,
-      ...privateRecords.map((record) => ({ ...record, destination: 'private' as const })),
-    ];
-    setCorpus(combined);
+    const [records, privateRecords] = await Promise.all([
+      api<StoredEntity[]>('corpus'),
+      api<StoredEntity[]>('private-corpus'),
+    ]);
+    const combined = [...records, ...privateRecords];
     setSaved(new Set(combined.map((record) => record.entity.id)));
   }
   useEffect(() => {
     void reloadCorpus().catch((failure: unknown) => setError(String(failure)));
-    if (local) {
-      void fetch(`${base}__signals/api/session`)
-        .then(
-          (response) =>
-            response.json() as Promise<{
-              token: string;
-              capability: { available: boolean; reason: string; runner: string };
-              providers: { provider: string; configured: boolean; state: string }[];
-            }>,
-        )
-        .then((session) => {
-          setToken(session.token);
-          setProviders(session.providers);
-          setReady(
-            `${session.capability.available ? 'Ready' : 'Unavailable'}: ${session.capability.runner}. ${session.capability.reason}`,
-          );
-        })
-        .catch(() => setReady('Local bridge unavailable.'));
-      void api<SearchSettings>('settings')
-        .then((value) => {
-          setSettings(value);
-          setGroupPlan(JSON.stringify(value.acquisitionGroups ?? [], null, 2));
-        })
-        .catch((failure: unknown) => setError(String(failure)));
-      void api<Record<string, PersonalState>>('personal')
-        .then(setPersonal)
-        .catch((failure: unknown) => setError(String(failure)));
-      void api<InboxEntry[]>('inbox')
-        .then(setInbox)
-        .catch((failure: unknown) => setError(String(failure)));
-    }
+    void fetch(`${base}__signals/api/session`)
+      .then(
+        (response) =>
+          response.json() as Promise<{
+            token: string;
+            capability: { available: boolean; reason: string; runner: string };
+            providers: { provider: string; configured: boolean; state: string }[];
+          }>,
+      )
+      .then((session) => {
+        setToken(session.token);
+        setProviders(session.providers);
+        setReady(
+          `${session.capability.available ? 'Ready' : 'Unavailable'}: ${session.capability.runner}. ${session.capability.reason}`,
+        );
+      })
+      .catch(() => setReady('Local bridge unavailable.'));
+    void api<SearchSettings>('settings')
+      .then((value) => {
+        setSettings(value);
+        setGroupPlan(JSON.stringify(value.acquisitionGroups ?? [], null, 2));
+      })
+      .catch((failure: unknown) => setError(String(failure)));
+    void api<Record<string, PersonalState>>('personal')
+      .then(setPersonal)
+      .catch((failure: unknown) => setError(String(failure)));
+    void api<InboxEntry[]>('inbox')
+      .then(setInbox)
+      .catch((failure: unknown) => setError(String(failure)));
   }, []);
   useEffect(() => {
     if (!run || !busy) return;
@@ -324,33 +306,14 @@ export function Workbench({
       clearInterval(timer);
     };
   }, [run, busy]);
-  const corpusItems: SearchItem[] = corpus.map((record) => ({
-    entity: record.entity,
-    match: {
-      level: 'unknown',
-      reason: 'Reusable saved entity; relevance depends on your current need.',
-      sources: [],
-    },
-    eligible: false,
-    reasons: [],
-  }));
-  const corpusDestinations = useMemo(
-    () => new Map(corpus.map((record) => [record.entity, record.destination])),
-    [corpus],
-  );
-  const all = tab === 'Search' ? (result?.items ?? []) : corpusItems;
+  const all = result?.items ?? [];
   const items = useMemo(() => filterSearchItems(all, filters, saved), [all, filters, saved]);
-  const selection = tab === 'Corpus' ? corpusSelection : selected;
-  const compared = all.filter((item) => selection.includes(entityAnchor(item.entity))).slice(0, 2);
-  function entityAnchor(entity: SearchItem['entity']) {
-    return `${tab === 'Corpus' ? `${corpusDestinations.get(entity)}-` : ''}${entity.id}`;
-  }
+  const compared = all.filter((item) => selected.includes(item.entity.id)).slice(0, 2);
   function change(key: keyof SearchFilters, value: string | number | undefined) {
     setFilters((current) => ({ ...current, [key]: value }));
   }
   function toggle(id: string) {
-    const update = tab === 'Corpus' ? setCorpusSelection : setSelected;
-    update((current) =>
+    setSelected((current) =>
       current.includes(id) ? current.filter((value) => value !== id) : [...current, id],
     );
   }
@@ -363,30 +326,23 @@ export function Workbench({
     }
   }
   async function start(
-    refreshId?: string,
     question = query,
     supplementalSites?: string[],
     context?: string,
     captureUrls?: string[],
-    destination?: 'public' | 'private',
   ) {
     reopening.current = false;
     setSourceResult(null);
     setProvisional([]);
-    const started = await api<{ id: string }>(
-      refreshId ? 'refresh' : captureUrls ? 'capture' : 'search',
-      refreshId
-        ? { id: refreshId, destination }
-        : {
-            query: question,
-            context,
-            captureUrls,
-            supplementalSites,
-            profile: providedProfile ?? settings?.profile ?? 'wide',
-            save: 'never',
-            cache: 'private',
-          },
-    );
+    const started = await api<{ id: string }>(captureUrls ? 'capture' : 'search', {
+      query: question,
+      context,
+      captureUrls,
+      supplementalSites,
+      profile: providedProfile ?? settings?.profile ?? 'wide',
+      save: 'never',
+      cache: 'private',
+    });
     setRun(started.id);
     setBusy(true);
     setResult(null);
@@ -395,7 +351,7 @@ export function Workbench({
     setAnswer(null);
     setEvents(['Starting research…']);
     setTab('Search');
-    if (!refreshId) setQuery(question);
+    setQuery(question);
   }
   async function save(ids: string[], mode: 'manual' | 'eligible') {
     if (!result) return;
@@ -441,59 +397,16 @@ export function Workbench({
   async function askEvidence(question = followup) {
     setAnswerBusy(true);
     try {
-      if (tab === 'Corpus') {
-        const chosen = corpus.filter((record) =>
-          corpusSelection.includes(`${record.destination}-${record.entity.id}`),
-        );
-        setAnswer(
-          await api('followup', {
-            ids: chosen.map((record) => record.entity.id),
-            destinations: chosen.map((record) => record.destination),
-            question,
-          }),
-        );
-      } else if (result) {
+      if (result) {
         setAnswer(await api('followup', { runId: result.runId, ids: selected, question }));
       }
     } finally {
       setAnswerBusy(false);
     }
   }
-  const Container = embedded || tab === 'Corpus' ? 'section' : 'main';
   return (
     <>
-      {!embedded && (
-        <a className="skip-link" href={tab === 'Corpus' ? '#results' : '#workbench-content'}>
-          Skip to {tab === 'Corpus' ? 'findings' : 'search'}
-        </a>
-      )}
-      {!embedded && (
-        <nav className="workbench-nav" aria-label="Signals destinations">
-          <a href={base} className="brand">
-            Signals
-          </a>
-          {(local
-            ? ['Search', 'Inbox', 'Corpus', 'Interests', 'Sources', 'Jobs', 'Settings']
-            : ['Corpus']
-          ).map((destination) => (
-            <button
-              key={destination}
-              aria-current={tab === destination ? 'page' : undefined}
-              onClick={() => {
-                setTab(destination);
-                setFilters({});
-                setSelected([]);
-                setAnswer(null);
-                if (destination === 'Jobs') void action(loadHistory);
-              }}
-            >
-              {destination === 'Search' ? 'Search Signals' : destination}
-            </button>
-          ))}
-          <span>{local ? 'Local workbench' : 'Public corpus · read only'}</span>
-        </nav>
-      )}
-      <Container id="workbench-content" className="workbench" aria-label="Native Signals entities">
+      <section id="workbench-content" className="workbench" aria-label="Native Signals entities">
         <dialog ref={evidenceDialog} aria-label="Evidence preview" onClose={() => setPreview(null)}>
           {preview && (
             <>
@@ -959,7 +872,7 @@ export function Workbench({
                       disabled={busy}
                       onClick={() => {
                         void action(() =>
-                          start(undefined, entry.query, entry.supplementalSites, entry.context),
+                          start(entry.query, entry.supplementalSites, entry.context),
                         );
                       }}
                     >
@@ -1257,7 +1170,6 @@ export function Workbench({
                 event.preventDefault();
                 void action(() =>
                   start(
-                    undefined,
                     'Capture this resource and describe its supported uses and limits.',
                     undefined,
                     undefined,
@@ -1311,16 +1223,6 @@ export function Workbench({
           </section>
         ) : (
           <>
-            {!embedded && (
-              <section className="intro">
-                <h1>{tab === 'Search' ? 'Search Signals' : 'Your saved knowledge.'}</h1>
-                <p>
-                  {tab === 'Search'
-                    ? 'Find worthwhile possibilities for your question, with a practical brief and evidence you can inspect.'
-                    : 'Search, compare and follow up on retained findings. Filtering works without AI.'}
-                </p>
-              </section>
-            )}
             {tab === 'Search' && (
               <>
                 {inbox.length > 0 && (
@@ -1329,19 +1231,9 @@ export function Workbench({
                 <form
                   onSubmit={(event) => {
                     event.preventDefault();
-                    void action(() => start(undefined, query, undefined, context));
+                    void action(() => start(query, undefined, context));
                   }}
                 >
-                  <label hidden={embedded}>
-                    Research question
-                    <textarea
-                      required={!embedded}
-                      maxLength={2000}
-                      value={query}
-                      onChange={(event) => setQuery(event.target.value)}
-                      placeholder="What do you want to understand or find?"
-                    />
-                  </label>
                   <details>
                     <summary>Project context and constraints</summary>
                     <label>
@@ -1388,7 +1280,6 @@ export function Workbench({
                       onClick={() =>
                         void action(() =>
                           start(
-                            undefined,
                             query.trim() ||
                               'Capture this resource and describe its supported uses and limits.',
                             undefined,
@@ -1408,13 +1299,13 @@ export function Workbench({
                   </details>
                   <div className="actions">
                     <button disabled={busy || sourceBusy || !token || !query.trim()} type="submit">
-                      {embedded ? 'Start online research' : 'Start search'}
+                      Start online research
                     </button>
                     <button
                       disabled={busy || sourceBusy || !result}
                       type="button"
                       onClick={() => {
-                        void action(() => start(undefined, query, undefined, context));
+                        void action(() => start(query, undefined, context));
                       }}
                     >
                       Search further
@@ -1528,19 +1419,17 @@ export function Workbench({
                       <p>{lead.description}</p>
                       <p>{lead.uri}</p>
                       <p>{lead.limits.join(' ')}</p>
-                      {local && (
-                        <button
-                          onClick={() =>
-                            void action(async () => {
-                              await api('save-lead', { runId: result.runId, uri: lead.uri });
-                              setMessage(`${lead.name} saved privately as an unassessed lead.`);
-                              onCompleted?.(result.runId);
-                            })
-                          }
-                        >
-                          Save lead privately
-                        </button>
-                      )}
+                      <button
+                        onClick={() =>
+                          void action(async () => {
+                            await api('save-lead', { runId: result.runId, uri: lead.uri });
+                            setMessage(`${lead.name} saved privately as an unassessed lead.`);
+                            onCompleted?.(result.runId);
+                          })
+                        }
+                      >
+                        Save lead privately
+                      </button>
                     </li>
                   ))}
                 </ul>
@@ -1584,7 +1473,7 @@ export function Workbench({
                   </ul>
                 </section>
               )}
-              <details open={tab === 'Corpus'}>
+              <details>
                 <summary>Filter and sort findings</summary>
                 <div className="filters">
                   <label>
@@ -1740,7 +1629,7 @@ export function Workbench({
                 {items.length} of {all.length} entities
               </p>
             </section>
-            {local && result && tab === 'Search' && (
+            {result && tab === 'Search' && (
               <details className="desk-bulk-actions" open={selected.length > 0}>
                 <summary>Save and organize selected items</summary>
                 <div className="actions">
@@ -1808,7 +1697,7 @@ export function Workbench({
                 <h2>Compare</h2>
                 <div className="entity-grid">
                   {compared.map((item) => (
-                    <article key={entityAnchor(item.entity)}>
+                    <article key={item.entity.id}>
                       <h3>{item.entity.name}</h3>
                       <p>{item.match.reason}</p>
                       <p>
@@ -1823,34 +1712,32 @@ export function Workbench({
                     </article>
                   ))}
                 </div>
-                {local && (
-                  <button
-                    disabled={answerBusy || busy}
-                    onClick={() =>
-                      void action(() => {
-                        const question = `Compare ${compared.map((item) => item.entity.name).join(' and ')} for practical uses, alternatives, trade-offs, evidence gaps and the next action, using retained evidence only.`;
-                        setFollowup(question);
-                        return askEvidence(question);
-                      })
-                    }
-                  >
-                    Explain this comparison from evidence
-                  </button>
-                )}
+                <button
+                  disabled={answerBusy || busy}
+                  onClick={() =>
+                    void action(() => {
+                      const question = `Compare ${compared.map((item) => item.entity.name).join(' and ')} for practical uses, alternatives, trade-offs, evidence gaps and the next action, using retained evidence only.`;
+                      setFollowup(question);
+                      return askEvidence(question);
+                    })
+                  }
+                >
+                  Explain this comparison from evidence
+                </button>
               </section>
             )}
             <section aria-label="Entity results" className="entity-grid">
               {items.map((item) => (
                 <article
                   className="entity-card"
-                  key={`${corpusDestinations.get(item.entity) ?? 'search'}:${item.entity.id}`}
-                  id={`entity-${entityAnchor(item.entity)}`}
+                  key={item.entity.id}
+                  id={`entity-${item.entity.id}`}
                 >
                   <label className="check">
                     <input
                       type="checkbox"
-                      checked={selection.includes(entityAnchor(item.entity))}
-                      onChange={() => toggle(entityAnchor(item.entity))}
+                      checked={selected.includes(item.entity.id)}
+                      onChange={() => toggle(item.entity.id)}
                     />
                     Select {item.entity.name}
                   </label>
@@ -1860,12 +1747,6 @@ export function Workbench({
                     </a>
                   </h2>
                   <p className="desk-summary">{item.entity.description}</p>
-                  {tab === 'Corpus' && (
-                    <p>
-                      {corpusDestinations.get(item.entity) === 'private' ? 'Private' : 'Public'}{' '}
-                      Corpus
-                    </p>
-                  )}
                   <p>
                     {item.entity.kind} · {saved.has(item.entity.id) ? 'Saved' : 'Unsaved'}
                   </p>
@@ -1889,7 +1770,7 @@ export function Workbench({
                     </p>
                   </details>
                   {item.entity.limits[0] && <p className="desk-limit">{item.entity.limits[0]}</p>}
-                  {local && tab === 'Search' && (
+                  {tab === 'Search' && (
                     <button
                       disabled={busy || saved.has(item.entity.id)}
                       onClick={() => void action(() => save([item.entity.id], 'manual'))}
@@ -1938,7 +1819,7 @@ export function Workbench({
                           <a
                             href={
                               all.some((other) => other.entity.uri === relation.uri)
-                                ? `#entity-${entityAnchor(all.find((other) => other.entity.uri === relation.uri)!.entity)}`
+                                ? `#entity-${all.find((other) => other.entity.uri === relation.uri)!.entity.id}`
                                 : relation.uri
                             }
                             rel="noreferrer"
@@ -1968,29 +1849,27 @@ export function Workbench({
                       .
                     </p>
                   )}
-                  {local && (
-                    <PersonalEditor
-                      name={item.entity.name}
-                      value={personal[item.entity.id]}
-                      onSave={(value) =>
-                        action(async () => {
-                          const saved = await api<{ sourceFeedbackError?: boolean }>('personal', {
-                            id: item.entity.id,
-                            note: value.note,
-                            feedback: value.feedback,
-                            novelty: value.novelty,
-                          });
-                          setPersonal((current) => ({ ...current, [item.entity.id]: value }));
-                          setMessage(
-                            saved.sourceFeedbackError
-                              ? 'Private note and feedback saved; source feedback could not be recorded.'
-                              : 'Private note and feedback saved.',
-                          );
-                        })
-                      }
-                    />
-                  )}
-                  {local && item.entity.evidence.length > 0 && (
+                  <PersonalEditor
+                    name={item.entity.name}
+                    value={personal[item.entity.id]}
+                    onSave={(value) =>
+                      action(async () => {
+                        const saved = await api<{ sourceFeedbackError?: boolean }>('personal', {
+                          id: item.entity.id,
+                          note: value.note,
+                          feedback: value.feedback,
+                          novelty: value.novelty,
+                        });
+                        setPersonal((current) => ({ ...current, [item.entity.id]: value }));
+                        setMessage(
+                          saved.sourceFeedbackError
+                            ? 'Private note and feedback saved; source feedback could not be recorded.'
+                            : 'Private note and feedback saved.',
+                        );
+                      })
+                    }
+                  />
+                  {item.entity.evidence.length > 0 && (
                     <button
                       onClick={() => {
                         if (!settings) return;
@@ -2078,9 +1957,7 @@ export function Workbench({
                               Preview evidence for {item.entity.name}
                             </button>
                             {' · '}
-                            <a
-                              href={`#source-${entityAnchor(item.entity)}-${observation.evidenceId}`}
-                            >
+                            <a href={`#source-${item.entity.id}-${observation.evidenceId}`}>
                               Source:{' '}
                               {
                                 item.entity.evidence.find(
@@ -2094,7 +1971,7 @@ export function Workbench({
                     </details>
                     <ul>
                       {item.entity.evidence.map((source) => (
-                        <li key={source.id} id={`source-${entityAnchor(item.entity)}-${source.id}`}>
+                        <li key={source.id} id={`source-${item.entity.id}-${source.id}`}>
                           {source.state === 'fetched' ? (
                             <a href={source.uri} rel="noreferrer">
                               {source.title}
@@ -2116,53 +1993,13 @@ export function Workbench({
                       ))}
                     </ul>
                   </details>
-                  {local && tab === 'Corpus' && (
-                    <button
-                      disabled={busy}
-                      onClick={() => {
-                        void action(async () => {
-                          const check = await api<{ status: string; reason: string }>(
-                            'primary-check',
-                            {
-                              id: item.entity.id,
-                              destination: corpusDestinations.get(item.entity),
-                            },
-                          );
-                          setMessage(`${item.entity.name}: ${check.status}. ${check.reason}`);
-                        });
-                      }}
-                    >
-                      Check primary source without AI
-                    </button>
-                  )}
-                  {local && tab === 'Corpus' && (
-                    <button
-                      disabled={busy}
-                      onClick={() => {
-                        void action(() =>
-                          start(
-                            item.entity.id,
-                            query,
-                            undefined,
-                            undefined,
-                            undefined,
-                            corpusDestinations.get(item.entity),
-                          ),
-                        );
-                      }}
-                    >
-                      Research changes and independent evidence
-                    </button>
-                  )}
                 </article>
               ))}
             </section>
             {!items.length && (
               <p>
-                No entities in this view.{' '}
-                {tab === 'Search'
-                  ? 'Start a search or reset filters; unknown scores are retained.'
-                  : 'Save an acquired result to add an entity.'}
+                No entities in this view. Start a search or reset filters; unknown scores are
+                retained.
               </p>
             )}
             {tab === 'Search' && (result?.brief ?? earlyBrief)?.text && (
@@ -2206,7 +2043,7 @@ export function Workbench({
                 </details>
               </>
             )}
-            {local && ((result && tab === 'Search') || tab === 'Corpus') && (
+            {result && tab === 'Search' && (
               <>
                 <form
                   onSubmit={(event) => {
@@ -2215,23 +2052,19 @@ export function Workbench({
                   }}
                 >
                   <label>
-                    {tab === 'Corpus' ? 'Ask selected corpus evidence' : 'Ask the frozen evidence'}
+                    Ask the frozen evidence
                     <textarea
                       value={followup}
                       required
                       onChange={(event) => setFollowup(event.target.value)}
                     />
                   </label>
-                  <button
-                    disabled={answerBusy || busy || (tab === 'Corpus' && !corpusSelection.length)}
-                  >
+                  <button disabled={answerBusy || busy}>
                     {answerBusy ? 'Reading frozen evidence…' : 'Answer from evidence'}
                   </button>
                   <p>
-                    {tab === 'Corpus'
-                      ? 'Select saved findings to ask or compare their retained evidence. '
-                      : 'A bounded no-web AI call uses only this run and selected items. '}
-                    Search further explicitly to acquire new evidence.
+                    A bounded no-web AI call uses only this run and selected items. Search further
+                    explicitly to acquire new evidence.
                   </p>
                 </form>
                 {answer && (
@@ -2282,26 +2115,7 @@ export function Workbench({
             )}
           </>
         )}
-      </Container>
-      {tab === 'Corpus' &&
-        (local ? (
-          <details>
-            <summary>Earlier public findings</summary>
-            {legacyCorpus}
-          </details>
-        ) : (
-          legacyCorpus
-        ))}
-      {!embedded && (
-        <nav className="workbench-footer" aria-label="Data downloads">
-          <p>
-            {local
-              ? 'Saving is local. Commit and push reviewed corpus changes separately to publish.'
-              : 'This static public view can browse and compare saved knowledge. Run the local workbench for AI search, saving and discovery.'}
-          </p>
-          <a href={`${base}entities.json`}>Native entity download</a>
-        </nav>
-      )}
+      </section>
     </>
   );
 }

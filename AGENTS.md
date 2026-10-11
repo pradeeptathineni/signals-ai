@@ -1,44 +1,22 @@
-# Signals repository guide
+# Signals authoring
 
-Read `README.md`, `ARCHITECTURE.md`, ADR-001, the latest numbered ADR, and `docs/architecture/schema.md` before cross-cutting changes. ADR-017 governs query relevance, type-rubric assessment and Library successors; ADR-016 governs experience/project ownership; ADR-015 governs native research. ADR-011 retains historical scoring meanings and ADR-009 database retirement/history. Private phase evidence stays in the sister planning folder; never copy it into public records or fixtures.
+Read [.meta/context/README.md](.meta/context/README.md) for task-specific guidance.
+Before cross-cutting changes, read `README.md`, `ARCHITECTURE.md`,
+`docs/product.yaml`, `docs/signals-contract.md` and `docs/architecture/schema.md`.
 
-## Boundaries
+Preserve canonical `signals/` records and private `.signals/` history. Evidence is
+immutable; corrections create successors and historical policies keep their meanings.
+Native AI owns uncertain interpretation; code owns permissions, transport, validation,
+scoring and storage. Findings grant no installation or execution authority. Recurrence,
+billing and publication require explicit authority.
 
-- Git is the public Corpus database. Native `signals/entities/*.json` and legacy `signals/<type>/*.json` are canonical; indexes and Pages are generated views. Domains and concepts are metadata.
-- `.signals/` is private local query/history storage. Never publish it, serve it through Vite, or remove retained snapshots during cleanup. Database services, containers, drivers and compatibility commands have been retired.
-- Systems remain data. No candidate installation/execution, arbitrary crawling, hosted auth, cloud/model fallback, sandbox, gateway or agent-runtime implementation is authorized.
+Name the observable improvement before changing a product route. Prefer removing an
+obsolete owner or reusing an existing boundary over another layer. Use bounded native
+subagents for scoped inspection/review or disjoint implementation when useful; ordinary
+signal-search never recursively launches another AI. Use `apply_patch` for source edits.
+Keep dependency pins and `docs/dependencies.md` aligned. Add negative tests when changing
+privacy, authority, evidence binding or historical continuity.
 
-Product outcomes live in `docs/product.yaml`; preserve outcomes rather than defeated internals. Native AI owns uncertain research; deterministic boundaries own permissions, transport, integrity, scores and operations. A new stage must remove work or solve a demonstrated gap. Retain useful alternatives, failed runs and unknown costs. Explicitly authorized finite candidate trials use reviewed pins and verified existing isolation; findings never grant execution authority. Production recurrence, publication and billing remain opt-in. Cut over and retire equivalent losing engines after verified preservation/recovery.
-- Evidence is immutable. Corrections create successors; historical commits and migrated rows preserve old policy meanings. Review metadata may withdraw a finding without rewriting its evidence.
-- Keep interpretation and organization in the bounded model protocol. Deterministic code validates, filters, retrieves, compares, admits and replays. Do not add evaluation vocabulary or one-off semantic branches.
-- Native automatic admission requires supported defining evidence, resolved identity, direct relevance and the versioned intrinsic strength threshold. Headless runs ground observations in fetched text; native agents do so using their own tools. Legacy findings retain their separate all-strong review gate. Scores are policy judgment, never calibrated probability or proven benefit. Humans ask questions; agents generate evidence and model observations.
-
-## Commands and code map
-
-Before changing an ordinary route, name the observable outcome it should improve. Compare consequential alternatives with a strong native workflow under equivalent constraints; retain failed/partial runs and unknown costs. Format validation is not evidence of user benefit. Use bounded native subagents for scoped inspection/review or disjoint isolated implementation; the parent integrates, and ordinary signal-search never recursively launches another AI. Follow [the product commands and boundaries](README.md), preserve required capabilities when a specialization loses, and keep evaluation evidence outside always-loaded guidance.
-
-- `npm run verify` checks the file-based product and isolated browser fixtures. It requires no database or model service. `npm run clean` removes generated build/test output only.
-- `npm run signal-search -- --query QUESTION --save never` performs bounded live discovery with the installed authenticated Codex runner. The native `signal-search` skill uses its invoking AI without recursion.
-- `npm run research -- corpus-query QUESTION` explicitly retrieves historical Corpus knowledge. Optional loopback organization applies only to that constrained collection.
-- `apps/corpus`: local Search/Corpus/Settings workbench and static read-only Pages view.
-- `packages/domain`: frozen evidence decoding, public projection, literal retrieval, bounded model query and signal policy.
-- `packages/corpus`: live acquisition, model runner, native entity validation/merge, typed local API, discovery slots, export and historical readers.
-- `packages/contracts`: frozen schema-v1 interchange. `concepts.json`: the actual Signals concept catalog used in coverage evaluation.
-
-Use `apply_patch` for deliberate source edits. Keep exact dependency versions and `docs/dependencies.md` current. Add negative tests for privacy, authority, evidence binding and historical continuity.
-
-For broad analysis or noisy validation, use `signals-context-engineering`. Generated packs are disposable maps. Source remains authoritative; recover compressed output from its local `raw_ref` before rerunning commands. CCA references preserve normalized/redacted text, not necessarily the original byte stream.
-<!-- context-ai:begin -->
-## Context AI project loadout
-Project instructions and explicit task authority take precedence. Use the pinned `.context-ai/lock.json`.
-Read `.context-ai/resources/skills/context-loadout/SKILL.md` for selection and use receipts.
-Load only the modules for the current stage:
-- deliver: `.context-ai/resources/core/versioning.md`, `.context-ai/resources/overlays/delivery.md`, `.context-ai/resources/core/version-control.md`
-- design: `.context-ai/resources/domains/web/design.md`, `.context-ai/resources/domains/web/product-ux.md`
-- implement: `.context-ai/resources/core/development.md`, `.context-ai/resources/overlays/patterns.md`, `.context-ai/resources/overlays/code-comments.md`, `.context-ai/resources/core/code-comments.md`, `.context-ai/resources/core/prior-art.md`, `.context-ai/resources/overlays/writing.md`, `.context-ai/resources/domains/service/api.md`, `.context-ai/resources/domains/web/accessibility.md`, `.context-ai/resources/domains/web/performance.md`, `.context-ai/resources/domains/web/react.md`
-- inspect: `.context-ai/resources/core/engineering.md`, `.context-ai/resources/core/context.md`, `.context-ai/resources/overlays/prior-art.md`, `.context-ai/resources/core/version-control.md`, `.context-ai/resources/domains/service/api.md`, `.context-ai/resources/domains/web/react.md`
-- research: `.context-ai/resources/core/prior-art.md`, `.context-ai/resources/core/research.md`, `.context-ai/resources/procedures/research-evidence.md`, `.context-ai/resources/overlays/prior-art.md`, `.context-ai/resources/overlays/evidence-claims.md`
-- review: `.context-ai/resources/core/review.md`, `.context-ai/resources/overlays/evidence-claims.md`, `.context-ai/resources/domains/web/design.md`
-- test: `.context-ai/resources/core/testing.md`, `.context-ai/resources/domains/web/browser-verification.md`
-A selected recipe is not execution or deployment permission.
-<!-- context-ai:end -->
+`npm run verify` is the complete local gate; no database or model service is needed.
+`npm run clean` removes generated build/test output only. Planning, studies, delivery
+receipts and superseded guidance belong in the sister `signals-ai-planning` folder.

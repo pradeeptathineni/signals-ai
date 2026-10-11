@@ -1,4 +1,8 @@
 {
   "ignoreBinaries": ["codex"],
-  "entry": ["tests/workbench/server.ts", "tests/built/server.ts"]
+  "workspaces": {
+    ".": {
+      "entry": ["tests/workbench/server.ts", "tests/built/server.ts"]
+    }
+  }
 }

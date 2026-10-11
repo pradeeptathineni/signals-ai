@@ -9,7 +9,6 @@ test-results/
 .env
 .signals/
 private-query-probe/
-.context-ai/lock.json
-.context-ai/pending.json
+.meta/context/local/
 *.log
 .DS_Store
