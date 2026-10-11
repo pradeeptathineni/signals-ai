@@ -1,5 +1,9 @@
 # Data map
 
+New native brief v4 retains an inspectable query interpretation and separate query-relevance-v1 values. Entities can carry source-bound `signalBasis` for deterministic signal-strength-v7 replay; historical v0–v6 remain unchanged. `signals-ai.query-assessment` exchange version 1 uses exported source IDs, validated against the bundle rather than raw run indexes. See ADR-017 and the shared domain schemas.
+
+Private `library-leads.json` retains unassessed URI identities and append-only saved contexts. Leads never become scored entities or public assets. `library-preferences.json` owns explicit metadata-egress permission and disabled-by-default automatic private saving. Automatic-saving receipts include per-item admission/exclusion reasons in private query history. Meaning matching hydrates original records and changes no evidence or intrinsic score.
+
 The corpus-first workspace adds a derived `library.json` from approved public native/legacy inputs. Local retrieval additionally reads private native records and a bounded private collection annotation ledger; neither enters public assets. Project registration, source snapshots, contextual opportunities and imported Context records remain under `.signals/`. Their identifiers, source basis, decisions and evidence references are separate from intrinsic entity evidence and scores. Context migration preserves the original record object and source digest, with no inferred admission or installation authority. See ADR-016 and the closed project/library contracts.
 
 `projects.json` owns explicit registration, current context, immutable imported source objects and

@@ -1,6 +1,6 @@
 # Signals repository guide
 
-Read `README.md`, `ARCHITECTURE.md`, ADR-001, the latest numbered ADR, and `docs/architecture/schema.md` before cross-cutting changes. ADR-016 governs the corpus-first experience and Signals/Context project ownership; ADR-015 governs native research. ADR-011 retains scoring meanings and ADR-009 database retirement/history. Private phase evidence stays in the sister planning folder; never copy it into public records or fixtures.
+Read `README.md`, `ARCHITECTURE.md`, ADR-001, the latest numbered ADR, and `docs/architecture/schema.md` before cross-cutting changes. ADR-017 governs query relevance, type-rubric assessment and Library successors; ADR-016 governs experience/project ownership; ADR-015 governs native research. ADR-011 retains historical scoring meanings and ADR-009 database retirement/history. Private phase evidence stays in the sister planning folder; never copy it into public records or fixtures.
 
 ## Boundaries
 

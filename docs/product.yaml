@@ -163,8 +163,9 @@ features:
     role: core
     type: retrieval
     intent:
-      Search the eligible retained corpus without paid inference using meaningful metadata; distinguish local
-      retrieval from explicit new research and grounded follow-ups over selected evidence.
+      Retrieve retained knowledge through immediate literal matching and, when permitted, one bounded
+      no-web meaning match; distinguish local retrieval from explicit new research and grounded
+      follow-ups over selected evidence.
     assessment:
       delivery: working
       value: 2

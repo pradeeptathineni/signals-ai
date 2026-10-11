@@ -1,6 +1,10 @@
 # Signals AI
 
-The workspace opens on **Search** across the retained Library, with no model call. **Projects** connects explicit repository/folder snapshots to useful findings; **Library** holds saved knowledge and decisions; **Following** keeps interests and sources together. Choose **Research online** deliberately for fresh discovery. Activity and Settings expose jobs and operational controls. Public Pages searches approved public records only.
+The workspace opens on **Home**, showing retained discoveries and recent searches without a model call. Search offers **Library**, **Online** and **Combined** scopes. **Projects** connects selected repository/folder snapshots to useful findings; **Library** holds saved knowledge; **Following** keeps interests and sources together. Online research is deliberate. Public Pages searches approved public records only.
+
+New native assessments use [ADR-017](docs/architecture/ADR-017-query-assessment-and-library.md): inspectable query interpretation, relevance anchors 0/25/50/75/100/null and type-specific `signal-strength-v7`. Query relevance orders results; intrinsic Signal never changes because of a question or save. Historical policies retain their original labels and values. Evidence opens beside results; select candidates to compare and ask about their frozen evidence.
+
+Library returns immediate word matches. In **Settings → Personal Library**, explicitly permit one no-web meaning match on submitted queries. The disclosure names metadata sent through the existing authenticated AI host; notes and project context are excluded. Literal search remains available when matching is disabled, unavailable or cancelled. Manual saving accepts unassessed leads privately. Optional personal autosaving is disabled by default and requires completed assessment, supported relevance and the chosen Signal threshold; it never publishes records.
 
 Search Signals turns a question into a readable opportunity brief and inspectable scored findings. Use the native `signal-search` skill in an existing AI session, or the local portal/headless CLI with one configured native session. The original answer survives malformed record metadata; valid findings can be saved and reopened. New profiles select Sol low, private saving and disabled recurrence. See [ADR-015](docs/architecture/ADR-015-native-research-replacement.md) for the replacement boundary and its limits.
 
@@ -28,6 +32,8 @@ Search works without an existing Corpus. `--save never --cache memory` creates n
 npm run build
 npm run start
 ```
+
+The CLI reads the same current collection with `npm run research -- library-query 'remembered purpose'` (append `--public` for public scope). It honors the saved meaning-matching preference. `corpus-query` remains the explicit historical legacy reader. `npm run verify` includes development and production-built browser journeys; `npm run test:built` requires a current build.
 
 Open [the workbench](http://127.0.0.1:5178/signals-ai/). Search reads the whole eligible native and historical corpus, including descriptions and captured metadata, with phrase, prefix and typo matching. Retrieval rank is separate from intrinsic evidence strength. Unknown license or price does not establish open-source or free-to-use access. Notes, save state and project decisions remain private. Research online retains readiness, bounded progress, cancellation, source gaps, comparison, frozen-evidence follow-up and manual/eligible saving. Following and Activity preserve maintenance controls while browsing remains available.
 
