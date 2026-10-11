@@ -70,7 +70,7 @@ export function frozenLibraryMaterial(records: LibraryFinding[]) {
           evidenceId: `${record.key}:${row.evidenceId}`,
         }))
       : (record.legacy?.claims ?? [])
-          .filter((claim) => ['supported', 'observed'].includes(claim.status))
+          .filter((claim) => ['supported', 'observed', 'contradicted'].includes(claim.status))
           .map((claim) => ({
             entityId: record.key,
             observationId: `${record.key}:${claim.id}`,
@@ -146,15 +146,7 @@ export async function answerFromRetainedMaterial(
     );
     if (!Value.Check(schema, response.proposal)) throw new Error('unbound_followup_output');
     const answer = response.proposal;
-    if (
-      answer.observations.some(
-        (id) => !material.some((statement) => statement.observationId === id),
-      ) ||
-      [...answer.answer.matchAll(/observation-[a-f0-9]{24}/g)].some(
-        (match) => !answer.observations.includes(match[0]),
-      )
-    )
-      throw new Error('unbound_followup_output');
+    validateRetainedAnswer(material, answer);
     return {
       mode: 'frozen-evidence-model',
       answer: answer.answer,
@@ -167,4 +159,22 @@ export async function answerFromRetainedMaterial(
   } finally {
     clearTimeout(timer);
   }
+}
+
+export function validateRetainedAnswer(
+  material: { observationId: string }[],
+  answer: { answer: string; observations: string[] },
+) {
+  const citations = [
+    ...answer.answer.matchAll(
+      /(?:(?:native|legacy|lead):(?:public|private):[A-Za-z0-9_-]+:)?observation-[a-f0-9]{24}/g,
+    ),
+  ];
+  if (
+    answer.observations.some(
+      (id) => !material.some((statement) => statement.observationId === id),
+    ) ||
+    citations.some((match) => !answer.observations.includes(match[0]))
+  )
+    throw new Error('unbound_followup_output');
 }

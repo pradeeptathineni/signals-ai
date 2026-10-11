@@ -1,5 +1,9 @@
 import { expect, it } from 'vitest';
-import { frozenFollowupMaterial, frozenLibraryMaterial } from './search-followup.js';
+import {
+  frozenFollowupMaterial,
+  frozenLibraryMaterial,
+  validateRetainedAnswer,
+} from './search-followup.js';
 import { loadEntities } from './search-store.js';
 import { projectNativeLibrary } from '../../domain/src/library-search.js';
 import type { SearchResult } from '../../domain/src/search-contract.js';
@@ -50,4 +54,28 @@ it('keeps identical observation identities distinct across selected public and p
   expect(frozen.material.every((row) => row.observationId.startsWith(row.entityId + ':'))).toBe(
     true,
   );
+});
+
+it('accepts qualified retained citations and rejects ambiguous or forged source references', () => {
+  const original = 'observation-0123456789abcdef01234567';
+  const qualified = `native:private:entity-123:${original}`;
+  const material = [{ observationId: qualified }];
+  expect(() =>
+    validateRetainedAnswer(material, {
+      answer: `Supported [${qualified}]`,
+      observations: [qualified],
+    }),
+  ).not.toThrow();
+  expect(() =>
+    validateRetainedAnswer(material, {
+      answer: `Ambiguous [${original}]`,
+      observations: [qualified],
+    }),
+  ).toThrow('unbound_followup_output');
+  expect(() =>
+    validateRetainedAnswer(material, {
+      answer: '',
+      observations: [`native:public:entity-123:${original}`],
+    }),
+  ).toThrow('unbound_followup_output');
 });
