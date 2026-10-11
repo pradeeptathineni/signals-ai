@@ -1,6 +1,15 @@
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 import { normalizeConsiderUrl } from './url.js';
+import {
+  interpretationSchema,
+  relevanceSchema,
+  signalJudgmentSchema,
+  type SignalBasis,
+  type SignalJudgment,
+  type QueryInterpretation,
+  type QueryRelevance,
+} from './search-assessment.js';
 
 const closed = { additionalProperties: false };
 const text = Type.String({ minLength: 1, maxLength: 1600 });
@@ -77,6 +86,18 @@ export const candidateSchema = Type.Object(
       closed,
     ),
     observations: Type.Array(observationSchema, { maxItems: 100 }),
+    signalJudgment: Type.Optional(signalJudgmentSchema),
+    relevance: Type.Optional(relevanceSchema),
+    inspection: Type.Optional(
+      Type.Object(
+        {
+          state: Type.Enum(['complete', 'deferred']),
+          deferredObservations: Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER }),
+          reason: text,
+        },
+        closed,
+      ),
+    ),
     match: Type.Object(
       {
         level: enumOf(['direct', 'related', 'unknown', 'out-of-scope']),
@@ -89,11 +110,61 @@ export const candidateSchema = Type.Object(
       closed,
     ),
     limits: Type.Array(text, { maxItems: 30 }),
+    priority: Type.Optional(
+      Type.Object(
+        {
+          applicability: enumOf(['direct', 'partial', 'incompatible', 'unknown']),
+          value: enumOf(['high', 'medium', 'low', 'unknown']),
+          action: enumOf(['use', 'wrap', 'adapt', 'study', 'watch', 'reject']),
+          reason: text,
+          constraints: Type.Array(text, { maxItems: 10 }),
+          sources: Type.Array(Type.Integer({ minimum: 0, maximum: 59 }), {
+            maxItems: 20,
+            uniqueItems: true,
+          }),
+          relations: Type.Optional(
+            Type.Array(
+              Type.Object(
+                {
+                  uri: Type.String({ maxLength: 2048 }),
+                  kind: enumOf(['alternative', 'related', 'contrary']),
+                  reason: text,
+                },
+                closed,
+              ),
+              { maxItems: 10 },
+            ),
+          ),
+        },
+        closed,
+      ),
+    ),
+    discovery: Type.Optional(
+      Type.Object(
+        {
+          introducedBy: enumOf([
+            'user-seeded',
+            'model-nominated',
+            'unseeded-query',
+            'hub-discovered',
+            'followed-source',
+            'unknown',
+          ]),
+          parentUri: Type.Optional(Type.String({ maxLength: 2048 })),
+          query: Type.Optional(Type.String({ maxLength: 2000 })),
+        },
+        closed,
+      ),
+    ),
   },
   closed,
 );
 export const proposalSchema = Type.Object(
   {
+    assessmentPolicy: Type.Optional(
+      Type.Union([Type.Literal('signal-strength-v7'), Type.Literal('signal-strength-v8')]),
+    ),
+    interpretation: Type.Optional(interpretationSchema),
     sources: Type.Array(
       Type.Object(
         {
@@ -103,6 +174,17 @@ export const proposalSchema = Type.Object(
           family: enumOf(channels),
           publishedAt: Type.Union([Type.String({ maxLength: 40 }), Type.Null()]),
           origin: label,
+          role: Type.Optional(
+            enumOf([
+              'primary',
+              'hub',
+              'community',
+              'practitioner',
+              'registry',
+              'scholarly',
+              'counterevidence',
+            ]),
+          ),
         },
         closed,
       ),
@@ -152,6 +234,9 @@ const requestSchema = Type.Object(
   {
     query: Type.String({ minLength: 1, maxLength: 2000 }),
     context: Type.Optional(Type.String({ maxLength: 4000 })),
+    captureUrls: Type.Optional(
+      Type.Array(Type.String({ maxLength: 2048 }), { maxItems: 10, uniqueItems: true }),
+    ),
     supplementalSites: Type.Optional(
       Type.Array(Type.String({ maxLength: 2048 }), { maxItems: 20, uniqueItems: true }),
     ),
@@ -160,15 +245,22 @@ const requestSchema = Type.Object(
       Type.Array(Type.Enum(channels), { minItems: 1, maxItems: 12, uniqueItems: true }),
     ),
     profile: Type.Optional(enumOf(['quick', 'wide'])),
+    route: Type.Optional(enumOf(['native', 'assessed'])),
     save: Type.Optional(enumOf(['never', 'eligible'])),
     cache: Type.Optional(enumOf(['memory', 'private'])),
+    review: Type.Optional(Type.Boolean()),
     threshold: Type.Optional(Type.Integer({ minimum: 0, maximum: 100 })),
+    interpretation: Type.Optional(interpretationSchema),
   },
   closed,
 );
 export type SearchRequest = Static<typeof requestSchema>;
-export type Proposal = Static<typeof proposalSchema>;
-type Candidate = Static<typeof candidateSchema>;
+export type Proposal = Omit<Static<typeof proposalSchema>, 'candidates'> & {
+  candidates: Candidate[];
+};
+type Candidate = Omit<Static<typeof candidateSchema>, 'signalJudgment'> & {
+  signalJudgment?: SignalJudgment;
+};
 type Observation = Static<typeof observationSchema>;
 export type Source = Proposal['sources'][number] & {
   id: string;
@@ -179,8 +271,14 @@ export type Source = Proposal['sources'][number] & {
   state: 'fetched' | 'failed' | 'denied';
   reason: string;
   excerpt: string;
+  finalUri?: string;
+  extractor?: string;
+  transport?: { etag?: string; lastModified?: string };
 };
-export interface Entity extends Omit<Candidate, 'observations' | 'match'> {
+export interface Entity extends Omit<
+  Candidate,
+  'observations' | 'match' | 'signalJudgment' | 'relevance'
+> {
   id: string;
   acquisition?: 'configured-live' | 'native-agent' | 'fixture';
   currentEvidence?: string[];
@@ -196,6 +294,7 @@ export interface Entity extends Omit<Candidate, 'observations' | 'match'> {
   })[];
   evidence: Source[];
   assessment: Assessment;
+  signalBasis?: SignalBasis;
 }
 export interface Assessment {
   policy:
@@ -205,7 +304,9 @@ export interface Assessment {
     | 'signal-strength-v3'
     | 'signal-strength-v4'
     | 'signal-strength-v5'
-    | 'signal-strength-v6';
+    | 'signal-strength-v6'
+    | 'signal-strength-v7'
+    | 'signal-strength-v8';
   asOf: string;
   score: number | null;
   features: Record<
@@ -221,14 +322,37 @@ export interface Assessment {
   coverage: number;
   missing: string[];
   state: 'assessed' | 'provisional' | 'unassessed';
+  rubric?: SignalBasis['rubric'] | null;
+  disposition?: 'completed' | 'provisional' | 'not-scoreable';
+  reasons?: string[];
+  nextVerification?: string | null;
 }
 export interface SearchItem {
   entity: Entity;
   match: Candidate['match'];
   eligible: boolean;
   reasons: string[];
+  relevance?: QueryRelevance;
+  change?: 'new-to-corpus' | 'unchanged' | 'supported-description-or-status-changed';
+  discovery?: Candidate['discovery'] & {
+    linkVerified: boolean;
+    provenanceBasis?: 'request-seed' | 'configured-source' | 'matched-outlink' | 'model-report';
+    proposedIntroducedBy?: NonNullable<Candidate['discovery']>['introducedBy'];
+  };
+  priority?: NonNullable<Candidate['priority']> & {
+    policy: 'contextual-priority-v1' | 'contextual-priority-v2';
+    proposedAction?: NonNullable<Candidate['priority']>['action'];
+    score: number | null;
+    novelty: 'new-to-corpus' | 'known-in-corpus' | 'unknown';
+    personalNovelty: 'confirmed-new' | 'known' | 'unknown';
+    feedback: 'none' | 'skip' | 'mute' | 'useful';
+    evidenceIds: string[];
+  };
 }
 export interface SearchResult {
+  interpretation?: QueryInterpretation;
+  brief?: { format: 'markdown'; text: string };
+  provisionalLeads?: ProvisionalLead[];
   schemaVersion: 2;
   runId: string;
   query: string;
@@ -243,12 +367,23 @@ export interface SearchResult {
     elapsedMs: number;
     modelCalls: number;
     providerUsage: unknown;
+    stages?: {
+      readinessMs: number;
+      researchMs: number;
+      answerReadyMs: number;
+      inspectionMs: number;
+      firstValidatedMs: number;
+    };
     cost: null;
   };
   counts: { leads: number; distinct: number; duplicates: number; omitted: number };
   limits: typeof budgets.quick;
   persistence?: { changed: string[]; skipped: string[]; privateRun: boolean };
 }
+export type ProvisionalLead = Pick<
+  Proposal['candidates'][number],
+  'uri' | 'name' | 'description' | 'limits'
+>;
 export function parseRequest(input: unknown): SearchRequest {
   if (!Value.Check(requestSchema, input) || !input.query.trim()) throw new Error('invalid_request');
   const sites = (input.supplementalSites ?? []).map((site) => {
@@ -256,14 +391,21 @@ export function parseRequest(input: unknown): SearchRequest {
     if (original.search || original.hash) throw new Error('invalid_supplemental_site');
     return normalizeConsiderUrl(site).normalizedUrl;
   });
-  return { ...input, supplementalSites: [...new Set(sites)] };
+  const captureUrls = input.captureUrls?.map((uri) => normalizeConsiderUrl(uri).normalizedUrl);
+  return {
+    ...input,
+    supplementalSites: [...new Set(sites)],
+    ...(captureUrls ? { captureUrls: [...new Set(captureUrls)] } : {}),
+  };
 }
 export function parseProposal(input: unknown): Proposal {
   if (!Value.Check(proposalSchema, input)) throw new Error('invalid_model_output');
-  const proposal = input;
+  const proposal = input as Proposal;
   const unique = new Set(proposal.coverage.map((item) => item.channel));
   if (unique.size !== proposal.coverage.length) throw new Error('duplicate_coverage');
   for (const candidate of proposal.candidates) {
+    if (candidate.discovery?.parentUri) normalizeConsiderUrl(candidate.discovery.parentUri);
+    for (const relation of candidate.priority?.relations ?? []) normalizeConsiderUrl(relation.uri);
     for (const observation of candidate.observations) {
       if (!attentionBound(observation)) throw new Error('unbound_attention_count');
       if (
@@ -277,6 +419,23 @@ export function parseProposal(input: unknown): Proposal {
     }
     if (candidate.match.sources.some((index) => !proposal.sources[index]))
       throw new Error('invalid_match_binding');
+    if (candidate.priority?.sources.some((index) => !proposal.sources[index]))
+      throw new Error('invalid_priority_binding');
+    if (
+      candidate.relevance &&
+      [
+        ...candidate.relevance.sources,
+        ...candidate.relevance.constraints.flatMap((item) => item.sources),
+      ].some((index) => !proposal.sources[index])
+    )
+      throw new Error('invalid_relevance_binding');
+    if (
+      candidate.signalJudgment &&
+      Object.values(candidate.signalJudgment.dimensions).some((dimension) =>
+        dimension.observations.some((index) => !candidate.observations[index]),
+      )
+    )
+      throw new Error('invalid_rubric_binding');
   }
   return proposal;
 }

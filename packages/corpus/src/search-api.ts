@@ -1,13 +1,22 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
-import { parseRequest, type SearchResult } from '../../domain/src/search-contract.js';
+import {
+  parseRequest,
+  type SearchResult,
+  type ProvisionalLead,
+  budgets,
+} from '../../domain/src/search-contract.js';
 import { signalSearch } from './signal-search.js';
 import { directSearch } from './search-direct.js';
 import { codexRunner } from './search-runner.js';
+import { loadAcquisitionConfig, acquisitionReadiness } from './search-acquisition.js';
+import { scanSources } from './search-sources.js';
+import { loadPersonal, updatePersonal } from './search-personal.js';
+import { loadInbox, updateInbox, removeInbox } from './search-inbox.js';
 import { loadSettings, saveSettings } from './search-settings.js';
 import {
   loadEntities,
@@ -20,7 +29,43 @@ import {
   selectionHistory,
 } from './search-store.js';
 import { runDueOnce, refreshRequest } from './search-scheduler.js';
-import { answerFromEvidence } from './search-followup.js';
+import {
+  answerFromEvidence,
+  answerFromRetainedMaterial,
+  frozenLibraryMaterial,
+} from './search-followup.js';
+import { checkPrimaryMaterial } from './search-reuse.js';
+import { selectSavedEntity } from './search-selection.js';
+import { loadLibrary, setLibrarySaved, retainedIntroducingParent } from './library.js';
+import { libraryPreferences, librarySearchSchema, matchLibrary } from './library-meaning.js';
+import { researchQuery } from '../../domain/src/research-query.js';
+import { loadPublicCorpus } from './public-corpus.js';
+import { saveQuery } from './research-store.js';
+import { saveLibraryLead } from './library-leads.js';
+import { personalSaveDecision } from '../../domain/src/search-score.js';
+import { previewProject, type ProjectPreview } from './project-preview.js';
+import {
+  loadProjects,
+  registerProject,
+  updateProject,
+  disconnectProject,
+  listOpportunities,
+  attachOpportunity,
+  updateOpportunity,
+  associateOpportunity,
+  importContextOpportunities,
+  projectMatches,
+  projectHistory,
+  projectResearchPreview,
+  projectAiSetup,
+} from './projects.js';
+import {
+  checked,
+  previewRequestSchema,
+  registerRequestSchema,
+  projectIdSchema,
+  type ProjectSource,
+} from './project-contract.js';
 import {
   runQueryListOnce,
   queryBatchHistory,
@@ -45,9 +90,17 @@ const idsSchema = Type.Object(
 );
 const followupSchema = Type.Object(
   {
-    runId: selection.properties.runId,
+    runId: Type.Optional(selection.properties.runId),
     ids: selection.properties.ids,
+    destinations: Type.Optional(Type.Array(Type.Enum(['public', 'private']), { maxItems: 60 })),
     question: Type.String({ minLength: 1, maxLength: 2000 }),
+  },
+  { additionalProperties: false },
+);
+const savedEntitySelection = Type.Object(
+  {
+    id: Type.String({ pattern: '^entity-[a-f0-9]{24}$' }),
+    destination: Type.Optional(Type.Enum(['public', 'private'])),
   },
   { additionalProperties: false },
 );
@@ -55,16 +108,26 @@ interface ActiveRun {
   controller: AbortController;
   events: string[];
   result?: SearchResult;
+  provisional?: ProvisionalLead[];
   error?: string;
   batch?: QueryBatch;
+  due?: Awaited<ReturnType<typeof runDueOnce>>;
+  brief?: SearchResult['brief'];
 }
-export function searchApi(root = process.cwd(), search = signalSearch, locate = directSearch) {
+export function searchApi(
+  root = process.cwd(),
+  search = signalSearch,
+  locate = directSearch,
+  follow = answerFromEvidence,
+  check = checkPrimaryMaterial,
+) {
   const token = randomBytes(32).toString('hex');
   const runs = new Map<string, ActiveRun>();
+  const previews = new Map<string, ProjectPreview>();
   const pruneRuns = () => {
     for (const [key, run] of runs) {
       if (runs.size <= 30) break;
-      if (run.result || run.error || run.batch) runs.delete(key);
+      if (run.result || run.error || run.batch || run.due) runs.delete(key);
     }
   };
   let active = false;
@@ -114,12 +177,228 @@ export function searchApi(root = process.cwd(), search = signalSearch, locate = 
         json(200, {
           token,
           capability: await codexRunner().readiness(),
+          providers: acquisitionReadiness(await loadAcquisitionConfig(root)),
           active,
           limits: 'One AI job; quick 8 searches/20 documents/240s; wide 24/60/600s.',
         });
       else if (route === 'settings')
         json(200, mutation ? await saveSettings(body, root) : await loadSettings(root));
-      else if (route === 'sources' && mutation) {
+      else if (route === 'library' && !mutation) json(200, { findings: await loadLibrary(root) });
+      else if (route === 'question' && mutation) {
+        const schema = Type.Object(
+          { question: Type.String({ minLength: 1, maxLength: 2000 }) },
+          { additionalProperties: false },
+        );
+        if (!Value.Check(schema, body)) throw new Error('invalid_question');
+        const result = await researchQuery(
+          (await loadPublicCorpus(resolve(root, 'signals'))).options,
+          body.question,
+        );
+        const file = await saveQuery(
+          result,
+          process.env.SIGNALS_QUERY_DIRECTORY ?? resolve(root, '.signals/queries'),
+        );
+        json(200, { saved: true, id: file.split('/').at(-1) });
+      } else if (route === 'library-preferences')
+        json(200, await libraryPreferences(root, mutation ? body : undefined));
+      else if (route === 'library-search' && mutation) {
+        if (!Value.Check(librarySearchSchema, body)) throw new Error('invalid_library_search');
+        const preferences = await libraryPreferences(root);
+        const settings = await loadSettings(root);
+        const controller = new AbortController();
+        response.once('close', () => {
+          if (!response.writableEnded) controller.abort();
+        });
+        const busy = active;
+        const permitted = preferences.meaningMatching && !busy;
+        if (permitted) active = true;
+        try {
+          const result = await matchLibrary(
+            await loadLibrary(root, { scope: body.scope }),
+            body.query,
+            body.filters ?? {},
+            {
+              permitted,
+              model: settings.model || undefined,
+              effort: settings.effort || undefined,
+              signal: controller.signal,
+            },
+          );
+          json(
+            200,
+            busy
+              ? {
+                  ...result,
+                  state: 'unavailable',
+                  reason: 'Another AI job is active; literal results retained.',
+                }
+              : result,
+          );
+        } finally {
+          if (permitted) active = false;
+        }
+      } else if (route === 'library-saved' && mutation) {
+        const schema = Type.Object(
+          {
+            key: Type.String({ minLength: 1, maxLength: 300 }),
+            saved: Type.Boolean(),
+            note: Type.Optional(Type.String({ maxLength: 4000 })),
+            feedback: Type.Optional(Type.Enum(['none', 'skip', 'mute', 'useful'])),
+            novelty: Type.Optional(Type.Enum(['confirmed-new', 'known', 'unknown'])),
+          },
+          { additionalProperties: false },
+        );
+        if (!Value.Check(schema, body)) throw new Error('invalid_library_saved');
+        const { key, saved, ...patch } = body;
+        await setLibrarySaved(root, key, saved, patch);
+        json(200, { key, saved });
+      } else if (route === 'projects' && !mutation)
+        json(200, { projects: (await loadProjects(root)).projects });
+      else if (route === 'projects/preview' && mutation) {
+        const request = checked<{ source: ProjectSource }>(previewRequestSchema, body);
+        for (const [id, entry] of previews)
+          if (Date.parse(entry.expiresAt) <= Date.now()) previews.delete(id);
+        if (previews.size >= 10) throw new Error('too_many_project_previews');
+        const preview = await previewProject(request.source, root);
+        previews.set(preview.id, preview);
+        json(200, preview);
+      } else if (route === 'projects/register' && mutation) {
+        const request = checked<{
+          previewId: string;
+          name: string;
+          purpose: string;
+          constraints: string[];
+        }>(registerRequestSchema, body);
+        const preview = previews.get(request.previewId);
+        if (!preview || Date.parse(preview.expiresAt) <= Date.now())
+          throw new Error('project_preview_expired');
+        const project = await registerProject(root, {
+          ...preview.project,
+          name: request.name,
+          purpose: request.purpose,
+          constraints: request.constraints,
+        });
+        previews.delete(request.previewId);
+        json(200, project);
+      } else if (route === 'projects/update' && mutation)
+        json(200, await updateProject(root, body));
+      else if (route === 'projects/disconnect' && mutation) {
+        const request = checked<{ id: string }>(projectIdSchema, body);
+        json(200, await disconnectProject(root, request.id));
+      } else if (route === 'projects/matches' && mutation) {
+        const request = checked<{ id: string }>(projectIdSchema, body);
+        json(200, await projectMatches(root, request.id));
+      } else if (route === 'projects/history' && mutation) {
+        const request = checked<{ id: string }>(projectIdSchema, body);
+        json(200, await projectHistory(root, request.id));
+      } else if (route === 'projects/research-preview' && mutation)
+        json(200, await projectResearchPreview(root, body));
+      else if (route === 'projects/ai-setup' && mutation)
+        json(200, await projectAiSetup(root, body));
+      else if (route === 'opportunities' && !mutation)
+        json(200, { opportunities: await listOpportunities(root) });
+      else if (route === 'opportunities/attach' && mutation)
+        json(200, await attachOpportunity(root, body));
+      else if (route === 'opportunities/update' && mutation)
+        json(200, await updateOpportunity(root, body));
+      else if (route === 'opportunities/project' && mutation)
+        json(200, await associateOpportunity(root, body));
+      else if (route === 'opportunities/import' && mutation)
+        json(200, await importContextOpportunities(root, body));
+      else if (route === 'source-scan' && mutation) {
+        if (
+          !Value.Check(
+            Type.Object(
+              { interest: Type.Optional(Type.String({ maxLength: 80 })) },
+              { additionalProperties: false },
+            ),
+            body,
+          )
+        )
+          throw new Error('invalid_source_scan');
+        json(
+          200,
+          await scanSources(await loadSettings(root), root, {
+            interest: body.interest,
+            persist: true,
+          }),
+        );
+      } else if (route === 'personal') {
+        if (!mutation) json(200, await loadPersonal(root));
+        else {
+          const schema = Type.Object(
+            {
+              id: Type.String({ pattern: '^entity-[a-f0-9]{24}$' }),
+              note: Type.String({ maxLength: 5000 }),
+              feedback: Type.Enum(['none', 'skip', 'mute', 'useful']),
+              novelty: Type.Enum(['confirmed-new', 'known', 'unknown']),
+            },
+            { additionalProperties: false },
+          );
+          if (!Value.Check(schema, body)) throw new Error('invalid_personal_state');
+          const known =
+            [...runs.values()].some((run) =>
+              run.result?.items.some((item) => item.entity.id === body.id),
+            ) ||
+            [
+              ...(await loadEntities(resolve(root, 'signals/entities'))),
+              ...(await loadEntities(resolve(root, '.signals/corpus/entities'))),
+            ].some((record) => record.entity.id === body.id);
+          if (!known) throw new Error('unknown_result_identity');
+          let introducing = [...runs.values()]
+            .flatMap((run) => run.result?.items ?? [])
+            .find(
+              (item) =>
+                item.entity.id === body.id &&
+                item.discovery?.linkVerified &&
+                item.discovery.provenanceBasis === 'configured-source',
+            )?.discovery?.parentUri;
+          if (!introducing) introducing = await retainedIntroducingParent(root, body.id);
+          json(
+            200,
+            await updatePersonal(
+              root,
+              body.id,
+              {
+                note: body.note,
+                feedback: body.feedback,
+                novelty: body.novelty,
+                seenAt: new Date().toISOString(),
+              },
+              introducing,
+            ),
+          );
+        }
+      } else if (route === 'inbox') {
+        if (!mutation) json(200, await loadInbox(root));
+        else if (
+          Value.Check(
+            Type.Object({ remove: selection.properties.ids }, { additionalProperties: false }),
+            body,
+          )
+        ) {
+          json(200, await removeInbox(root, body.remove));
+        } else {
+          if (
+            !Value.Check(
+              Type.Object(
+                {
+                  runId: selection.properties.runId,
+                  ids: selection.properties.ids,
+                  remove: Type.Optional(Type.Boolean()),
+                },
+                { additionalProperties: false },
+              ),
+              body,
+            )
+          )
+            throw new Error('invalid_inbox_selection');
+          const result = [...runs.values()].find((run) => run.result?.runId === body.runId)?.result;
+          if (!result) throw new Error('unknown_result_identity');
+          await retainRun(result, root);
+          json(200, await updateInbox(root, result, body.ids, body.remove));
+        }
+      } else if (route === 'sources' && mutation) {
         const query = parseRequest(body);
         const settings = await loadSettings(root);
         json(
@@ -169,7 +448,18 @@ export function searchApi(root = process.cwd(), search = signalSearch, locate = 
         });
         pruneRuns();
         json(200, { id });
-      } else if ((route === 'search' || route === 'refresh') && mutation) {
+      } else if (route === 'primary-check' && mutation) {
+        if (!Value.Check(savedEntitySelection, body)) throw new Error('invalid_primary_check');
+        const { record } = await selectSavedEntity(body.id, root, body.destination);
+        const { material, ...checked } = await check(record.entity);
+        json(200, {
+          ...checked,
+          materialDigest:
+            material?.response?.status === 304
+              ? checked.source?.digest
+              : (material?.digest ?? null),
+        });
+      } else if ((route === 'search' || route === 'capture' || route === 'refresh') && mutation) {
         if (active) {
           json(409, { code: 'runner_busy' });
           return true;
@@ -179,38 +469,16 @@ export function searchApi(root = process.cwd(), search = signalSearch, locate = 
         let refreshDestination = settings.destination;
         let refreshId: string | undefined;
         if (route === 'refresh') {
-          if (
-            !body ||
-            typeof body !== 'object' ||
-            Object.keys(body).join(',') !== 'id' ||
-            !('id' in body) ||
-            typeof body.id !== 'string'
-          )
-            throw new Error('invalid_refresh');
-          let record = (
-            await loadEntities(
-              resolve(
-                root,
-                settings.destination === 'public' ? 'signals/entities' : '.signals/corpus/entities',
-              ),
-            )
-          ).find((item) => item.entity.id === (body as { id: string }).id);
-          if (!record) {
-            refreshDestination = settings.destination === 'public' ? 'private' : 'public';
-            record = (
-              await loadEntities(
-                resolve(
-                  root,
-                  refreshDestination === 'public' ? 'signals/entities' : '.signals/corpus/entities',
-                ),
-              )
-            ).find((item) => item.entity.id === (body as { id: string }).id);
-          }
-          if (!record) throw new Error('unknown_entity');
+          if (!Value.Check(savedEntitySelection, body)) throw new Error('invalid_refresh');
+          const selected = await selectSavedEntity(body.id, root, body.destination);
+          const { record } = selected;
+          refreshDestination = selected.destination;
           refreshId = record.entity.id;
           input = refreshRequest(record.entity, settings);
         }
         const rawQuery = parseRequest(input);
+        if (route === 'capture' && !rawQuery.captureUrls?.length)
+          throw new Error('capture_url_required');
         const query = parseRequest({
           ...rawQuery,
           supplementalSites: [
@@ -230,6 +498,8 @@ export function searchApi(root = process.cwd(), search = signalSearch, locate = 
           {
             ...query,
             profile: query.profile ?? settings.profile,
+            route: query.route ?? settings.route,
+            review: query.review ?? settings.groundedReview ?? false,
             threshold: query.threshold ?? settings.threshold,
             sources: settings.sources,
             supplementalSites: [
@@ -243,10 +513,18 @@ export function searchApi(root = process.cwd(), search = signalSearch, locate = 
           {
             root,
             runner: codexRunner(settings.model || undefined, settings.effort || undefined, {
+              root,
+              acquisition: await loadAcquisitionConfig(root),
               extractionModel: settings.extractionModel || undefined,
               extractionEffort: settings.extractionEffort || undefined,
             }),
             signal: controller.signal,
+            provisional: (leads) => {
+              run.provisional = leads;
+            },
+            brief: (brief) => {
+              run.brief = brief;
+            },
             progress: (event) => {
               run.events.push(event);
               if (run.events.length > 100) run.events.shift();
@@ -255,6 +533,54 @@ export function searchApi(root = process.cwd(), search = signalSearch, locate = 
         )
           .then(async (result) => {
             try {
+              const preference = (await libraryPreferences(root)).automaticSaving;
+              if (
+                route !== 'refresh' &&
+                preference?.enabled &&
+                !['failed', 'not_configured', 'cancelled'].includes(result.status)
+              ) {
+                const decisions = result.items.map((item) => {
+                  const decision = personalSaveDecision(
+                    item.entity,
+                    item.match,
+                    item.relevance,
+                    preference.signalThreshold,
+                  );
+                  const reasons = [
+                    ...decision.reasons,
+                    ...((item.relevance?.value ?? -1) < preference.relevanceThreshold
+                      ? ['configured_topic_threshold']
+                      : []),
+                  ];
+                  return { id: item.entity.id, eligible: !reasons.length, reasons };
+                });
+                const selected = new Set(
+                  decisions.filter((row) => row.eligible).map((row) => row.id),
+                );
+                const saved = await saveEntities(
+                  result.items.filter((item) => selected.has(item.entity.id)),
+                  'eligible',
+                  root,
+                  'private',
+                  preference.signalThreshold,
+                  false,
+                  { runId: result.runId, query: result.query, kind: 'one-off' },
+                );
+                await saveQuery(
+                  {
+                    kind: 'automatic-personal-saving',
+                    runId: result.runId,
+                    query: result.query,
+                    policy: preference,
+                    decisions,
+                    saved,
+                  },
+                  resolve(root, '.signals/queries'),
+                );
+                run.events.push(
+                  `Automatic private saving: ${saved.changed.length} saved, ${decisions.filter((row) => !row.eligible).length} excluded. Decisions retained in private query history.`,
+                );
+              }
               if (query.cache === 'private') await retainRun(result, root);
               if (
                 route === 'refresh' &&
@@ -298,8 +624,11 @@ export function searchApi(root = process.cwd(), search = signalSearch, locate = 
             ? {
                 events: run.events,
                 result: run.result ?? null,
+                provisional: run.result ? [] : (run.provisional ?? []),
                 error: run.error ?? null,
                 batch: run.batch ?? null,
+                due: run.due ?? null,
+                brief: run.brief ?? null,
               }
             : { code: 'unknown_run' },
         );
@@ -307,6 +636,16 @@ export function searchApi(root = process.cwd(), search = signalSearch, locate = 
         const run = runs.get(route.split('/')[1]!);
         run?.controller.abort();
         json(200, { cancelled: !!run });
+      } else if (route === 'save-lead' && mutation) {
+        const schema = Type.Object(
+          { runId: Type.String({ format: 'uuid' }), uri: Type.String({ maxLength: 2048 }) },
+          { additionalProperties: false },
+        );
+        if (!Value.Check(schema, body)) throw new Error('invalid_lead_selection');
+        const result = [...runs.values()].find((run) => run.result?.runId === body.runId)?.result;
+        const lead = result?.provisionalLeads?.find((lead) => lead.uri === body.uri);
+        if (!result || !lead) throw new Error('unknown_lead_selection');
+        json(200, await saveLibraryLead(root, lead, result.runId, result.query));
       } else if (route === 'save' && mutation) {
         if (!Value.Check(selection, body)) throw new Error('invalid_selection');
         const selected = body;
@@ -349,12 +688,81 @@ export function searchApi(root = process.cwd(), search = signalSearch, locate = 
           : existing.filter((id) => !selected.ids.includes(id));
         await atomicJson(path, ids);
         json(200, { ids });
+      } else if (route === 'library-discussion' && mutation) {
+        const schema = Type.Object(
+          {
+            keys: Type.Array(Type.String({ maxLength: 300 }), {
+              minItems: 1,
+              maxItems: 20,
+              uniqueItems: true,
+            }),
+            question: Type.String({ minLength: 1, maxLength: 2000 }),
+          },
+          { additionalProperties: false },
+        );
+        if (!Value.Check(schema, body)) throw new Error('invalid_library_discussion');
+        const selected = (await loadLibrary(root)).filter((record) =>
+          body.keys.includes(record.key),
+        );
+        if (selected.length !== body.keys.length) throw new Error('unknown_library_identity');
+        if (active) throw new Error('ai_job_active');
+        active = true;
+        try {
+          const settings = await loadSettings(root);
+          json(
+            200,
+            await answerFromRetainedMaterial(
+              frozenLibraryMaterial(selected),
+              body.question,
+              settings.model || undefined,
+              settings.effort || undefined,
+            ),
+          );
+        } finally {
+          active = false;
+        }
       } else if (route === 'followup' && mutation) {
         if (!Value.Check(followupSchema, body)) throw new Error('invalid_followup');
         const question = body;
-        const result = [...runs.values()].find(
-          (run) => run.result?.runId === question.runId,
-        )?.result;
+        let result = [...runs.values()].find((run) => run.result?.runId === question.runId)?.result;
+        if (!question.runId) {
+          if (
+            !question.ids.length ||
+            !question.destinations ||
+            question.destinations.length !== question.ids.length
+          )
+            throw new Error('saved_followup_destination_required');
+          const records = await Promise.all(
+            question.ids.map((id, index) =>
+              selectSavedEntity(id, root, question.destinations![index]),
+            ),
+          );
+          result = {
+            schemaVersion: 2,
+            runId: randomUUID(),
+            query: question.question,
+            status: 'completed',
+            items: records.map(({ record }) => ({
+              entity: record.entity,
+              match: { level: 'related', reason: 'User selected retained knowledge', sources: [] },
+              eligible: false,
+              reasons: ['retained_context_only'],
+            })),
+            sources: [],
+            coverage: [],
+            gaps: ['Frozen retained evidence; no current access or independent change check.'],
+            usage: {
+              searches: 0,
+              documents: 0,
+              elapsedMs: 0,
+              modelCalls: 0,
+              providerUsage: null,
+              cost: null,
+            },
+            counts: { leads: records.length, distinct: records.length, duplicates: 0, omitted: 0 },
+            limits: budgets.quick,
+          };
+        } else if (question.destinations) throw new Error('followup_scope_conflict');
         if (
           !result ||
           question.ids.some((id) => !result.items.some((item) => item.entity.id === id))
@@ -369,7 +777,7 @@ export function searchApi(root = process.cwd(), search = signalSearch, locate = 
         try {
           json(
             200,
-            await answerFromEvidence(
+            await follow(
               result,
               question.question,
               question.ids,
@@ -425,16 +833,37 @@ export function searchApi(root = process.cwd(), search = signalSearch, locate = 
           });
         json(202, { id });
       } else if (route === 'run-due' && mutation) {
+        if (!Value.Check(Type.Object({}, { additionalProperties: false }), body))
+          throw new Error('invalid_due_activation');
         if (active) {
           json(409, { code: 'runner_busy' });
           return true;
         }
+        const controller = new AbortController(),
+          id = randomBytes(16).toString('hex');
+        const run: ActiveRun = { controller, events: ['Starting finite due activation…'] };
+        runs.set(id, run);
         active = true;
-        try {
-          json(200, await runDueOnce({ root, search }));
-        } finally {
-          active = false;
-        }
+        void runDueOnce({
+          root,
+          search,
+          signal: controller.signal,
+          progress: (event) => {
+            run.events.push(event);
+            if (run.events.length > 100) run.events.shift();
+          },
+        })
+          .then((due) => {
+            run.due = due;
+          })
+          .catch((failure: unknown) => {
+            run.error = failure instanceof Error ? failure.message : 'due_activation_failed';
+          })
+          .finally(() => {
+            active = false;
+            pruneRuns();
+          });
+        json(202, { id });
       } else if (route === 'cleanup' && mutation) {
         const settings = await loadSettings(root);
         await cleanRuns(root, settings.retentionDays);

@@ -1,4 +1,5 @@
 import type { Entity, Assessment, SearchItem } from './search-contract.js';
+import { assessSuccessor } from './search-assessment.js';
 
 const weights = {
   corroboration: 25,
@@ -82,6 +83,8 @@ export function activeObservations(
       'signal-strength-v4',
       'signal-strength-v5',
       'signal-strength-v6',
+      'signal-strength-v7',
+      'signal-strength-v8',
     ].includes(policy)
   ) {
     const physical = new Set(
@@ -138,13 +141,22 @@ function originGroups(entity: Pick<Entity, 'evidence'>) {
 export function assessEntity(
   entity: Pick<
     Entity,
-    'observations' | 'evidence' | 'kind' | 'identity' | 'currentEvidence' | 'currentChecks' | 'uri'
+    | 'observations'
+    | 'evidence'
+    | 'kind'
+    | 'identity'
+    | 'currentEvidence'
+    | 'currentChecks'
+    | 'uri'
+    | 'signalBasis'
   >,
   asOf: string,
   policy: Assessment['policy'] = 'signal-strength-v6',
 ): Assessment {
   if (!Number.isFinite(Date.parse(asOf))) throw new Error('invalid_assessment_date');
   const active = activeObservations(entity, policy);
+  if (policy === 'signal-strength-v7' || policy === 'signal-strength-v8')
+    return assessSuccessor(entity, asOf, active, originGroups(entity), policy);
   const usable = active.filter(
     (observation) => observation.verified && observation.status === 'supported',
   );
@@ -374,15 +386,54 @@ export function assessEntity(
 export function saveDecision(entity: Entity, match: SearchItem['match'], threshold = 75) {
   const reasons: string[] = [];
   if (entity.identity !== 'resolved') reasons.push('ambiguous_identity');
-  if (entity.assessment.score === null) reasons.push('no_supported_defining_claim');
+  if (entity.assessment.score === null)
+    reasons.push(
+      ['signal-strength-v7', 'signal-strength-v8'].includes(entity.assessment.policy)
+        ? 'assessment_not_scoreable'
+        : 'no_supported_defining_claim',
+    );
   else if (entity.assessment.score < threshold) reasons.push('below_threshold');
   if (match.level !== 'direct') reasons.push('not_direct');
+  if (entity.inspection?.state === 'deferred') reasons.push('inspection_incomplete');
+  const defining = activeObservations(entity, entity.assessment.policy).filter(
+    (observation) =>
+      observation.feature === 'defining' &&
+      observation.verified &&
+      observation.status === 'supported',
+  );
+  if (
+    defining.length &&
+    defining.every(
+      (observation) =>
+        entity.evidence.find((source) => source.id === observation.evidenceId)?.reason ===
+        'provider_final_identity_unverified',
+    )
+  )
+    reasons.push('source_identity_unverified');
   if (
     activeObservations(entity, entity.assessment.policy).some(
       (item) => item.feature === 'defining' && item.verified && item.status === 'contradicted',
     )
   )
     reasons.push('contradicted_defining_claim');
+  return { eligible: !reasons.length, reasons };
+}
+
+/** Personal automatic retention is separate from the public inclusion boundary. */
+export function personalSaveDecision(
+  entity: Entity,
+  match: SearchItem['match'],
+  relevance: SearchItem['relevance'],
+  threshold = 75,
+) {
+  const decision = saveDecision(entity, match, threshold);
+  const reasons = [...decision.reasons];
+  if (
+    !['signal-strength-v7', 'signal-strength-v8'].includes(entity.assessment.policy) ||
+    entity.assessment.disposition !== 'completed'
+  )
+    reasons.push('assessment_incomplete');
+  if ((relevance?.value ?? -1) < 75) reasons.push('topic_relevance_below_threshold');
   return { eligible: !reasons.length, reasons };
 }
 
@@ -397,7 +448,7 @@ export interface SearchFilters {
   match?: string;
   state?: string;
   saved?: 'saved' | 'unsaved';
-  sort?: 'match' | 'score' | 'newest' | 'type';
+  sort?: 'match' | 'relevance' | 'score' | 'newest' | 'type' | 'priority';
 }
 export function sourceHost(uri: string) {
   try {
@@ -412,41 +463,65 @@ export function filterSearchItems(
   saved = new Set<string>(),
 ) {
   const rank = { direct: 0, related: 1, unknown: 2, 'out-of-scope': 3 };
-  return items
-    .filter(
-      ({ entity, match }) =>
-        (!filters.text ||
-          `${entity.name} ${entity.description} ${Object.values(entity.facets).flat().join(' ')}`
-            .toLowerCase()
-            .includes(filters.text.toLowerCase())) &&
-        (!filters.kind || entity.kind === filters.kind) &&
-        (!filters.facet ||
-          Object.values(entity.facets).some((values) => values.includes(filters.facet!))) &&
-        (!filters.host ||
-          entity.evidence.some((source) => sourceHost(source.uri) === filters.host)) &&
-        (!filters.family || entity.evidence.some((source) => source.family === filters.family)) &&
-        (entity.assessment.score === null ||
-          (entity.assessment.score >= (filters.min ?? 0) &&
-            entity.assessment.score <= (filters.max ?? 100))) &&
-        (!filters.match || match.level === filters.match) &&
-        (!filters.state || entity.assessment.state === filters.state) &&
-        (!filters.saved || saved.has(entity.id) === (filters.saved === 'saved')),
-    )
-    .sort((a, b) => {
-      const match =
-        !filters.sort || filters.sort === 'match' ? rank[a.match.level] - rank[b.match.level] : 0;
-      const type = filters.sort === 'type' ? a.entity.kind.localeCompare(b.entity.kind) : 0;
-      const newest =
-        filters.sort === 'newest'
-          ? b.entity.assessment.asOf.localeCompare(a.entity.assessment.asOf)
-          : 0;
+  const candidates = items.filter(
+    ({ entity, match }) =>
+      (!filters.text ||
+        `${entity.name} ${entity.description} ${Object.values(entity.facets).flat().join(' ')}`
+          .toLowerCase()
+          .includes(filters.text.toLowerCase())) &&
+      (!filters.kind || entity.kind === filters.kind) &&
+      (!filters.facet ||
+        Object.values(entity.facets).some((values) => values.includes(filters.facet!))) &&
+      (!filters.host ||
+        entity.evidence.some((source) => sourceHost(source.uri) === filters.host)) &&
+      (!filters.family || entity.evidence.some((source) => source.family === filters.family)) &&
+      (entity.assessment.score === null ||
+        (entity.assessment.score >= (filters.min ?? 0) &&
+          entity.assessment.score <= (filters.max ?? 100))) &&
+      (!filters.match || match.level === filters.match) &&
+      (!filters.state || entity.assessment.state === filters.state) &&
+      (!filters.saved || saved.has(entity.id) === (filters.saved === 'saved')),
+  );
+  const comparable =
+    new Set(
+      candidates.map(
+        ({ entity }) =>
+          `${entity.kind}:${entity.assessment.policy}:${entity.assessment.rubric ?? 'historical'}`,
+      ),
+    ).size <= 1;
+  const numeric = candidates.some((item) => item.relevance !== undefined);
+  return candidates.sort((a, b) => {
+    if (!filters.sort || filters.sort === 'match' || filters.sort === 'relevance') {
       return (
-        match ||
-        type ||
-        newest ||
-        (b.entity.assessment.score ?? -1) - (a.entity.assessment.score ?? -1) ||
-        b.entity.assessment.coverage - a.entity.assessment.coverage ||
-        a.entity.id.localeCompare(b.entity.id)
+        (numeric
+          ? (b.relevance?.value ?? -1) - (a.relevance?.value ?? -1)
+          : rank[a.match.level] - rank[b.match.level]) || a.entity.id.localeCompare(b.entity.id)
       );
-    });
+    }
+    if (filters.sort === 'priority') {
+      const fit = (item: SearchItem) =>
+        item.priority?.applicability === 'incompatible' || item.match.level === 'out-of-scope'
+          ? 1
+          : 0;
+      const mute = (item: SearchItem) => (item.priority?.feedback === 'mute' ? 1 : 0);
+      const order =
+        mute(a) - mute(b) ||
+        fit(a) - fit(b) ||
+        (b.priority?.score ?? -1) - (a.priority?.score ?? -1);
+      if (order) return order;
+    }
+    const match = 0;
+    const type = filters.sort === 'type' ? a.entity.kind.localeCompare(b.entity.kind) : 0;
+    const newest =
+      filters.sort === 'newest'
+        ? b.entity.assessment.asOf.localeCompare(a.entity.assessment.asOf)
+        : 0;
+    return (
+      match ||
+      type ||
+      newest ||
+      (comparable ? (b.entity.assessment.score ?? -1) - (a.entity.assessment.score ?? -1) : 0) ||
+      a.entity.id.localeCompare(b.entity.id)
+    );
+  });
 }

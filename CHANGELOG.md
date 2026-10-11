@@ -1,6 +1,23 @@
 # Changelog
 
+Closeout corrections after the fixed 286bf7c review snapshot: explicit public CA selection for isolated last30days Python, distinct unconfigured provider readiness and SearXNG engine failures, accurate live/fixture exchange modes with supported-only recommendation provenance, and a bounded context map of current governing architecture. Historical evidence and the reviewer snapshot remain unchanged.
+
 ## Unreleased
+
+- Corpus-first Search / Projects / Library / Following replaces the old entry and duplicate browse
+  surfaces. One metadata index searches native and historical records without inference. Evidence
+  detail, comparison, capture, research, follow-up, maintenance and settings remain available.
+- Signals owns bounded read-only project snapshots and general opportunities migrated from Context.
+  Original records and policy meanings survive; private decisions are separate. Context remains the
+  equipment/delivery owner through a portable plan-only request and local reported-result preview.
+- Project context grants are tied to the reviewed question and source basis, withdrawn on scope or
+  navigation changes. Detail and comparison survive reload. Original score policies are labelled and
+  grouped rather than numerically ranked against each other.
+
+- Independent-review repairs ground contextual advice in defining/cited evidence, qualify discovery mechanisms against request/configuration, preserve stale model-access diagnostics after successful kernel fetches, and keep source transport outside writer locks. Explicit source feedback and result exposures stay private; hosted fallback rejects HTTP failures without dispatch. Research budgets, native tools and intrinsic admission are unchanged.
+
+- Native-first intent-derived discovery, explicit URL capture, optional reviewed acquisition/extraction and separate search/read budgets. Readability/RSS retain original outlinks; denied providers remain gaps.
+- Contextual priority/actions/alternatives are separate from intrinsic strength and admission. Private notes/feedback, source health, promising inbox, entity deltas and evidence preview share the existing workbench and store. Additional frozen review is configurable.
 
 - Live signal-search uses an existing AI through native Agent Skills or installed Codex, fetched source bindings, entity identities and deterministic v2 strength profiles. The local workbench supports research, comparison, grounded follow-up, explicit saves and private interest provenance.
 - Configurable supplemental websites/path scopes, disabled query/corpus schedules and resumable one-shot interest lists share the kernel. Git publication remains a separate explicit operation; Pages remains read-only. Legacy evidence, v0 replay and retained private data stay preserved.

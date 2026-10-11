@@ -25,10 +25,45 @@ import {
   type SearchItem,
   type SearchResult,
 } from '../../domain/src/search-contract.js';
-import { assessEntity, saveDecision, activeEvidenceIds } from '../../domain/src/search-score.js';
-import { entityIdentity, observationIdentity } from './signal-search.js';
+import {
+  assessEntity,
+  saveDecision,
+  personalSaveDecision,
+  activeEvidenceIds,
+} from '../../domain/src/search-score.js';
+import {
+  entityIdentity,
+  observationIdentity,
+  reconcileDiscoveryTrail,
+  contextualizeResult,
+} from './signal-search.js';
 import { digest, normalizeText, normalizeSpan } from './search-fetch.js';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
+import {
+  signalBasisSchema,
+  rubricIds,
+  interpretationSchema,
+  relevanceSchema,
+} from '../../domain/src/search-assessment.js';
+
+/** Read-only private state never creates directories and rejects every symlink component. */
+export async function readPrivateJson(
+  root: string,
+  name: string,
+  fallback: unknown,
+  max = 2000000,
+): Promise<unknown> {
+  if (!/^[a-zA-Z0-9/_-]+\.json$/.test(name)) throw new Error('invalid_private_state_path');
+  const path = resolve(root, '.signals', name);
+  const stat = await lstat(path).catch((e: NodeJS.ErrnoException) => {
+    if (e.code !== 'ENOENT') throw e;
+    return null;
+  });
+  if (!stat) return fallback;
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > max || (await realpath(path)) !== path)
+    throw new Error('unsafe_private_state');
+  return JSON.parse(await readFile(path, 'utf8')) as unknown;
+}
 
 const feature = Type.Object(
   {
@@ -41,9 +76,14 @@ const feature = Type.Object(
 );
 const properties = { ...candidateSchema.properties };
 delete (properties as Partial<typeof properties>).match;
+delete (properties as Partial<typeof properties>).discovery;
+delete (properties as Partial<typeof properties>).priority;
+delete (properties as Partial<typeof properties>).relevance;
+delete (properties as Partial<typeof properties>).signalJudgment;
 const entitySchema = Type.Object(
   {
     ...properties,
+    signalBasis: Type.Optional(signalBasisSchema),
     currentChecks: Type.Optional(Type.Record(Type.String(), Type.String())),
     id: Type.String({ pattern: '^entity-[a-f0-9]{24}$' }),
     acquisition: Type.Optional(Type.Enum(['configured-live', 'native-agent', 'fixture'])),
@@ -76,6 +116,21 @@ const entitySchema = Type.Object(
           digest: Type.Union([Type.String(), Type.Null()]),
           excerptDigest: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$' })),
           normalizer: Type.Optional(Type.Literal('text-v2')),
+          finalUri: Type.Optional(Type.String({ maxLength: 2048 })),
+          extractor: Type.Optional(Type.String({ maxLength: 100 })),
+          transport: Type.Optional(
+            Type.Object(
+              {
+                etag: Type.Optional(
+                  Type.String({ minLength: 1, maxLength: 4096, pattern: '^[^\\r\\n]+$' }),
+                ),
+                lastModified: Type.Optional(
+                  Type.String({ minLength: 1, maxLength: 4096, pattern: '^[^\\r\\n]+$' }),
+                ),
+              },
+              { additionalProperties: false, minProperties: 1 },
+            ),
+          ),
           state: Type.Enum(['fetched', 'failed', 'denied']),
           reason: Type.String(),
           excerpt: Type.String({ maxLength: 12000 }),
@@ -94,24 +149,38 @@ const entitySchema = Type.Object(
           'signal-strength-v4',
           'signal-strength-v5',
           'signal-strength-v6',
+          'signal-strength-v7',
+          'signal-strength-v8',
         ]),
         asOf: Type.String(),
         score: Type.Union([Type.Integer({ minimum: 0, maximum: 100 }), Type.Null()]),
-        features: Type.Object(
-          {
-            corroboration: feature,
-            adoption: feature,
-            maturity: feature,
-            currentness: feature,
-            authority: feature,
-            verification: feature,
-          },
-          { additionalProperties: false },
-        ),
+        features: Type.Union([
+          Type.Object(
+            {
+              corroboration: feature,
+              adoption: feature,
+              maturity: feature,
+              currentness: feature,
+              authority: feature,
+              verification: feature,
+            },
+            { additionalProperties: false },
+          ),
+          Type.Object(
+            { basis: feature, work: feature, scrutiny: feature, applicability: feature },
+            { additionalProperties: false },
+          ),
+        ]),
         risk: Type.Integer({ minimum: 0, maximum: 25 }),
         coverage: Type.Number({ minimum: 0, maximum: 1 }),
         missing: Type.Array(Type.String()),
         state: Type.Enum(['assessed', 'provisional', 'unassessed']),
+        rubric: Type.Optional(Type.Union([Type.Enum(rubricIds), Type.Null()])),
+        disposition: Type.Optional(Type.Enum(['completed', 'provisional', 'not-scoreable'])),
+        reasons: Type.Optional(Type.Array(Type.String({ maxLength: 1600 }), { maxItems: 40 })),
+        nextVerification: Type.Optional(
+          Type.Union([Type.String({ maxLength: 1600 }), Type.Null()]),
+        ),
       },
       { additionalProperties: false },
     ),
@@ -308,6 +377,7 @@ export interface SelectionProvenance {
   kind: 'one-off' | 'query-discovery' | 'corpus-refresh';
   queryId?: string;
   concepts?: string[];
+  needDigest?: string;
 }
 export async function selectionHistory(root = process.cwd()) {
   const path = resolve(root, '.signals/selections.json');
@@ -411,6 +481,8 @@ function mergeEntity(prior: Entity, incoming: Entity): Entity {
     sameObservations &&
     isDeepStrictEqual([...activeEvidenceIds(prior)].sort(), currentEvidence) &&
     prior.kind === incoming.kind &&
+    isDeepStrictEqual(prior.signalBasis, incoming.signalBasis) &&
+    isDeepStrictEqual(prior.inspection, incoming.inspection) &&
     incoming.aliases.every((alias) => prior.aliases.includes(alias))
   ) {
     const renewed = { ...prior, currentChecks };
@@ -505,6 +577,7 @@ export async function saveEntities(
       provenance &&
       (!/^[a-f0-9-]{36}$/.test(provenance.runId) ||
         provenance.query.length > 2000 ||
+        (provenance.needDigest !== undefined && !/^[a-f0-9]{64}$/.test(provenance.needDigest)) ||
         !['one-off', 'query-discovery', 'corpus-refresh'].includes(provenance.kind))
     )
       throw new Error('invalid_selection_provenance');
@@ -521,37 +594,38 @@ export async function saveEntities(
     const changes: string[] = [],
       skipped: string[] = [];
     const reasons: Record<string, string[]> = {};
+    const admission = (item: SearchItem, entity = item.entity) =>
+      destination === 'private'
+        ? personalSaveDecision(entity, item.match, item.relevance, threshold)
+        : saveDecision(entity, item.match, threshold);
     items
       .filter((item) =>
         mode === 'eligible'
-          ? saveDecision(item.entity, item.match, threshold).eligible &&
-            !dismissed.includes(item.entity.id)
+          ? admission(item).eligible && !dismissed.includes(item.entity.id)
           : mode !== 'refresh' || existing.has(item.entity.id),
       )
       .forEach((item) => validateEntity(item.entity));
     for (const item of items) {
       if (
         (mode === 'eligible' &&
-          (!saveDecision(item.entity, item.match, threshold).eligible ||
-            dismissed.includes(item.entity.id))) ||
+          (!admission(item).eligible || dismissed.includes(item.entity.id))) ||
         (mode === 'refresh' && !existing.has(item.entity.id))
       ) {
         skipped.push(item.entity.id);
         reasons[item.entity.id] =
-          mode === 'eligible'
-            ? saveDecision(item.entity, item.match, threshold).reasons
-            : ['not_saved_in_destination'];
+          mode === 'eligible' ? admission(item).reasons : ['not_saved_in_destination'];
         continue;
       }
       if (item.entity.acquisition === 'fixture' && !allowFixtures)
         throw new Error('fixture_cannot_enter_corpus');
       if (
-        item.entity.identity !== 'resolved' ||
-        (item.entity.assessment.score === null &&
-          !(
-            mode === 'refresh' &&
-            item.entity.observations.some((observation) => observation.verified)
-          ))
+        !(mode === 'manual' && destination === 'private') &&
+        (item.entity.identity !== 'resolved' ||
+          (item.entity.assessment.score === null &&
+            !(
+              mode === 'refresh' &&
+              item.entity.observations.some((observation) => observation.verified)
+            )))
       ) {
         skipped.push(item.entity.id);
         reasons[item.entity.id] = ['unsavable_identity_or_evidence'];
@@ -580,9 +654,9 @@ export async function saveEntities(
           };
       entity.assessment = assessEntity(entity, entity.assessment.asOf, entity.assessment.policy);
       validateEntity(entity);
-      if (mode === 'eligible' && !saveDecision(entity, item.match, threshold).eligible) {
+      if (mode === 'eligible' && !admission(item, entity).eligible) {
         skipped.push(entity.id);
-        reasons[entity.id] = saveDecision(entity, item.match, threshold).reasons;
+        reasons[entity.id] = admission(item, entity).reasons;
         continue;
       }
       const record: StoredEntity = {
@@ -600,7 +674,22 @@ export async function saveEntities(
       if (!/^[a-f0-9-]{36}$/.test(provenance.runId) || provenance.query.length > 2000)
         throw new Error('invalid_selection_provenance');
       const selected = items.map((item) => item.entity.id).sort();
-      const id = digest(`${provenance.runId}:${mode}:${destination}:${selected.join(',')}`);
+      // Historical IDs remain intact; distinct interest scopes receive successor receipts.
+      const id = provenance.queryId
+        ? digest(
+            JSON.stringify([
+              'selection-interest-v2',
+              provenance.runId,
+              mode,
+              destination,
+              selected,
+              provenance.queryId,
+              provenance.query,
+              provenance.concepts ?? [],
+              provenance.needDigest ?? null,
+            ]),
+          )
+        : digest(`${provenance.runId}:${mode}:${destination}:${selected.join(',')}`);
       const history = await selectionHistory(root);
       if (!history.some((row) => row.id === id))
         await atomicJson(resolve(root, '.signals/selections.json'), [
@@ -630,6 +719,18 @@ export async function retainRun(result: SearchResult, root = process.cwd()) {
   if (!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(result.runId))
     throw new Error('invalid_run_identity');
   const path = resolve(root, '.signals/runs', `${result.runId}.json`);
+  const stat = await lstat(path).catch((failure: NodeJS.ErrnoException) => {
+    if (failure.code !== 'ENOENT') throw failure;
+    return null;
+  });
+  if (
+    stat &&
+    (!stat.isFile() ||
+      stat.isSymbolicLink() ||
+      stat.size > 2000000 ||
+      (await realpath(path)) !== path)
+  )
+    throw new Error('unsafe_run_snapshot');
   const prior = await readFile(path, 'utf8').catch((failure: NodeJS.ErrnoException) => {
     if (failure.code !== 'ENOENT') throw failure;
     return null;
@@ -649,7 +750,13 @@ export async function loadRun(
   if (!/^[a-f0-9-]{36}$/.test(runId)) throw new Error('invalid_run_identity');
   const path = resolve(root, '.signals/runs', `${runId}.json`);
   const stat = await lstat(path);
-  if (stat.isSymbolicLink() || stat.size > 2000000) throw new Error('unsafe_run_snapshot');
+  if (
+    !stat.isFile() ||
+    stat.isSymbolicLink() ||
+    stat.size > 2000000 ||
+    (await realpath(path)) !== path
+  )
+    throw new Error('unsafe_run_snapshot');
   const result = JSON.parse(await readFile(path, 'utf8')) as SearchResult;
   if (
     result.schemaVersion !== 2 ||
@@ -659,7 +766,39 @@ export async function loadRun(
     result.items.length > 60
   )
     throw new Error('invalid_run_snapshot');
+  if (result.interpretation && !Value.Check(interpretationSchema, result.interpretation))
+    throw new Error('invalid_run_interpretation');
+  if (
+    result.brief &&
+    (result.brief.format !== 'markdown' ||
+      typeof result.brief.text !== 'string' ||
+      result.brief.text.length > 24000)
+  )
+    throw new Error('invalid_run_brief');
+  if (
+    result.provisionalLeads &&
+    (!Array.isArray(result.provisionalLeads) ||
+      result.provisionalLeads.length > 60 ||
+      result.provisionalLeads.some(
+        (lead) =>
+          typeof lead.name !== 'string' ||
+          typeof lead.uri !== 'string' ||
+          typeof lead.description !== 'string' ||
+          !Array.isArray(lead.limits) ||
+          lead.limits.some((limit) => typeof limit !== 'string'),
+      ))
+  )
+    throw new Error('invalid_run_leads');
   for (const item of result.items) {
+    if (
+      item.relevance &&
+      (!Value.Check(relevanceSchema, item.relevance) ||
+        [
+          ...item.relevance.sources,
+          ...item.relevance.constraints.flatMap((constraint) => constraint.sources),
+        ].some((index) => !result.sources[index]))
+    )
+      throw new Error('invalid_run_relevance');
     const checks = Object.entries(item.entity.currentChecks ?? {});
     const late = checks.filter(
       ([, date]) => Date.parse(date) > Date.parse(item.entity.assessment.asOf),
@@ -691,8 +830,21 @@ export async function loadRun(
     );
     validateRetainedEntity(item.entity);
     Object.assign(item, saveDecision(item.entity, item.match, threshold));
+    // Only kernel-bound provenance can validate historical configuration or a seed.
+    // Today's followed sources cannot establish how an earlier run acquired an item.
+    const trail = item.discovery;
+    item.discovery = reconcileDiscoveryTrail(
+      { ...item.entity, discovery: trail },
+      {
+        query: result.query,
+        ...(trail?.provenanceBasis === 'request-seed' ? { captureUrls: [item.entity.uri] } : {}),
+      },
+      trail?.linkVerified ?? false,
+      trail?.provenanceBasis === 'configured-source' && trail.parentUri ? [trail.parentUri] : [],
+      result.gaps,
+    );
   }
-  return result;
+  return await contextualizeResult(result, root);
 }
 export async function runHistory(root = process.cwd()) {
   const directory = resolve(root, '.signals/runs');

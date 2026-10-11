@@ -2,6 +2,34 @@ import { lookup } from 'node:dns/promises';
 import { request } from 'node:https';
 import { createHash } from 'node:crypto';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
+import { extractHtml, extractFeed, type DocumentMaterial } from './search-document.js';
+
+export interface FetchMetadata {
+  status: number;
+  etag?: string;
+  lastModified?: string;
+  link?: string;
+  retryAfter?: string;
+  rateRemaining?: string;
+  rateReset?: string;
+}
+export interface FetchOptions {
+  conditional?: { etag?: string; lastModified?: string };
+  allowNotModified?: boolean;
+}
+export class FetchHttpError extends Error {
+  constructor(
+    message: string,
+    readonly response: FetchMetadata,
+  ) {
+    super(message);
+  }
+}
+
+const header = (value: string | string[] | undefined, max = 4096) => {
+  const text = Array.isArray(value) ? value.join(', ') : value;
+  return text && !/[\r\n]/.test(text) ? text.slice(0, max) : undefined;
+};
 
 export const digest = (value: string) => createHash('sha256').update(value).digest('hex');
 export const normalizeSpan = (value: string) => value.replace(/\s+/g, ' ').trim();
@@ -55,7 +83,23 @@ export async function fetchEvidence(
   input: string,
   signal?: AbortSignal,
   redirects = 0,
-): Promise<{ text: string; digest: string; uri: string; json?: unknown; normalizer?: 'text-v2' }> {
+  allowPdf = false,
+  options: FetchOptions = {},
+): Promise<{
+  text: string;
+  digest: string;
+  uri: string;
+  json?: unknown;
+  normalizer?: 'text-v2';
+  material?: DocumentMaterial;
+  bytes?: Buffer;
+  identityUnverified?: boolean;
+  truncated?: boolean;
+  response?: FetchMetadata;
+}> {
+  for (const value of Object.values(options.conditional ?? {}))
+    if (value !== undefined && (value.length > 4096 || /[\r\n]/.test(value)))
+      throw new Error('invalid_conditional_header');
   const { url, address } = await resolvePublicUrl(input);
   return new Promise((resolve, reject) => {
     const req = request(
@@ -67,34 +111,57 @@ export async function fetchEvidence(
           'user-agent':
             'SignalsAI/0.3 public-evidence (+https://github.com/pradeeptathineni/signals-ai)',
           accept: 'text/html,text/plain,application/json',
+          ...(options.conditional?.etag ? { 'if-none-match': options.conditional.etag } : {}),
+          ...(options.conditional?.lastModified
+            ? { 'if-modified-since': options.conditional.lastModified }
+            : {}),
         },
         lookup: (_hostname, _options, callback) =>
           callback(null, [{ address: address.address, family: address.family }]),
       },
       (response) => {
         const status = response.statusCode ?? 0;
+        const metadata: FetchMetadata = {
+          status,
+          etag: header(response.headers.etag),
+          lastModified: header(response.headers['last-modified']),
+          link: header(response.headers.link),
+          retryAfter: header(response.headers['retry-after']),
+          rateRemaining: header(response.headers['x-ratelimit-remaining'], 40),
+          rateReset: header(response.headers['x-ratelimit-reset'], 40),
+        };
+        if (status === 304 && options.allowNotModified) {
+          response.resume();
+          resolve({ text: '', digest: digest(''), uri: url.toString(), response: metadata });
+          return;
+        }
         if (status >= 300 && status < 400 && response.headers.location) {
           response.resume();
           if (redirects >= 3) return reject(new Error('redirect_limit'));
+          const target = new URL(response.headers.location, url);
           void fetchEvidence(
-            new URL(response.headers.location, url).toString(),
+            target.toString(),
             signal,
             redirects + 1,
+            allowPdf,
+            target.origin === url.origin ? options : {},
           ).then(resolve, reject);
           return;
         }
         if (status !== 200) {
           response.resume();
           reject(
-            new Error(
+            new FetchHttpError(
               status === 401 || status === 403 || status === 429
                 ? `source_denied_${status}`
                 : `source_http_${status}`,
+              metadata,
             ),
           );
           return;
         }
         if (
+          !(allowPdf && /application\/pdf/i.test(response.headers['content-type'] ?? '')) &&
           !/text\/|application\/(?:json|(?:[\w.-]+\+)?xml)/i.test(
             response.headers['content-type'] ?? '',
           )
@@ -116,21 +183,40 @@ export async function fetchEvidence(
         response.on('error', reject);
         response.on('end', () => {
           const raw = Buffer.concat(chunks).toString('utf8');
-          try {
-            resolve({
-              text: /html|xml/i.test(response.headers['content-type'] ?? '')
-                ? normalizeText(raw)
-                : normalizeSpan(raw),
-              digest: digest(raw),
-              uri: url.toString(),
-              normalizer: 'text-v2',
-              ...(/application\/json/i.test(response.headers['content-type'] ?? '')
-                ? { json: JSON.parse(raw) as unknown }
-                : {}),
-            });
-          } catch {
-            reject(new Error('invalid_source_json'));
-          }
+          void (async () => {
+            try {
+              const contentType = response.headers['content-type'] ?? '';
+              if (/application\/pdf/i.test(contentType)) {
+                const bytes = Buffer.concat(chunks);
+                resolve({
+                  text: '',
+                  digest: createHash('sha256').update(bytes).digest('hex'),
+                  uri: url.toString(),
+                  bytes,
+                  response: metadata,
+                });
+                return;
+              }
+              const material = /html/i.test(contentType)
+                ? extractHtml(raw, url.toString())
+                : /xml/i.test(contentType)
+                  ? await extractFeed(raw, url.toString())
+                  : undefined;
+              resolve({
+                text: material?.text ?? normalizeSpan(raw),
+                digest: digest(raw),
+                uri: url.toString(),
+                normalizer: 'text-v2',
+                response: metadata,
+                ...(material ? { material } : {}),
+                ...(/application\/json/i.test(response.headers['content-type'] ?? '')
+                  ? { json: JSON.parse(raw) as unknown }
+                  : {}),
+              });
+            } catch (error) {
+              reject(error instanceof Error ? error : new Error('invalid_source_document'));
+            }
+          })();
         });
       },
     );

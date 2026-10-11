@@ -1,3 +1,4 @@
 {
-  "ignoreBinaries": ["codex"]
+  "ignoreBinaries": ["codex"],
+  "entry": ["tests/workbench/server.ts", "tests/built/server.ts"]
 }

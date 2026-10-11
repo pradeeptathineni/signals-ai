@@ -1,21 +1,38 @@
 import { parseArgs } from 'node:util';
-import { acceptDiscovery, signalSearch } from '../packages/corpus/src/signal-search.js';
-import { discoverySchema, parseRequest, budgets } from '../packages/domain/src/search-contract.js';
-import { codexRunner } from '../packages/corpus/src/search-runner.js';
+import {
+  acceptDiscovery,
+  signalSearch,
+  contextualizeResult,
+} from '../packages/corpus/src/signal-search.js';
+import { parseRequest, budgets } from '../packages/domain/src/search-contract.js';
+import { nativeBriefSchema } from '../packages/domain/src/search-native.js';
+import { codexRunner, decodeNativeOutput } from '../packages/corpus/src/search-runner.js';
 import { execFileSync } from 'node:child_process';
 import { searchEvidenceBundle } from '../packages/corpus/src/search-exchange.js';
 import { retainRun, saveEntities } from '../packages/corpus/src/search-store.js';
 import { randomUUID } from 'node:crypto';
 import { directSearch } from '../packages/corpus/src/search-direct.js';
+import {
+  parseGitHubPlans,
+  memoryGitHubCache,
+  privateGitHubCache,
+} from '../packages/corpus/src/search-github.js';
 import type { SearchResult } from '../packages/domain/src/search-contract.js';
+import { loadAcquisitionConfig } from '../packages/corpus/src/search-acquisition.js';
+import { loadSettings } from '../packages/corpus/src/search-settings.js';
+import { researchCorpusSlice, checkPrimaryMaterial } from '../packages/corpus/src/search-reuse.js';
+import { selectSavedEntity } from '../packages/corpus/src/search-selection.js';
 
 const { values } = parseArgs({
   options: {
     query: { type: 'string' },
     profile: { type: 'string' },
+    route: { type: 'string' },
     save: { type: 'string' },
     cache: { type: 'string' },
     site: { type: 'string', multiple: true },
+    source: { type: 'string', multiple: true },
+    url: { type: 'string', multiple: true },
     threshold: { type: 'string' },
     model: { type: 'string' },
     effort: { type: 'string' },
@@ -24,30 +41,64 @@ const { values } = parseArgs({
     json: { type: 'boolean' },
     schema: { type: 'boolean' },
     capability: { type: 'boolean' },
+    review: { type: 'boolean' },
     'sources-only': { type: 'boolean' },
+    'github-plan': { type: 'string' },
+    'corpus-only': { type: 'boolean' },
+    'check-primary': { type: 'string' },
+    destination: { type: 'string' },
     accept: { type: 'boolean' },
     context: { type: 'boolean' },
   },
 });
 try {
-  if (values.schema) process.stdout.write(`${JSON.stringify(discoverySchema)}\n`);
+  if (values.schema) process.stdout.write(`${JSON.stringify(nativeBriefSchema)}\n`);
   else if (values.capability)
     process.stdout.write(
       `${JSON.stringify({ ...(await codexRunner().readiness()), limits: budgets, persistence: 'none unless selected', unattended: false })}\n`,
     );
   else {
     const request = parseRequest({
-      query: values.query,
+      query: values.query ?? (values['check-primary'] ? 'Check saved primary source' : undefined),
       profile: values.profile ?? 'wide',
+      route: values.route === 'assessed' ? 'native' : (values.route ?? 'native'),
       save: values.save ?? 'never',
       cache: values.cache ?? 'memory',
       supplementalSites: values.site,
+      sources: values.source,
+      captureUrls: values.url,
+      review: values.review ?? false,
       threshold: Number(values.threshold ?? 75),
     });
     const controller = new AbortController();
+    if (values['corpus-only']) {
+      process.stdout.write(
+        `${JSON.stringify(await researchCorpusSlice(request, process.cwd()), null, 2)}\n`,
+      );
+      process.exit(0);
+    }
+    if (values['check-primary']) {
+      if (values.destination !== undefined && !['public', 'private'].includes(values.destination))
+        throw new Error('invalid_entity_destination');
+      const { record } = await selectSavedEntity(
+        values['check-primary'],
+        process.cwd(),
+        values.destination as 'public' | 'private' | undefined,
+      );
+      const { material, ...check } = await checkPrimaryMaterial(record.entity, {
+        signal: controller.signal,
+      });
+      process.stdout.write(
+        `${JSON.stringify({ ...check, materialDigest: material?.response?.status === 304 ? check.source?.digest : (material?.digest ?? null) }, null, 2)}\n`,
+      );
+      process.exit(0);
+    }
+    const githubPlans = values['github-plan']
+      ? parseGitHubPlans(JSON.parse(values['github-plan']))
+      : undefined;
     if (values['sources-only']) {
       process.stdout.write(
-        `${JSON.stringify(await directSearch(request, controller.signal), null, 2)}\n`,
+        `${JSON.stringify(await directSearch(request, controller.signal, undefined, githubPlans ? { plans: githubPlans, cache: request.cache === 'private' ? privateGitHubCache(process.cwd()) : memoryGitHubCache() } : undefined), null, 2)}\n`,
       );
       process.exit(0);
     }
@@ -66,7 +117,12 @@ try {
           runId: randomUUID(),
           query: request.query,
           status: 'completed',
-          ...(await acceptDiscovery(JSON.parse(input), request, { signal: controller.signal })),
+          ...(await acceptDiscovery(decodeNativeOutput(input), request, {
+            signal: controller.signal,
+            followedSources: (await loadSettings(process.cwd())).followedSources
+              ?.filter((source) => source.enabled)
+              .map((source) => source.uri),
+          })),
           usage: {
             searches: 0,
             documents: 0,
@@ -78,7 +134,10 @@ try {
           limits: budgets[request.profile ?? 'wide'],
         }
       : await signalSearch(request, {
-          runner: codexRunner(values.model, values.effort, {
+          runner: codexRunner(values.model ?? 'gpt-6.1-sol', values.effort ?? 'low', {
+            githubPlans,
+            root: process.cwd(),
+            acquisition: await loadAcquisitionConfig(process.cwd()),
             extractionModel: values['extract-model'],
             extractionEffort: values['extract-effort'],
           }),
@@ -86,11 +145,13 @@ try {
           progress: (event) => process.stderr.write(`${event}\n`),
         });
     if (values.accept) {
+      await contextualizeResult(result, process.cwd());
       result.usage.documents = result.sources.filter((source) => source.state === 'fetched').length;
       // Native acquisition is owned by the caller; family counts can overlap.
       // This helper performs no search tool calls and cannot infer the host's usage.
       result.usage.elapsedMs = Date.now() - started;
-      if (result.sources.some((source) => source.state !== 'fetched')) result.status = 'partial';
+      if (result.gaps.length || result.sources.some((source) => source.state !== 'fetched'))
+        result.status = 'partial';
       if (controller.signal.aborted) result.status = 'cancelled';
     }
     if (values.accept && request.save === 'eligible' && result.status !== 'cancelled') {

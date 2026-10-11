@@ -1,6 +1,7 @@
 import { fetchEvidence, normalizeText } from './search-fetch.js';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
 import { parseRequest, type SearchRequest } from '../../domain/src/search-contract.js';
+import { githubSearch, type GitHubPlan, type GitHubCache } from './search-github.js';
 
 interface DirectHit {
   provider: 'github' | 'hacker-news' | 'wikipedia';
@@ -11,6 +12,16 @@ interface DirectHit {
   evidenceUri: string;
   popularity: { stars?: number; points?: number; comments?: number };
 }
+export interface DirectSearchResult {
+  schemaVersion: number;
+  query: string;
+  kind: string;
+  hits: DirectHit[];
+  gaps: string[];
+  searches: number;
+  modelCalls: number;
+  pages?: Awaited<ReturnType<typeof githubSearch>>['pages'];
+}
 const object = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -19,12 +30,13 @@ const text = (value: unknown) => (typeof value === 'string' ? value.slice(0, 800
 const count = (value: unknown) =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 
-/** Ranked locators, never assessed entities. No credentials, pagination, retries or crawling. */
+/** Ranked locators, never assessed entities. Explicit GitHub plans add bounded recipe pages. */
 export async function directSearch(
   input: SearchRequest,
   signal?: AbortSignal,
   fetch = fetchEvidence,
-) {
+  github?: { plans: GitHubPlan[]; cache?: GitHubCache },
+): Promise<DirectSearchResult> {
   const request = parseRequest(input);
   const choices = request.supplementalSites ?? [
     'https://github.com',
@@ -33,15 +45,51 @@ export async function directSearch(
   const hits: DirectHit[] = [],
     gaps: string[] = [];
   let searches = 0;
-  for (const provider of ['github', 'hacker-news'] as const) {
+  const scopes = choices.filter((uri) => new URL(uri).hostname === 'github.com');
+  const pathScopes = scopes.filter((uri) => new URL(uri).pathname !== '/');
+  let selectedGithub: Awaited<ReturnType<typeof githubSearch>> | null = null;
+  if ((!request.sources || request.sources.includes('github')) && !signal?.aborted) {
+    if (pathScopes.length > 1 && pathScopes.length === scopes.length)
+      gaps.push('github: multiple path scopes require scoped broad search');
+    else if (
+      !github &&
+      (request.query.length > 120 ||
+        request.query.split(/\s+/).length > 8 ||
+        /[?\r\n]/.test(request.query))
+    )
+      gaps.push(
+        'github: supply a short capability query or native-selected topic plan; whole questions are not sent to repository search',
+      );
+    else {
+      const scope = pathScopes.length === scopes.length ? pathScopes[0] : undefined;
+      const plans: GitHubPlan[] = github?.plans ?? [
+        { lane: 'capability-established', terms: request.query, perPage: 20, maxPages: 2 },
+        {
+          lane: 'emerging',
+          terms: request.query,
+          windowStart: new Date(Date.now() - 180 * 86400000).toISOString().slice(0, 10),
+          perPage: 10,
+          maxPages: 1,
+        },
+      ];
+      try {
+        selectedGithub = await githubSearch(
+          plans.map((plan) => ({ ...plan, ...(scope ? { scope } : {}) })),
+          { signal, fetch, cache: github?.cache },
+        );
+      } catch (failure) {
+        gaps.push(`github: ${failure instanceof Error ? failure.message : 'direct_search_failed'}`);
+      }
+    }
+  }
+  if (selectedGithub) {
+    hits.push(...selectedGithub.hits.map((hit, index) => ({ ...hit, rank: index + 1 })));
+    gaps.push(...selectedGithub.gaps);
+    searches += selectedGithub.searches;
+  }
+  for (const provider of ['hacker-news'] as const) {
     if (request.sources && !request.sources.includes(provider)) continue;
-    const scopes = choices.filter(
-      (uri) =>
-        new URL(uri).hostname === (provider === 'github' ? 'github.com' : 'news.ycombinator.com'),
-    );
-    const relevant = scopes.length
-      ? scopes
-      : [provider === 'github' ? 'https://github.com/' : 'https://news.ycombinator.com/'];
+    const scopes = choices.filter((uri) => new URL(uri).hostname === 'news.ycombinator.com');
     if (provider === 'hacker-news' && scopes.some((uri) => new URL(uri).pathname !== '/')) {
       gaps.push('hacker-news: path-scoped direct search unavailable; use scoped broad search');
       continue;
@@ -54,73 +102,33 @@ export async function directSearch(
       gaps.push(`${provider}: query exceeds direct endpoint limit; broad search remains available`);
       continue;
     }
-    const endpoint = new URL(
-      provider === 'github'
-        ? 'https://api.github.com/search/repositories'
-        : 'https://hn.algolia.com/api/v1/search',
-    );
-    const githubScopes = relevant.map((scope) =>
-      new URL(scope).pathname.split('/').filter(Boolean),
-    );
-    if (
-      provider === 'github' &&
-      githubScopes.every((parts) => parts.length > 0) &&
-      githubScopes.length > 1
-    ) {
-      gaps.push('github: multiple path scopes require scoped broad search');
-      continue;
-    }
-    const parts = githubScopes[0]!;
-    const qualifier =
-      provider === 'github' && parts.length
-        ? parts.length === 1
-          ? ` user:${parts[0]}`
-          : ` repo:${parts[0]}/${parts[1]}`
-        : '';
-    endpoint.searchParams.set(provider === 'github' ? 'q' : 'query', request.query + qualifier);
-    endpoint.searchParams.set(provider === 'github' ? 'per_page' : 'hitsPerPage', '5');
-    if (provider === 'hacker-news') endpoint.searchParams.set('tags', 'story');
+    const endpoint = new URL('https://hn.algolia.com/api/v1/search');
+    endpoint.searchParams.set('query', request.query);
+    endpoint.searchParams.set('hitsPerPage', '5');
+    endpoint.searchParams.set('tags', 'story');
     try {
       searches++;
       const response = object((await fetch(endpoint.toString(), signal)).json);
-      if (response.incomplete_results === true) gaps.push('github: incomplete ranked results');
-      const rows = response[provider === 'github' ? 'items' : 'hits'];
+      const rows = response.hits;
       if (!Array.isArray(rows)) throw new Error('invalid_direct_response');
       for (const [index, raw] of rows.slice(0, 5).entries()) {
         const row = object(raw);
         try {
           const uri = normalizeConsiderUrl(
-            text(provider === 'github' ? row.html_url : row.url) ||
+            text(row.url) ||
               `https://news.ycombinator.com/item?id=${encodeURIComponent(text(row.objectID))}`,
           ).normalizedUrl;
           const evidenceUri = normalizeConsiderUrl(
-            provider === 'github'
-              ? text(row.url)
-              : `https://hn.algolia.com/api/v1/items/${encodeURIComponent(text(row.objectID))}`,
+            `https://hn.algolia.com/api/v1/items/${encodeURIComponent(text(row.objectID))}`,
           ).normalizedUrl;
-          if (
-            provider === 'github' &&
-            !relevant.some((scope) => {
-              const url = new URL(scope);
-              return (
-                url.pathname === '/' ||
-                new URL(uri).pathname === url.pathname ||
-                new URL(uri).pathname.startsWith(`${url.pathname.replace(/\/$/, '')}/`)
-              );
-            })
-          )
-            continue;
           hits.push({
             provider,
             rank: index + 1,
             uri,
             evidenceUri,
-            title: text(provider === 'github' ? row.full_name : row.title),
+            title: text(row.title),
             summary: text(row.description),
-            popularity:
-              provider === 'github'
-                ? { stars: count(row.stargazers_count) }
-                : { points: count(row.points), comments: count(row.num_comments) },
+            popularity: { points: count(row.points), comments: count(row.num_comments) },
           });
         } catch {
           gaps.push(`${provider}: unsafe or malformed result omitted`);
@@ -188,8 +196,7 @@ export async function directSearch(
     hits,
     gaps,
     searches,
+    pages: selectedGithub?.pages ?? [],
     modelCalls: 0,
   };
 }
-
-export type DirectSearchResult = Awaited<ReturnType<typeof directSearch>>;

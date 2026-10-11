@@ -1,8 +1,25 @@
-import { readFile, lstat } from 'node:fs/promises';
+import { readFile, lstat, realpath } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { atomicJson } from './search-store.js';
 import { fetchEvidence, digest } from './search-fetch.js';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
+import { cachedMaterial } from './search-document.js';
+import { Type } from 'typebox';
+import { Value } from 'typebox/value';
+
+const header = Type.Optional(Type.String({ maxLength: 4096, pattern: '^[^\\r\\n]*$' }));
+const cachedResponseSchema = Type.Object(
+  {
+    status: Type.Integer({ minimum: 100, maximum: 599 }),
+    etag: header,
+    lastModified: header,
+    link: header,
+    retryAfter: header,
+    rateRemaining: header,
+    rateReset: header,
+  },
+  { additionalProperties: false },
+);
 
 /** Explicit private caching retains bounded fetched text; memory/no-save never calls this. */
 export function privateCacheFetch(
@@ -14,7 +31,8 @@ export function privateCacheFetch(
     const normalized = normalizeConsiderUrl(uri).normalizedUrl;
     const path = resolve(root, '.signals/source-cache', `${digest(normalized)}.json`);
     const stat = await lstat(path).catch(() => null);
-    if (stat?.isSymbolicLink()) throw new Error('symlink_source_cache');
+    if (stat && (!stat.isFile() || stat.isSymbolicLink() || (await realpath(path)) !== path))
+      throw new Error('symlink_source_cache');
     if (stat && Date.now() - stat.mtimeMs < 3600000 && stat.size < 2200000) {
       const cached: unknown = JSON.parse(await readFile(path, 'utf8'));
       if (
@@ -32,12 +50,30 @@ export function privateCacheFetch(
         /^[a-f0-9]{64}$/.test(cached.digest)
       ) {
         signal?.throwIfAborted();
+        const response = 'response' in cached ? cached.response : undefined;
+        if (response !== undefined && !Value.Check(cachedResponseSchema, response))
+          throw new Error('invalid_source_cache');
         progress?.(`Private cache hit: ${new URL(normalized).hostname}`);
         return {
-          uri: normalized,
+          uri:
+            'finalUri' in cached && typeof cached.finalUri === 'string'
+              ? normalizeConsiderUrl(cached.finalUri).normalizedUrl
+              : normalized,
           text: cached.text,
           digest: cached.digest,
           normalizer: 'text-v2' as const,
+          ...(response
+            ? {
+                response: {
+                  status: response.status,
+                  etag: response.etag,
+                  lastModified: response.lastModified,
+                },
+              }
+            : {}),
+          material: cachedMaterial('material' in cached ? cached.material : undefined),
+          identityUnverified: 'identityUnverified' in cached && cached.identityUnverified === true,
+          truncated: 'truncated' in cached && cached.truncated === true,
           cached: true,
           fetchedAt:
             'fetchedAt' in cached && typeof cached.fetchedAt === 'string'
@@ -55,7 +91,13 @@ export function privateCacheFetch(
     }
     const fetched = await fetch(normalized, signal);
     const fetchedAt = new Date().toISOString();
-    await atomicJson(path, { ...fetched, normalizer: 'text-v2', uri: normalized, fetchedAt });
+    await atomicJson(path, {
+      ...fetched,
+      normalizer: 'text-v2',
+      uri: normalized,
+      finalUri: fetched.uri,
+      fetchedAt,
+    });
     return { ...fetched, normalizer: 'text-v2' as const, cached: false, fetchedAt };
   };
 }

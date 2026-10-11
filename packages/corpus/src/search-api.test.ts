@@ -6,6 +6,141 @@ import { it, expect } from 'vitest';
 import { searchApi } from './search-api.js';
 import { resolvePublicUrl, publicTransportUrl } from './search-fetch.js';
 import { signalSearch } from './signal-search.js';
+import { loadEntities, retainRun } from './search-store.js';
+import { budgets, type SearchResult } from '../../domain/src/search-contract.js';
+import { randomUUID } from 'node:crypto';
+
+it('keeps replay follow-ups behind mutation and retained-identity guards without invoking discovery', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-followup-api-')));
+  const [record] = await loadEntities();
+  if (!record) throw new Error('missing_public_entity');
+  const result: SearchResult = {
+    schemaVersion: 2,
+    runId: randomUUID(),
+    query: 'retained public evidence',
+    status: 'completed',
+    items: [
+      {
+        entity: record.entity,
+        match: { level: 'direct', reason: 'API guard test', sources: [] },
+        eligible: false,
+        reasons: ['manual_only'],
+      },
+    ],
+    sources: [],
+    coverage: [],
+    gaps: [],
+    usage: {
+      searches: 0,
+      documents: 0,
+      elapsedMs: 0,
+      modelCalls: 0,
+      providerUsage: null,
+      cost: null,
+    },
+    counts: { leads: 1, distinct: 1, duplicates: 0, omitted: 0 },
+    limits: budgets.quick,
+  };
+  await retainRun(result, root);
+  let reads = 0;
+  const api = searchApi(
+    root,
+    async () => {
+      throw new Error('discovery_must_not_run');
+    },
+    undefined,
+    async (frozen, question, ids) => {
+      reads++;
+      expect(frozen.runId).toBe(result.runId);
+      expect(question).toBe('What is supported?');
+      expect(ids).toEqual([record.entity.id]);
+      return {
+        mode: 'frozen-evidence-replay',
+        answer: 'Test replay; no model call.',
+        statements: [],
+        gaps: [],
+        usage: null,
+      };
+    },
+  );
+  const server = createServer((request, response) => {
+    void api(request, response);
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('no_port');
+  const base = `http://127.0.0.1:${address.port}/signals-ai/__signals/api/`;
+  try {
+    const { token } = (await (await fetch(`${base}session`)).json()) as { token: string };
+    const headers = { 'content-type': 'application/json', 'x-signals-token': token };
+    expect(
+      (
+        await fetch(`${base}primary-check`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ id: record.entity.id }),
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await fetch(`${base}primary-check`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ id: record.entity.id, extra: 'invalid' }),
+        })
+      ).status,
+    ).toBe(400);
+    const body = JSON.stringify({
+      runId: result.runId,
+      ids: [record.entity.id],
+      question: 'What is supported?',
+    });
+    expect(
+      (
+        await fetch(`${base}followup`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body,
+        })
+      ).status,
+    ).toBe(403);
+    expect((await fetch(`${base}followup`, { method: 'POST', headers, body })).status).toBe(400);
+    expect(reads).toBe(0);
+    expect(
+      (
+        await fetch(`${base}history/open`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ runId: result.runId }),
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await fetch(`${base}followup`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            runId: result.runId,
+            ids: ['entity-000000000000000000000000'],
+            question: 'What is supported?',
+          }),
+        })
+      ).status,
+    ).toBe(400);
+    expect(reads).toBe(0);
+    const reply = await fetch(`${base}followup`, { method: 'POST', headers, body });
+    expect(reply.status).toBe(200);
+    expect(await reply.json()).toMatchObject({ mode: 'frozen-evidence-replay' });
+    expect(reads).toBe(1);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 it('finishes a rejected search with a visible error and allows the next request', async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-api-failure-')));

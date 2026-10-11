@@ -11,6 +11,9 @@ import { reviewDraft, type SourceMaterial } from '../packages/corpus/src/review-
 import { signalSearch } from '../packages/corpus/src/signal-search.js';
 import { searchEvidenceBundle } from '../packages/corpus/src/search-exchange.js';
 import { execFileSync } from 'node:child_process';
+import { loadLibrary } from '../packages/corpus/src/library.js';
+import { libraryPreferences, matchLibrary } from '../packages/corpus/src/library-meaning.js';
+import { loadSettings } from '../packages/corpus/src/search-settings.js';
 
 const [operation, ...args] = process.argv.slice(2);
 if (operation === 'curate') {
@@ -47,6 +50,29 @@ if (operation === 'curate') {
     ),
   );
   if (['failed', 'not_configured'].includes(result.status)) process.exitCode = 1;
+} else if (operation === 'library-query') {
+  const scope = args.includes('--public') ? 'public' : 'local';
+  const question = args.filter((arg) => arg !== '--public').join(' ');
+  if (!question.trim() || question.length > 2000)
+    throw new Error('Library question requires 1–2000 characters.');
+  const settings = await loadSettings();
+  const preferences = await libraryPreferences(process.cwd());
+  console.log(
+    JSON.stringify(
+      await matchLibrary(
+        await loadLibrary(process.cwd(), { scope }),
+        question,
+        {},
+        {
+          permitted: preferences.meaningMatching,
+          model: settings.model || undefined,
+          effort: settings.effort || undefined,
+        },
+      ),
+      null,
+      2,
+    ),
+  );
 } else if (operation === 'corpus-query') {
   const question = args.filter((arg) => arg !== '--model').join(' ');
   const options = (await loadPublicCorpus()).options;
@@ -70,5 +96,5 @@ if (operation === 'curate') {
   }
 } else
   throw new Error(
-    'research query/context QUESTION | corpus-query QUESTION [--model] | admit DRAFT.json TYPE | history SNAPSHOT DATABASE TABLE',
+    'research query/context QUESTION | library-query QUESTION [--public] | corpus-query QUESTION [--model] | admit DRAFT.json TYPE | history SNAPSHOT DATABASE TABLE',
   );

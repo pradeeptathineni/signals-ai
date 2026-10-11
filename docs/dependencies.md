@@ -1,8 +1,26 @@
 # Dependency baseline
 
+The corpus-first experience reuses MiniSearch 7.2.0 for one native/legacy metadata index,
+React 19.3.0 for the local desk, and the existing Playwright/axe infrastructure. Project previews
+use the existing safe fetch and Node filesystem primitives; no crawler, GitHub SDK, database,
+auth service or agent runtime was added. The portable Context request is data only. Dependency
+and lockfile versions are unchanged by ADR-016.
+
+The 2026-10-08 gate identified Handlebars JavaScript-injection advisories
+[GHSA-8r5x-fm3f-whwj](https://github.com/advisories/GHSA-8r5x-fm3f-whwj),
+[GHSA-p8wg-vrv2-v86f](https://github.com/advisories/GHSA-p8wg-vrv2-v86f) and
+[GHSA-xw65-4hp5-5hc7](https://github.com/advisories/GHSA-xw65-4hp5-5hc7) in the development-only
+`repomix@1.18.1 -> handlebars` path. The lockfile pins the patched
+`handlebars@4.7.10` (MIT), within Repomix's existing compatible range; direct versions remain
+unchanged. Two advisories are critical and one is moderate. The shipped application does not
+include this template compiler. The original exact Repomix/braces exception and its rejection of
+additional advisories remain unchanged; this patched dependency receives no waiver.
+
 The 2026-10-05 gate identified [GHSA-68fv-2mgg-jv7q](https://github.com/advisories/GHSA-68fv-2mgg-jv7q) in the development path `Vite -> PostCSS -> source-map-js`. The lockfile now pins the patched `source-map-js@1.2.2` (BSD-3-Clause); direct versions remain unchanged. The existing exact Repomix exception was not broadened. Build/browser checks and the audit policy verify the updated tree.
 
-Live discovery adds no npm dependency. The optional headless adapter supervises the user's installed
+The reset adds exact `@mozilla/readability@0.6.0` (Apache-2.0), `linkedom@0.18.13` (ISC) and `rss-parser@3.13.0` (MIT). Linkedom supplies an inert DOM with no page script/resource execution; original outlinks are harvested before Readability. RSS/Atom uses `parseString` on safe fetched bytes, with entity declarations rejected. Live MDN/GitHub/RSS trials and negative fixtures passed; transport/DNS ownership remains in Signals.
+
+The optional headless adapter supervises the user's installed
 Codex CLI (0.160.0 observed 2026-10-05); its existing authentication stays outside Signals. Native
 Agent Skills callers use their own permitted tools. Node HTTPS/DNS/child-process primitives own the
 bounded adapter, pinned connections and interval scheduler. Croner/queues and a new service estate
@@ -26,7 +44,7 @@ coercion or default insertion; semantic reference/privacy checks remain in the d
 The exact schema bytes are excluded from formatting to preserve the interchange digest.
 
 The runtime and verification packages are exact-pinned in `package.json` and `package-lock.json`.
-The database retirement removes Fastify, PostgreSQL/Drizzle, Graphile, G6, Readability/jsdom,
+The database retirement removes Fastify, PostgreSQL/Drizzle, Graphile, G6, jsdom,
 TanStack Query, OpenTelemetry, undici and AI SDK from the installed product. Cataloging a toolkit
 does not install it. Structured model calls use bounded native fetch to an explicitly configured
 loopback endpoint. The current runtime dependency set is:

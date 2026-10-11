@@ -18,16 +18,26 @@ it('uses bounded ranked locators without inference, crawling or trusting returne
         digest: 'a'.repeat(64),
         json: uri.includes('github')
           ? {
+              total_count: 3,
+              incomplete_results: false,
               items: [
                 {
+                  id: 1,
                   html_url: 'https://github.com/example/tool',
                   url: 'https://api.github.com/repos/example/tool',
                   full_name: 'example/tool',
                   stargazers_count: 1200,
+                  archived: false,
+                  disabled: false,
                 },
                 {
+                  id: 2,
                   html_url: 'https://github.com/other/tool',
                   url: 'https://api.github.com/repos/other/tool',
+                  full_name: 'other/tool',
+                  stargazers_count: 100,
+                  archived: false,
+                  disabled: false,
                 },
                 {
                   html_url: 'https://127.0.0.1/tool',
@@ -39,13 +49,37 @@ it('uses bounded ranked locators without inference, crawling or trusting returne
       };
     },
   );
-  expect(calls).toHaveLength(2);
-  expect(new URL(calls[0]!).searchParams.get('q')).toBe('model context protocol user:example');
+  expect(calls).toHaveLength(3);
+  expect(new URL(calls[0]!).searchParams.get('q')).toBe(
+    'model context protocol in:name,description,readme archived:false user:example',
+  );
+  expect(new URL(calls[0]!).searchParams.get('sort')).toBe('stars');
+  expect(new URL(calls[1]!).searchParams.get('q')).toContain('created:>=');
   expect(result.modelCalls).toBe(0);
   expect(result.hits).toHaveLength(1);
   expect(result.hits[0]!.popularity.stars).toBe(1200);
   expect(result.kind).toBe('unassessed-source-hits');
-  expect(result.gaps).toContain('github: unsafe or malformed result omitted');
+  expect(result.gaps).toContain('github/capability-established: out-of-scope repository omitted');
+  expect(result.gaps).toContain(
+    'github/capability-established: 1 malformed or unsafe metadata rows omitted',
+  );
+});
+
+it('keeps natural questions in native research rather than forwarding a whole paragraph to GitHub', async () => {
+  let calls = 0;
+  const result = await directSearch(
+    {
+      query: 'Which research systems should I use under these laptop constraints?',
+      sources: ['github'],
+    },
+    undefined,
+    async () => {
+      calls++;
+      throw new Error('must_not_fetch');
+    },
+  );
+  expect(calls).toBe(0);
+  expect(result.gaps[0]).toContain('whole questions are not sent');
 });
 
 it('retrieves general concepts through ranked Wikipedia locators without granting authority to rank or snippets', async () => {

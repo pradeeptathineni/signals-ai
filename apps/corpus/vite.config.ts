@@ -2,7 +2,6 @@ import { fileURLToPath, URL } from 'node:url';
 import { resolve } from 'node:path';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
-import { localQueries } from './local-query.js';
 import { searchApi } from '../../packages/corpus/src/search-api.js';
 
 const queryDirectory = resolve(
@@ -16,7 +15,6 @@ export default defineConfig({
   base: '/signals-ai/',
   plugins: [
     react(),
-    localQueries(),
     {
       name: 'signals-workbench',
       transformIndexHtml(html, context) {
@@ -50,7 +48,7 @@ export default defineConfig({
         '**/.git/**',
         '**/.signals/**',
         '**/.context-ai/lock.json',
-        '**/.codex/**',
+        `${fileURLToPath(new URL('../../.codex', import.meta.url)).replaceAll('\\', '/')}/**`,
         `${queryDirectory}/**`,
       ],
     },

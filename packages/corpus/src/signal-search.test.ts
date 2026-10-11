@@ -23,9 +23,11 @@ const saveEntities: typeof saveNativeEntities = (items, mode, root, destination,
   saveNativeEntities(items, mode, root, destination, threshold, true);
 import { dueSlot, runDueOnce } from './search-scheduler.js';
 import { defaultSettings, saveSettings, loadSettings } from './search-settings.js';
-import { normalizeText, normalizeSpan } from './search-fetch.js';
+import { normalizeText, normalizeSpan, digest } from './search-fetch.js';
+import { parseEvidenceBundle } from '../../domain/src/evidence-exchange.js';
 import { RunnerFailure, type SearchRunner } from './search-runner.js';
 import { searchEvidenceBundle } from './search-exchange.js';
+import { checkPrimaryMaterial } from './search-reuse.js';
 
 const date = '2026-10-05T00:00:00.000Z';
 function proposal(): Proposal {
@@ -224,7 +226,7 @@ describe('live search contract and evidence policy', () => {
     ).toBe(false);
     expect(onlyAmbiguous.items[0]!.entity.assessment.score).toBeNull();
   });
-  it('retains a rejected extraction and its usage privately while withholding all preliminary credit', async () => {
+  it('retains a rejected explicit reassessment and its usage without erasing original verified observations', async () => {
     const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-extraction-receipt-')));
     const raw = {
       candidates: [{ uri: 'https://example.com/changed-identity', observations: [] }],
@@ -232,7 +234,7 @@ describe('live search contract and evidence policy', () => {
     };
     try {
       const result = await signalSearch(
-        { query: 'research', cache: 'private', save: 'never' },
+        { query: 'research', cache: 'private', save: 'never', review: true },
         {
           root,
           fetch,
@@ -250,7 +252,7 @@ describe('live search contract and evidence policy', () => {
           await readFile(join(root, '.signals/extractions', `${result.runId}.json`), 'utf8'),
         ),
       ).toEqual({ proposal: raw, usage: { output_tokens: 123 } });
-      expect(result.items[0]!.entity.assessment.score).toBeNull();
+      expect(result.items[0]!.entity.observations[0]!.verified).toBe(true);
       expect(result.gaps).toContain('Grounded extraction unavailable: extraction_identity_change');
       expect(result.usage.providerUsage).toEqual({
         discovery: null,
@@ -416,9 +418,21 @@ describe('live search contract and evidence policy', () => {
       { runner: runner(proposal()), fetch },
     );
     const bundle = searchEvidenceBundle(result, 'a'.repeat(40));
+    expect(bundle.mode).toBe('fixture');
+    expect(bundle.extensions!['signals.acquisition']).toEqual({ fixture: true });
+    const bytes = JSON.stringify(bundle);
+    expect(() => parseEvidenceBundle(bytes, digest(bytes))).toThrow(
+      'Fixtures cannot enter real evidence admission',
+    );
     expect(bundle.candidates[0]!.signal!.evidence_confidence).toBe('unknown');
     expect(bundle.extensions).toHaveProperty('signals-ai.native-assessments');
     expect(bundle.sources[0]!.observed_at).toBe(date);
+    for (const item of result.items) item.entity.acquisition = 'configured-live';
+    const live = searchEvidenceBundle(result, 'b'.repeat(40));
+    expect(live.mode).toBe('model-led');
+    expect(live.extensions!['signals-ai.source-dates']).toEqual(
+      bundle.extensions!['signals-ai.source-dates'],
+    );
   });
   it('assesses after real fetch receipts and replays an early historical cutoff without rewriting evidence', async () => {
     const result = await signalSearch(
@@ -1123,33 +1137,50 @@ describe('canonical saving and scheduling', () => {
       await rm(root, { recursive: true, force: true });
     }
   });
-  it('does not complete a refresh without its target or update another saved entity', async () => {
-    const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-refresh-target-')));
-    try {
-      const first = (await acquired()).items[0]!;
-      const otherInput = proposal();
-      otherInput.candidates[0]!.uri = 'https://example.com/other';
-      const other = (await acquired(otherInput)).items[0]!;
-      await saveEntities([first, other], 'manual', root);
-      const before = await loadEntities(join(root, 'signals/entities'));
-      const returned = [first, other].sort((a, b) => a.entity.id.localeCompare(b.entity.id))[1]!;
-      const settings = { ...structuredClone(defaultSettings), corpusDiscovery: true, batchSize: 1 };
-      const result = await runDueOnce({
-        root,
-        now: Date.parse(date),
-        settings,
-        search: async () => ({
-          ...(await signalSearch({ query: 'refresh' }, { runner: runner(proposal()), fetch })),
-          items: [returned],
-        }),
-      });
-      expect(result.jobs[0]!.status).toBe('failed');
-      expect(result.jobs[0]!.reason).toBe('refresh_target_missing');
-      expect(await loadEntities(join(root, 'signals/entities'))).toEqual(before);
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-  });
+  it.each(['public', 'private'] as const)(
+    'does not complete a %s refresh without its target or update another saved entity',
+    async (destination) => {
+      const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-refresh-target-')));
+      try {
+        const first = (await acquired()).items[0]!;
+        const otherInput = proposal();
+        otherInput.candidates[0]!.uri = 'https://example.com/other';
+        const other = (await acquired(otherInput)).items[0]!;
+        await saveEntities([first, other], 'manual', root, destination);
+        const directory = join(
+          root,
+          destination === 'public' ? 'signals/entities' : '.signals/corpus/entities',
+        );
+        const before = await loadEntities(directory);
+        const returned = [first, other].sort((a, b) => a.entity.id.localeCompare(b.entity.id))[1]!;
+        const settings = {
+          ...structuredClone(defaultSettings),
+          destination,
+          corpusDiscovery: true,
+          batchSize: 1,
+        };
+        const result = await runDueOnce({
+          root,
+          now: Date.parse(date),
+          settings,
+          check: (entity, options) =>
+            checkPrimaryMaterial(entity, {
+              ...options,
+              fetch: async (uri) => ({ ...(await fetch(uri)), digest: 'b'.repeat(64) }),
+            }),
+          search: async () => ({
+            ...(await signalSearch({ query: 'refresh' }, { runner: runner(proposal()), fetch })),
+            items: [returned],
+          }),
+        });
+        expect(result.jobs[0]!.status).toBe('failed');
+        expect(result.jobs[0]!.reason).toBe('refresh_target_missing');
+        expect(await loadEntities(directory)).toEqual(before);
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
   it('reopens immutable history using the selected cutoff', async () => {
     const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-history-cutoff-')));
     try {

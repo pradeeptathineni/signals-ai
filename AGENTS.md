@@ -1,17 +1,21 @@
 # Signals repository guide
 
-Read `README.md`, `ARCHITECTURE.md`, ADR-001, the latest numbered ADR, and `docs/architecture/schema.md` before cross-cutting changes. ADR-011 governs live discovery and native scoring; ADR-009 still governs database retirement and historical findings. Private phase evidence remains in `../maestro-ai-planning/outputs/`; never copy it into public records or fixtures.
+Read `README.md`, `ARCHITECTURE.md`, ADR-001, the latest numbered ADR, and `docs/architecture/schema.md` before cross-cutting changes. ADR-017 governs query relevance, type-rubric assessment and Library successors; ADR-016 governs experience/project ownership; ADR-015 governs native research. ADR-011 retains historical scoring meanings and ADR-009 database retirement/history. Private phase evidence stays in the sister planning folder; never copy it into public records or fixtures.
 
 ## Boundaries
 
 - Git is the public Corpus database. Native `signals/entities/*.json` and legacy `signals/<type>/*.json` are canonical; indexes and Pages are generated views. Domains and concepts are metadata.
 - `.signals/` is private local query/history storage. Never publish it, serve it through Vite, or remove retained snapshots during cleanup. Database services, containers, drivers and compatibility commands have been retired.
 - Systems remain data. No candidate installation/execution, arbitrary crawling, hosted auth, cloud/model fallback, sandbox, gateway or agent-runtime implementation is authorized.
+
+Product outcomes live in `docs/product.yaml`; preserve outcomes rather than defeated internals. Native AI owns uncertain research; deterministic boundaries own permissions, transport, integrity, scores and operations. A new stage must remove work or solve a demonstrated gap. Retain useful alternatives, failed runs and unknown costs. Explicitly authorized finite candidate trials use reviewed pins and verified existing isolation; findings never grant execution authority. Production recurrence, publication and billing remain opt-in. Cut over and retire equivalent losing engines after verified preservation/recovery.
 - Evidence is immutable. Corrections create successors; historical commits and migrated rows preserve old policy meanings. Review metadata may withdraw a finding without rewriting its evidence.
 - Keep interpretation and organization in the bounded model protocol. Deterministic code validates, filters, retrieves, compares, admits and replays. Do not add evaluation vocabulary or one-off semantic branches.
 - Native automatic admission requires supported defining evidence, resolved identity, direct relevance and the versioned intrinsic strength threshold. Headless runs ground observations in fetched text; native agents do so using their own tools. Legacy findings retain their separate all-strong review gate. Scores are policy judgment, never calibrated probability or proven benefit. Humans ask questions; agents generate evidence and model observations.
 
 ## Commands and code map
+
+Before changing an ordinary route, name the observable outcome it should improve. Compare consequential alternatives with a strong native workflow under equivalent constraints; retain failed/partial runs and unknown costs. Format validation is not evidence of user benefit. Use bounded native subagents for scoped inspection/review or disjoint isolated implementation; the parent integrates, and ordinary signal-search never recursively launches another AI. Follow [the product commands and boundaries](README.md), preserve required capabilities when a specialization loses, and keep evaluation evidence outside always-loaded guidance.
 
 - `npm run verify` checks the file-based product and isolated browser fixtures. It requires no database or model service. `npm run clean` removes generated build/test output only.
 - `npm run signal-search -- --query QUESTION --save never` performs bounded live discovery with the installed authenticated Codex runner. The native `signal-search` skill uses its invoking AI without recursion.
