@@ -104,6 +104,7 @@ export const claimReceiptSchema = Type.Object(
           capturedBytes: Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER }),
           omittedBytes: Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER }),
           captureComplete: Type.Boolean(),
+          captureScope: Type.Optional(Type.Literal('runner-stdout')),
         },
         closed,
       ),

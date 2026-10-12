@@ -133,6 +133,13 @@ export function validateClaimReceipt(result: SearchResult) {
         (source.scope === 'retained-excerpt') !== Boolean(source.retainedFrom)
       )
         fail('invalid_claim_snapshot');
+      if (source.retainedFrom) {
+        const identity = `${normalizeConsiderUrl(source.requestedUri).normalizedUrl}:${source.documentDigest}`;
+        const rawId = `evidence-${digest(`${identity}:text-v2`).slice(0, 24)}`;
+        const projectedId = `evidence-${digest(`${identity}:${source.snapshotDigest}:text-v2`).slice(0, 24)}`;
+        if (![rawId, projectedId].includes(source.retainedFrom.sourceId))
+          fail('invalid_historical_claim_identity');
+      }
       length += source.text.length;
     }
   }
@@ -176,7 +183,9 @@ export function validateClaimReceipt(result: SearchResult) {
   } else if (receipt.verdict !== null) fail('incomplete_claim_verdict');
   if (
     receipt.rejectedOutput &&
-    (Buffer.byteLength(receipt.rejectedOutput.text) > 32768 ||
+    ((receipt.rejectedOutput.captureScope === 'runner-stdout' &&
+      (receipt.rejectedOutput.text !== '' || receipt.rejectedOutput.captureComplete)) ||
+      Buffer.byteLength(receipt.rejectedOutput.text) > 32768 ||
       receipt.rejectedOutput.capturedBytes !==
         Buffer.byteLength(receipt.rejectedOutput.text) + receipt.rejectedOutput.omittedBytes ||
       (!receipt.rejectedOutput.omittedBytes &&
@@ -199,6 +208,15 @@ function historicalSource(
     !source.excerpt.trim()
   )
     fail('invalid_historical_claim_source');
+  if (source.reason === 'provider_final_identity_unverified')
+    return {
+      sourceIndex,
+      requestedUri,
+      state: 'omitted',
+      reason:
+        'Historical material has an unverified final identity; it was not admitted for review.',
+      retainedFrom: { runId: ref.runId, sourceId: ref.sourceId },
+    };
   if (source.normalizer !== 'text-v2')
     return {
       sourceIndex,
@@ -559,9 +577,9 @@ export async function runClaimCheck(
     if (request.cache === 'private') {
       try {
         receipt.historySaved = true;
+        result.persistence = { changed: [], skipped: [], privateRun: true };
         if (runBytes(result) > 2000000) fail('claim_receipt_serialized_size');
         await retainRun(result, root);
-        result.persistence = { changed: [], skipped: [], privateRun: true };
       } catch (failure) {
         receipt.historySaved = false;
         result.status = 'failed';

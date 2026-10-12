@@ -531,6 +531,8 @@ export function searchApi(
               const preference = (await libraryPreferences(root)).automaticSaving;
               if (
                 route !== 'refresh' &&
+                query.cache !== 'memory' &&
+                !result.claimCheck &&
                 preference?.enabled &&
                 !['failed', 'not_configured', 'cancelled'].includes(result.status)
               ) {

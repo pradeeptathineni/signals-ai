@@ -84,7 +84,10 @@ export function ClaimCheck({ receipt }: { receipt: ClaimReceipt }) {
       </ul>
       {receipt.rejectedOutput && (
         <p>
-          Native output was rejected; a bounded private diagnostic remains.{' '}
+          Native output was rejected;{' '}
+          {receipt.rejectedOutput.captureScope === 'runner-stdout'
+            ? 'received stdout byte counts and a digest remain, with unclassified text omitted.'
+            : 'a bounded private reply diagnostic remains.'}{' '}
           {receipt.rejectedOutput.omittedBytes} captured bytes omitted. Capture{' '}
           {receipt.rejectedOutput.captureComplete ? 'complete' : 'incomplete'}.
         </p>

@@ -42,4 +42,16 @@ it('shows denial, Unknown, memory authority and original scope without inventing
     'No numeric Signal',
   ])
     expect(html).toContain(value);
+  receipt.rejectedOutput = {
+    text: '',
+    capturedDigest: 'c'.repeat(64),
+    capturedBytes: 100000,
+    omittedBytes: 100000,
+    captureComplete: false,
+    captureScope: 'runner-stdout',
+  };
+  const diagnostic = renderToStaticMarkup(<ClaimCheck receipt={receipt} />);
+  expect(diagnostic).toContain('unclassified text omitted');
+  expect(diagnostic).toContain('100000 captured bytes omitted');
+  expect(diagnostic).toContain('incomplete');
 });

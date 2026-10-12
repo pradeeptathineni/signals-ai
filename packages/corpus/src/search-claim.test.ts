@@ -132,6 +132,31 @@ const material = (): ClaimMaterial[] =>
     omissions: [],
   }));
 
+async function historicalFixture(parent: SearchResult, root: string, projected = true) {
+  const source: Source = {
+    id: '',
+    uri: uris[0]!,
+    title: 'Policy',
+    publisher: 'Example',
+    family: 'primary',
+    origin: 'primary',
+    publishedAt: null,
+    digest: digest(text),
+    ...(projected ? { excerptDigest: digest(text) } : {}),
+    normalizer: 'text-v2',
+    fetchedAt: '2020-01-01T00:00:00Z',
+    state: 'fetched',
+    reason: 'scripted acquisition',
+    excerpt: text,
+  };
+  source.id = `evidence-${digest(`${source.uri}:${source.digest}${source.excerptDigest ? `:${source.excerptDigest}` : ''}:text-v2`).slice(0, 24)}`;
+  const origin: SearchResult = { ...parent, runId: randomUUID(), sources: [source] };
+  delete origin.answerReceipt;
+  delete origin.brief;
+  await retainRun(origin, root);
+  return { source, origin };
+}
+
 it('denied targets retain acquisition outcomes with no runner/readiness, scoring or public writes', async () => {
   const { root, parent, request } = await fixture();
   const native = runner(response());
@@ -347,27 +372,7 @@ it.each(['resolve', 'reject'])(
 
 it('retains a self-contained trusted historical excerpt after origin TTL, parent and linked negative successor stay exact', async () => {
   const { root, parent, request } = await fixture();
-  const source: Source = {
-    id: '',
-    uri: uris[0]!,
-    title: 'Policy',
-    publisher: 'Example',
-    family: 'primary',
-    origin: 'primary',
-    publishedAt: null,
-    digest: digest(text),
-    excerptDigest: digest(text),
-    normalizer: 'text-v2',
-    fetchedAt: '2020-01-01T00:00:00Z',
-    state: 'fetched',
-    reason: 'scripted acquisition',
-    excerpt: text,
-  };
-  source.id = `evidence-${digest(`${source.uri}:${source.digest}:${source.excerptDigest}:text-v2`).slice(0, 24)}`;
-  const origin: SearchResult = { ...parent, runId: randomUUID(), sources: [source] };
-  delete origin.answerReceipt;
-  delete origin.brief;
-  await retainRun(origin, root);
+  const { source, origin } = await historicalFixture(parent, root);
   const result = await signalSearch(
     {
       ...request,
@@ -395,6 +400,52 @@ it('retains a self-contained trusted historical excerpt after origin TTL, parent
   expect((await loadRun(result.runId, root)).claimCheck!.verdict).toBe('contradicted');
   expect((await loadRun(parent.runId, root)).brief).toEqual(parent.brief);
 });
+
+it('unverified historical identity remains unusable and cannot launch inference', async () => {
+  const { root, parent, request } = await fixture();
+  const { source, origin } = await historicalFixture(parent, root);
+  source.reason = 'provider_final_identity_unverified';
+  await atomicJson(join(root, '.signals/runs', `${origin.runId}.json`), origin);
+  const native = runner(response());
+  const result = await signalSearch(
+    {
+      ...request,
+      captureUrls: [uris[0]!],
+      claimSources: [{ sourceIndex: 0, runId: origin.runId, sourceId: source.id }],
+    },
+    { root, runner: native, fetch: vi.fn(fetch) },
+  );
+  expect(result.claimCheck!.selectedMaterial[0]).toMatchObject({ state: 'omitted' });
+  expect(result.usage.modelCalls).toBe(0);
+  expect(native.readiness).not.toHaveBeenCalled();
+  expect(native.discover).not.toHaveBeenCalled();
+  expect((await loadRun(result.runId, root)).claimCheck!.verdict).toBeNull();
+});
+
+it.each([false, true])(
+  'replay rebinds historical document lineage for projected=%s, without requiring the origin',
+  async (projected) => {
+    const { root, parent, request } = await fixture();
+    const { source, origin } = await historicalFixture(parent, root, projected);
+    const result = await signalSearch(
+      {
+        ...request,
+        captureUrls: [uris[0]!],
+        claimSources: [{ sourceIndex: 0, runId: origin.runId, sourceId: source.id }],
+      },
+      { root, runner: runner(response('uncertain')) },
+    );
+    await rm(join(root, '.signals/runs', `${origin.runId}.json`));
+    expect((await loadRun(result.runId, root)).claimCheck!.selectedMaterial[0]).toMatchObject({
+      documentDigest: source.digest,
+    });
+    const selected = result.claimCheck!.selectedMaterial[0];
+    if (selected?.state !== 'usable') throw new Error('expected_historical_material');
+    selected.documentDigest = 'a'.repeat(64);
+    await atomicJson(join(root, '.signals/runs', `${result.runId}.json`), result);
+    await expect(loadRun(result.runId, root)).rejects.toThrow('invalid_historical_claim_identity');
+  },
+);
 
 it('proves escaped receipt reserve and UTF8 diagnostic bounds; replay rejects tampering, old runs stay readable', async () => {
   const { root, request } = await fixture();

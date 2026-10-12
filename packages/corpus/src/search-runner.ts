@@ -1,4 +1,6 @@
 import { spawn, execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { StringDecoder } from 'node:string_decoder';
 import { promisify } from 'node:util';
 import { mkdtemp, readFile, writeFile, rm, mkdir } from 'node:fs/promises';
 import { tmpdir, homedir } from 'node:os';
@@ -350,7 +352,11 @@ export function codexRunner(
             reads = 0,
             unclassifiedToolCalls = 0;
           let final = '';
-          let rejectedOutput: ReturnType<typeof boundedTextReceipt> | undefined;
+          const wireDigest = operation.maxResponseBytes ? createHash('sha256') : undefined;
+          const decoder = new StringDecoder('utf8');
+          let rejectedOutput:
+            | (ReturnType<typeof boundedTextReceipt> & { captureScope?: 'runner-stdout' })
+            | undefined;
           const termination: {
             exitCode: number | null;
             signal: NodeJS.Signals | null;
@@ -405,13 +411,26 @@ export function codexRunner(
           if (signal.aborted) stop('request_aborted');
           child.stdout.on('data', (chunk: Buffer) => {
             bytes += chunk.length;
+            wireDigest?.update(chunk);
             if (
               bytes > (operation.maxResponseBytes ? operation.maxResponseBytes + 32768 : 3000000)
             ) {
+              if (wireDigest)
+                rejectedOutput = {
+                  text: '',
+                  capturedDigest: wireDigest.copy().digest('hex'),
+                  capturedBytes: bytes,
+                  omittedBytes: bytes,
+                  captureComplete: false,
+                  captureScope: 'runner-stdout',
+                };
+              // An unparsed wire may contain reasoning/tool content. Retain received-byte metadata
+              // only, without expanding, decoding or storing its unclassified diagnostic text.
+              pending = '';
               stop('output_byte_limit');
               return;
             }
-            pending += chunk.toString();
+            pending += decoder.write(chunk);
             const lines = pending.split('\n');
             pending = lines.pop()!;
             for (const line of lines) {
