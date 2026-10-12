@@ -3,6 +3,7 @@ import { request } from 'node:https';
 import { createHash } from 'node:crypto';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
 import { extractHtml, extractFeed, type DocumentMaterial } from './search-document.js';
+import { currentHtmlText, type SourceText } from '../../domain/src/source-text.js';
 
 export interface FetchMetadata {
   status: number;
@@ -102,7 +103,7 @@ export async function fetchEvidence(
   digest: string;
   uri: string;
   json?: unknown;
-  normalizer?: 'text-v2';
+  normalizer?: SourceText;
   material?: DocumentMaterial;
   bytes?: Buffer;
   identityUnverified?: boolean;
@@ -220,7 +221,10 @@ export async function fetchEvidence(
                 text: material?.text ?? normalizeSpan(raw),
                 digest: digest(raw),
                 uri: url.toString(),
-                normalizer: 'text-v2',
+                normalizer: /html/i.test(contentType) ? currentHtmlText : 'text-v2',
+                ...(material?.scope && (material.scope.omittedTables || material.scope.omittedDepth)
+                  ? { truncated: true }
+                  : {}),
                 response: metadata,
                 ...(material ? { material } : {}),
                 ...(/application\/json/i.test(response.headers['content-type'] ?? '')

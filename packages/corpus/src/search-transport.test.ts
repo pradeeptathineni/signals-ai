@@ -114,12 +114,13 @@ it('retains, reopens and manually saves acquired transport metadata for conditio
     const stored = (await loadEntities(resolve(root, '.signals/corpus/entities')))[0]!;
     const checked = await checkPrimaryMaterial(stored.entity, {
       fetch: async (url, _signal, _redirects, _pdf, options) => {
-        expect(options?.conditional).toEqual(transport);
-        expect(options?.allowNotModified).toBe(true);
+        expect(options?.conditional).toBeUndefined();
+        expect(options?.allowNotModified).toBe(false);
         return { uri: url, text: '', digest: digest(''), response: { status: 304 } };
       },
     });
-    expect(checked.status).toBe('unchanged');
+    expect(checked.status).toBe('changed');
+    expect(checked.reason).toContain('representation is not current');
     expect(checked.claimsRenewed).toBe(false);
     expect(await readFile(resolve(root, '.signals/runs', `${first.runId}.json`), 'utf8')).toBe(
       bytes,

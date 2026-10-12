@@ -4,7 +4,9 @@ import Parser from 'rss-parser';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
-import { normalizeSpan } from './search-fetch.js';
+import { normalizeSpan, digest } from './search-fetch.js';
+import { currentHtmlText, type SourceText } from '../../domain/src/source-text.js';
+import { htmlLayout, explicitlyHidden } from './search-html-layout.js';
 
 export interface DocumentMaterial {
   text: string;
@@ -14,6 +16,7 @@ export interface DocumentMaterial {
   links: { uri: string; title: string }[];
   sections: { locator: string; text: string; provenance?: unknown[] }[];
   extractor: string;
+  scope?: ReturnType<typeof htmlLayout>['scope'];
 }
 const bounded = Type.String({ maxLength: 2000000 });
 const materialSchema = Type.Object(
@@ -32,6 +35,20 @@ const materialSchema = Type.Object(
       { maxItems: 1000 },
     ),
     extractor: bounded,
+    scope: Type.Optional(
+      Type.Object(
+        {
+          kind: Type.Literal('html-layout-v1'),
+          textDigest: Type.String({ pattern: '^[a-f0-9]{64}$' }),
+          excludedNodes: Type.Integer({ minimum: 0 }),
+          tables: Type.Integer({ minimum: 0 }),
+          omittedTables: Type.Integer({ minimum: 0 }),
+          omittedDepth: Type.Integer({ minimum: 0 }),
+          computedStylesEvaluated: Type.Literal(false),
+        },
+        { additionalProperties: false },
+      ),
+    ),
   },
   { additionalProperties: false },
 );
@@ -39,20 +56,25 @@ export function cachedMaterial(value: unknown): DocumentMaterial | undefined {
   if (value === undefined) return undefined;
   if (!Value.Check(materialSchema, value)) throw new Error('invalid_cached_document');
   for (const link of value.links) normalizeConsiderUrl(link.uri);
+  if (value.scope && value.scope.textDigest !== digest(value.text))
+    throw new Error('invalid_document_layout_digest');
   return value;
 }
 const date = (value?: string | null) =>
   value && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : null;
-export function publicLink(value: string, base: string) {
+export function publicLink(value: string, base: string, fragment = false) {
   try {
-    return normalizeConsiderUrl(new URL(value, base).toString()).normalizedUrl;
+    const resolved = new URL(value, base);
+    return (
+      normalizeConsiderUrl(resolved.toString()).normalizedUrl + (fragment ? resolved.hash : '')
+    );
   } catch {
     return null;
   }
 }
 
 /** Inert DOM only: no script execution, browser, resource loader or network convenience methods. */
-export function extractHtml(raw: string, uri: string): DocumentMaterial {
+function legacyHtml(raw: string, uri: string): DocumentMaterial {
   const { document } = parseHTML(raw);
   const title = document.querySelector('title')?.textContent?.trim() ?? '';
   const publishedAt = date(
@@ -84,6 +106,40 @@ export function extractHtml(raw: string, uri: string): DocumentMaterial {
     links: [...new Map(links.map((link) => [link.uri, link])).values()].slice(0, 200),
     sections,
     extractor: 'readability-0.6.0',
+  };
+}
+
+export function extractHtml(
+  raw: string,
+  uri: string,
+  normalizer: SourceText = currentHtmlText,
+): DocumentMaterial {
+  const legacy = legacyHtml(raw, uri);
+  if (normalizer === 'text-v2') return legacy;
+  const { document } = parseHTML(raw);
+  const links = [...document.querySelectorAll('a[href]')].slice(0, 1000).flatMap((node) => {
+    if (explicitlyHidden(node) || node.closest('script,style,iframe,object,embed')) return [];
+    const link = publicLink(node.getAttribute('href') ?? '', uri, true);
+    return link ? [{ uri: link, title: normalizeSpan(node.textContent ?? '').slice(0, 200) }] : [];
+  });
+  const layout = htmlLayout(raw, legacy.title);
+  const headings = [...document.querySelectorAll('h1,h2,h3')]
+    .filter(
+      (node) =>
+        !explicitlyHidden(node) &&
+        !node.closest('nav,[role="navigation"],script,style,iframe,object,embed'),
+    )
+    .slice(0, 80)
+    .map((node, index) => ({
+      locator: node.id ? `#${node.id}` : `section:${index + 1}`,
+      text: normalizeSpan(node.textContent ?? '').slice(0, 4000),
+    }));
+  return {
+    ...legacy,
+    ...layout,
+    sections: [...headings, ...layout.sections].slice(0, 1000),
+    links: [...new Map(links.map((link) => [link.uri, link])).values()].slice(0, 200),
+    extractor: 'readability-0.6.0+html-layout-v1',
   };
 }
 

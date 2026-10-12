@@ -1,4 +1,5 @@
 import { Type, type Static } from 'typebox';
+import { sourceTextSchema } from './source-text.js';
 
 const closed = { additionalProperties: false };
 const reason = Type.String({ minLength: 1, maxLength: 1200 });
@@ -44,7 +45,7 @@ const claimMaterialSchema = Type.Union([
       text: Type.String({ minLength: 1, maxLength: 48000 }),
       snapshotDigest: sha,
       documentDigest: sha,
-      normalizer: Type.Literal('text-v2'),
+      normalizer: sourceTextSchema,
       fetchedAt: date,
       publishedAt: Type.Optional(date),
       scope: Type.Enum(['complete-normalized-document', 'retained-excerpt']),
@@ -63,7 +64,7 @@ const claimMaterialSchema = Type.Union([
       finalUri: Type.Optional(uri),
       documentDigest: Type.Optional(sha),
       fetchedAt: Type.Optional(date),
-      normalizer: Type.Optional(Type.Literal('text-v2')),
+      normalizer: Type.Optional(sourceTextSchema),
     },
     closed,
   ),

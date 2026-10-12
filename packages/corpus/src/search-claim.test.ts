@@ -132,7 +132,12 @@ const material = (): ClaimMaterial[] =>
     omissions: [],
   }));
 
-async function historicalFixture(parent: SearchResult, root: string, projected = true) {
+async function historicalFixture(
+  parent: SearchResult,
+  root: string,
+  projected = true,
+  normalizer: 'text-v2' | 'text-v3' = 'text-v2',
+) {
   const source: Source = {
     id: '',
     uri: uris[0]!,
@@ -143,13 +148,13 @@ async function historicalFixture(parent: SearchResult, root: string, projected =
     publishedAt: null,
     digest: digest(text),
     ...(projected ? { excerptDigest: digest(text) } : {}),
-    normalizer: 'text-v2',
+    normalizer,
     fetchedAt: '2020-01-01T00:00:00Z',
     state: 'fetched',
     reason: 'scripted acquisition',
     excerpt: text,
   };
-  source.id = `evidence-${digest(`${source.uri}:${source.digest}${source.excerptDigest ? `:${source.excerptDigest}` : ''}:text-v2`).slice(0, 24)}`;
+  source.id = `evidence-${digest(`${source.uri}:${source.digest}${source.excerptDigest ? `:${source.excerptDigest}` : ''}:${normalizer}`).slice(0, 24)}`;
   const origin: SearchResult = { ...parent, runId: randomUUID(), sources: [source] };
   delete origin.answerReceipt;
   delete origin.brief;
@@ -422,11 +427,16 @@ it('unverified historical identity remains unusable and cannot launch inference'
   expect((await loadRun(result.runId, root)).claimCheck!.verdict).toBeNull();
 });
 
-it.each([false, true])(
-  'replay rebinds historical document lineage for projected=%s, without requiring the origin',
-  async (projected) => {
+it.each([
+  [false, 'text-v2'],
+  [true, 'text-v2'],
+  [false, 'text-v3'],
+  [true, 'text-v3'],
+] as const)(
+  'replay rebinds historical document lineage for projected=%s, normalizer=%s, without requiring the origin',
+  async (projected, normalizer) => {
     const { root, parent, request } = await fixture();
-    const { source, origin } = await historicalFixture(parent, root, projected);
+    const { source, origin } = await historicalFixture(parent, root, projected, normalizer);
     const result = await signalSearch(
       {
         ...request,
@@ -438,6 +448,7 @@ it.each([false, true])(
     await rm(join(root, '.signals/runs', `${origin.runId}.json`));
     expect((await loadRun(result.runId, root)).claimCheck!.selectedMaterial[0]).toMatchObject({
       documentDigest: source.digest,
+      normalizer,
     });
     const selected = result.claimCheck!.selectedMaterial[0];
     if (selected?.state !== 'usable') throw new Error('expected_historical_material');

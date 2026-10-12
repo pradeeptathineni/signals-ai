@@ -15,6 +15,7 @@ import {
   type Source,
 } from '../../domain/src/search-contract.js';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
+import { supportedSourceText } from '../../domain/src/source-text.js';
 import { digest, normalizeSpan, fetchEvidence, boundedTextReceipt } from './search-fetch.js';
 import { loadRun, retainRun } from './search-store.js';
 import { codexRunner, RunnerFailure, type SearchRunner } from './search-runner.js';
@@ -135,8 +136,8 @@ export function validateClaimReceipt(result: SearchResult) {
         fail('invalid_claim_snapshot');
       if (source.retainedFrom) {
         const identity = `${normalizeConsiderUrl(source.requestedUri).normalizedUrl}:${source.documentDigest}`;
-        const rawId = `evidence-${digest(`${identity}:text-v2`).slice(0, 24)}`;
-        const projectedId = `evidence-${digest(`${identity}:${source.snapshotDigest}:text-v2`).slice(0, 24)}`;
+        const rawId = `evidence-${digest(`${identity}:${source.normalizer}`).slice(0, 24)}`;
+        const projectedId = `evidence-${digest(`${identity}:${source.snapshotDigest}:${source.normalizer}`).slice(0, 24)}`;
         if (![rawId, projectedId].includes(source.retainedFrom.sourceId))
           fail('invalid_historical_claim_identity');
       }
@@ -217,7 +218,7 @@ function historicalSource(
         'Historical material has an unverified final identity; it was not admitted for review.',
       retainedFrom: { runId: ref.runId, sourceId: ref.sourceId },
     };
-  if (source.normalizer !== 'text-v2')
+  if (!supportedSourceText(source.normalizer))
     return {
       sourceIndex,
       requestedUri,
@@ -228,7 +229,7 @@ function historicalSource(
     };
   if (source.excerptDigest && source.excerptDigest !== digest(source.excerpt))
     fail('invalid_historical_claim_source');
-  const expected = `evidence-${digest(`${normalizeConsiderUrl(source.uri).normalizedUrl}:${source.digest}${source.excerptDigest ? `:${source.excerptDigest}` : ''}:text-v2`).slice(0, 24)}`;
+  const expected = `evidence-${digest(`${normalizeConsiderUrl(source.uri).normalizedUrl}:${source.digest}${source.excerptDigest ? `:${source.excerptDigest}` : ''}:${source.normalizer}`).slice(0, 24)}`;
   if (
     source.id !== expected ||
     !/^[a-f0-9]{64}$/.test(source.digest) ||
@@ -244,7 +245,7 @@ function historicalSource(
     text: source.excerpt,
     snapshotDigest: digest(source.excerpt),
     documentDigest: source.digest,
-    normalizer: 'text-v2',
+    normalizer: source.normalizer,
     fetchedAt: source.fetchedAt,
     ...(source.publishedAt ? { publishedAt: source.publishedAt } : {}),
     scope: 'retained-excerpt',
@@ -387,7 +388,7 @@ export async function runClaimCheck(
           if (
             document.truncated ||
             document.identityUnverified ||
-            document.normalizer !== 'text-v2' ||
+            !supportedSourceText(document.normalizer) ||
             !document.text.trim() ||
             !/^[a-f0-9]{64}$/.test(document.digest)
           )
@@ -407,7 +408,7 @@ export async function runClaimCheck(
             text: document.text,
             snapshotDigest: digest(document.text),
             documentDigest: document.digest,
-            normalizer: 'text-v2',
+            normalizer: document.normalizer,
             fetchedAt: new Date().toISOString(),
             ...(document.material?.publishedAt &&
             document.material.publishedAt.length <= 64 &&
@@ -415,7 +416,11 @@ export async function runClaimCheck(
               ? { publishedAt: document.material.publishedAt }
               : {}),
             scope: 'complete-normalized-document',
-            omissions: [],
+            omissions: document.material?.scope
+              ? [
+                  `HTML layout v1: ${document.material.scope.excludedNodes} explicit noise nodes excluded. Generated table coordinates/separators are not original wording. Computed CSS was not evaluated.`,
+                ]
+              : [],
           };
         } catch (failure) {
           return {

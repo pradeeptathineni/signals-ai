@@ -18,6 +18,7 @@ const labels = Type.Array(label, { maxItems: 40, uniqueItems: true });
 import { kinds, channels } from './search-vocabulary.js';
 import type { budgets } from './search-vocabulary.js';
 import type { ClaimReceipt } from './claim-check.js';
+import type { SourceText } from './source-text.js';
 export { channels, budgets } from './search-vocabulary.js';
 const enumOf = <const T extends string>(values: readonly T[]) => Type.Enum<T[]>(values);
 export const indicators = {
@@ -289,7 +290,7 @@ export type Source = Proposal['sources'][number] & {
   fetchedAt: string;
   digest: string | null;
   excerptDigest?: string;
-  normalizer?: 'text-v2';
+  normalizer?: SourceText;
   state: 'fetched' | 'failed' | 'denied';
   reason: string;
   excerpt: string;

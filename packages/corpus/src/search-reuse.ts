@@ -4,6 +4,7 @@ import { activeObservations } from '../../domain/src/search-score.js';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
 import { loadResearchLibrary } from './library.js';
 import { fetchEvidence } from './search-fetch.js';
+import { currentHtmlText } from '../../domain/src/source-text.js';
 
 const recordLimit = 5;
 const textLimit = 12000;
@@ -212,8 +213,9 @@ export async function checkPrimaryMaterial(
   try {
     normalizeConsiderUrl(source.uri);
     const material = await (options.fetch ?? fetchEvidence)(source.uri, options.signal, 0, false, {
-      conditional: source.transport,
-      allowNotModified: !!source.transport && !!source.digest,
+      conditional: source.normalizer === currentHtmlText ? source.transport : undefined,
+      allowNotModified:
+        source.normalizer === currentHtmlText && !!source.transport && !!source.digest,
     });
     options.signal?.throwIfAborted();
     const expected = normalizeConsiderUrl(source.finalUri ?? source.uri).normalizedUrl;
@@ -228,8 +230,16 @@ export async function checkPrimaryMaterial(
           'The fetched primary identity is changed or unverified; interpretation is required.',
         material,
       };
+    if (material.response?.status === 304 && source.normalizer !== currentHtmlText)
+      return {
+        ...base,
+        status: 'changed' as const,
+        reason:
+          'Transport is unchanged, but the retained representation is not current. A body is required before renewing any check.',
+        material,
+      };
     const unchanged =
-      material.response?.status === 304 ||
+      (material.response?.status === 304 && source.normalizer === currentHtmlText) ||
       (source.digest === material.digest && source.normalizer === material.normalizer);
     return {
       ...base,

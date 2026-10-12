@@ -14,6 +14,11 @@ import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
+import {
+  sourceTextSchema,
+  supportedSourceText,
+  sourceTextRank,
+} from '../../domain/src/source-text.js';
 import { format } from 'prettier';
 import {
   candidateSchema,
@@ -120,7 +125,7 @@ const entitySchema = Type.Object(
           fetchedAt: Type.String(),
           digest: Type.Union([Type.String(), Type.Null()]),
           excerptDigest: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$' })),
-          normalizer: Type.Optional(Type.Literal('text-v2')),
+          normalizer: Type.Optional(sourceTextSchema),
           finalUri: Type.Optional(Type.String({ maxLength: 2048 })),
           extractor: Type.Optional(Type.String({ maxLength: 100 })),
           transport: Type.Optional(
@@ -252,7 +257,7 @@ function validateRetainedEntity(input: unknown): Entity {
       throw new Error('invalid_observation_indicator');
     const source = evidence.get(observation.evidenceId)!;
     if (!attentionBound(observation)) throw new Error('unbound_attention_count');
-    const normalize = source.normalizer === 'text-v2' ? normalizeSpan : normalizeText;
+    const normalize = supportedSourceText(source.normalizer) ? normalizeSpan : normalizeText;
     const quote = normalize(observation.quote);
     const rawIdentity = source.excerptDigest
       ? `evidence-${digest(`${normalizeConsiderUrl(source.uri).normalizedUrl}:${source.digest}${source.normalizer ? `:${source.normalizer}` : ''}`).slice(0, 24)}`
@@ -487,7 +492,7 @@ function mergeEntity(prior: Entity, incoming: Entity): Entity {
     // Retained results remain replayable, but cannot rewind the canonical receipt or decoder.
     if (
       selected &&
-      ((selected.normalizer === 'text-v2' && source.normalizer !== 'text-v2') ||
+      (sourceTextRank(source.normalizer) < sourceTextRank(selected.normalizer) ||
         Date.parse(checkedAt) < Date.parse(currentChecks[source.uri]!))
     )
       continue;

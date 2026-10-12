@@ -9,7 +9,7 @@ import { researchCorpusSlice, checkPrimaryMaterial } from './search-reuse.js';
 import type { Proposal } from '../../domain/src/search-contract.js';
 
 it('conditionally checks unchanged primary material without renewing any claim', async () => {
-  const { entity } = await acquired();
+  const { entity } = await acquired(0, undefined, 0, { normalizer: 'text-v3' });
   const before = JSON.stringify(entity);
   entity.evidence[0]!.transport = { etag: '"retained-v1"' };
   const retained = JSON.stringify(entity);
@@ -32,7 +32,11 @@ async function acquired(
   index = 0,
   statement = 'Drains wet soil in gardens.',
   extraFacts = 0,
-  options: { counterevidence?: boolean; identityUnverified?: boolean } = {},
+  options: {
+    counterevidence?: boolean;
+    identityUnverified?: boolean;
+    normalizer?: 'text-v2' | 'text-v3';
+  } = {},
 ) {
   const uri = `https://example.org/drainage-${index}`;
   const observations: Proposal['candidates'][number]['observations'] = [
@@ -115,7 +119,7 @@ async function acquired(
           uri,
           text,
           digest: digest(text),
-          normalizer: 'text-v2',
+          normalizer: options.normalizer ?? 'text-v2',
           identityUnverified: options.identityUnverified,
         }),
       },
