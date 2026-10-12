@@ -3,14 +3,16 @@ import { test, expect } from '@playwright/test';
 test('plain answer is visibly unassessed, whole narrative can be found/reopened and citations assessed explicitly', async ({
   page,
 }) => {
+  const question =
+    'answer receipt browser fixture ' +
+    'background '.repeat(155) +
+    'Required: never upload recordings and export CSV with explicit end times.';
   await page.goto('');
   await page
     .getByRole('complementary')
     .getByRole('button', { name: 'Search', exact: true })
     .click();
-  await page
-    .getByLabel('Find something useful', { exact: true })
-    .fill('answer receipt browser fixture');
+  await page.getByLabel('Find something useful', { exact: true }).fill(question);
   await page.getByRole('button', { name: 'Research online', exact: true }).click();
   await page.getByText('Research options', { exact: true }).click();
   await page
@@ -51,6 +53,7 @@ test('plain answer is visibly unassessed, whole narrative can be found/reopened 
     page.getByText('selected_assessment_fixture_stopped', { exact: true }),
   ).toBeVisible();
   expect(selection).toMatchObject({
+    query: question,
     method: 'native',
     captureUrls: ['https://example.com/tool#export'],
   });

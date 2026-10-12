@@ -259,6 +259,7 @@ export function ComparisonView({
 
 export type FrozenAnswer = {
   answer: string;
+  gaps?: string[];
   statements: {
     statement: string;
     quote: string;
@@ -267,6 +268,18 @@ export type FrozenAnswer = {
     observationId: string;
   }[];
 };
+export function DiscussionScope({ gaps }: { gaps?: string[] }) {
+  return gaps?.length ? (
+    <section aria-label="Discussion scope and gaps">
+      <h4>Scope and limits</h4>
+      <ul>
+        {gaps.map((gap, index) => (
+          <li key={index}>{gap}</li>
+        ))}
+      </ul>
+    </section>
+  ) : null;
+}
 export function FrozenDiscussion({
   question,
   busy,
@@ -299,11 +312,15 @@ export function FrozenDiscussion({
         <button disabled={busy}>
           {busy ? 'Reading retained evidence…' : 'Explain from retained evidence'}
         </button>
-        <small>AI reads selected evidence only. No new web research.</small>
+        <small>
+          AI reads selected retained material, including complete answers, through your configured
+          provider. No new web research.
+        </small>
       </form>
       {answer && (
         <section aria-label="Retained evidence answer">
           <p>{answer.answer}</p>
+          <DiscussionScope gaps={answer.gaps} />
           {answer.statements.map((statement) => (
             <details key={statement.entityId + ':' + statement.observationId}>
               <summary>{statement.statement}</summary>

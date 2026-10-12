@@ -7,6 +7,7 @@ import {
   HomeOverview,
   ComparisonView,
   FrozenDiscussion,
+  type FrozenAnswer,
 } from './candidate-views.js';
 import {
   createLibraryIndex,
@@ -151,16 +152,7 @@ export function Experience() {
   const [projectResearch, setProjectResearch] = useState<ApprovedResearchPreview | null>(null);
   const [monitorRun, setMonitorRun] = useState('');
   const [followup, setFollowup] = useState('');
-  const [answer, setAnswer] = useState<{
-    answer: string;
-    statements: {
-      statement: string;
-      quote: string;
-      entityId: string;
-      evidenceId: string;
-      observationId: string;
-    }[];
-  } | null>(null);
+  const [answer, setAnswer] = useState<FrozenAnswer | null>(null);
   const [answerBusy, setAnswerBusy] = useState(false);
   const [recent, setRecent] = useState<
     { runId: string; query: string; status: string; candidates: number }[]

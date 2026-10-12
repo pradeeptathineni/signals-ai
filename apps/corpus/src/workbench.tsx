@@ -26,6 +26,8 @@ import {
   AssessmentConfidence,
   AssessmentDerivation,
   ComparisonBasis,
+  DiscussionScope,
+  type FrozenAnswer,
 } from './candidate-views.js';
 
 const base = import.meta.env.BASE_URL;
@@ -132,16 +134,7 @@ export function Workbench({
   const [selected, setSelected] = useState<string[]>([]),
     [filters, setFilters] = useState<SearchFilters>({});
   const [followup, setFollowup] = useState(''),
-    [answer, setAnswer] = useState<null | {
-      answer: string;
-      statements: {
-        entityId: string;
-        evidenceId: string;
-        observationId: string;
-        statement: string;
-        quote: string;
-      }[];
-    }>(null);
+    [answer, setAnswer] = useState<FrozenAnswer | null>(null);
   const [history, setHistory] = useState('');
   const [answerBusy, setAnswerBusy] = useState(false);
   const [recentRuns, setRecentRuns] = useState<
@@ -1495,7 +1488,7 @@ export function Workbench({
                           onClick={() =>
                             void action(() =>
                               start(
-                                `Assess this cited resource for: ${result.query.slice(0, 1500)}. Retain decisive contrary evidence and abstain when required support is missing.`,
+                                result.query,
                                 undefined,
                                 result.answerReceipt?.context,
                                 [lead.uri],
@@ -2124,8 +2117,9 @@ export function Workbench({
                     {answerBusy ? 'Reading frozen evidence…' : 'Answer from evidence'}
                   </button>
                   <p>
-                    A bounded no-web AI call uses only this run and selected items. Search further
-                    explicitly to acquire new evidence.
+                    A bounded no-web AI call uses this retained run and selected material, including
+                    its complete answer when in scope. Search further explicitly to acquire new
+                    evidence.
                   </p>
                 </form>
                 {answer && (
@@ -2138,6 +2132,7 @@ export function Workbench({
                         return index >= 0 ? String(index + 1) : 'unbound reference';
                       })}
                     </p>
+                    <DiscussionScope gaps={answer.gaps} />
                     <ol aria-label="Evidence used in answer">
                       {answer.statements.map((statement) => {
                         const entity = all.find(

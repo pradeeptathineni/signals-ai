@@ -4,13 +4,35 @@ import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
-import { ComparisonView, AssessmentDerivation } from './candidate-views.js';
+import { ComparisonView, AssessmentDerivation, FrozenDiscussion } from './candidate-views.js';
 import { loadEntities } from '../../../packages/corpus/src/search-store.js';
 import { assessEntity } from '../../../packages/domain/src/search-score.js';
 import { saveLibraryLead } from '../../../packages/corpus/src/library-leads.js';
 import { loadLibrary } from '../../../packages/corpus/src/library.js';
 import { loadPublicCorpus } from '../../../packages/corpus/src/public-corpus.js';
 import { projectLegacyLibrary } from '../../../packages/domain/src/library-search.js';
+
+it('renders deterministic discussion omissions and Unknown confidence when model prose omits them', () => {
+  const markup = renderToStaticMarkup(
+    <FrozenDiscussion
+      question="What remains supported?"
+      busy={false}
+      answer={{
+        answer: 'Retained partial answer.',
+        statements: [],
+        gaps: [
+          '1 complete answers omitted by the discussion budget; reopen them individually.',
+          'Selected complete answers are unassessed prior synthesis. Confidence Unknown.',
+        ],
+      }}
+      onQuestion={() => {}}
+      onSubmit={() => {}}
+    />,
+  );
+  expect(markup).toContain('Discussion scope and gaps');
+  expect(markup).toContain('1 complete answers omitted');
+  expect(markup).toContain('Confidence Unknown');
+});
 
 it('does not imply a historical review for an actually saved unassessed lead', async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-lead-comparison-')));

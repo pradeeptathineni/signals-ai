@@ -483,49 +483,41 @@ export function searchApi(
           ],
         });
         if (query.save === 'eligible') throw new Error('interactive_review_first');
+        const effectiveQuery = parseRequest({
+          ...query,
+          profile: query.profile ?? settings.profile,
+          route: query.route ?? settings.route,
+          review: query.review ?? settings.groundedReview ?? false,
+          threshold: query.threshold ?? settings.threshold,
+          sources: settings.sources,
+          save: 'never',
+        });
         const controller = new AbortController(),
           id = randomBytes(16).toString('hex');
         const run: ActiveRun = { controller, events: ['Starting research…'] };
         runs.set(id, run);
         active = true;
-        void search(
-          {
-            ...query,
-            profile: query.profile ?? settings.profile,
-            route: query.route ?? settings.route,
-            review: query.review ?? settings.groundedReview ?? false,
-            threshold: query.threshold ?? settings.threshold,
-            sources: settings.sources,
-            supplementalSites: [
-              ...new Set([
-                ...(settings.supplementalSites ?? []),
-                ...(query.supplementalSites ?? []),
-              ]),
-            ],
-            save: 'never',
-          },
-          {
+        void search(effectiveQuery, {
+          root,
+          runner: codexRunner(settings.model || undefined, settings.effort || undefined, {
             root,
-            runner: codexRunner(settings.model || undefined, settings.effort || undefined, {
-              root,
-              acquisition: await loadAcquisitionConfig(root),
-              extractionModel: settings.extractionModel || undefined,
-              extractionEffort: settings.extractionEffort || undefined,
-              ...answerFirstOperation(query),
-            }),
-            signal: controller.signal,
-            provisional: (leads) => {
-              run.provisional = leads;
-            },
-            brief: (brief) => {
-              run.brief = brief;
-            },
-            progress: (event) => {
-              run.events.push(event);
-              if (run.events.length > 100) run.events.shift();
-            },
+            acquisition: await loadAcquisitionConfig(root),
+            extractionModel: settings.extractionModel || undefined,
+            extractionEffort: settings.extractionEffort || undefined,
+            ...answerFirstOperation(effectiveQuery),
+          }),
+          signal: controller.signal,
+          provisional: (leads) => {
+            run.provisional = leads;
           },
-        )
+          brief: (brief) => {
+            run.brief = brief;
+          },
+          progress: (event) => {
+            run.events.push(event);
+            if (run.events.length > 100) run.events.shift();
+          },
+        })
           .then(async (result) => {
             try {
               const preference = (await libraryPreferences(root)).automaticSaving;
