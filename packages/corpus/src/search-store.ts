@@ -816,6 +816,20 @@ export async function loadRun(
   if (result.interpretation && !Value.Check(interpretationSchema, result.interpretation))
     throw new Error('invalid_run_interpretation');
   if (
+    result.assessmentOf &&
+    !/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(result.assessmentOf)
+  )
+    throw new Error('invalid_assessment_parent');
+  if (result.assessmentTargets) {
+    if (
+      !result.assessmentOf ||
+      !Array.isArray(result.assessmentTargets) ||
+      result.assessmentTargets.length > 10
+    )
+      throw new Error('invalid_assessment_targets');
+    for (const uri of result.assessmentTargets) normalizeConsiderUrl(uri);
+  }
+  if (
     result.brief &&
     (result.brief.format !== 'markdown' ||
       typeof result.brief.text !== 'string' ||
@@ -954,7 +968,7 @@ export async function cleanRuns(root = process.cwd(), days = 7) {
     const stat = await lstat(path);
     if (!stat.isSymbolicLink() && stat.mtimeMs < Date.now() - days * 86400000) {
       const run = await loadRun(name.slice(0, -5), root);
-      if (!run.answerReceipt) await rm(path);
+      if (!run.answerReceipt && !run.assessmentOf) await rm(path);
     }
   }
   const acquisitions = resolve(root, '.signals/acquisitions');

@@ -361,6 +361,7 @@ export interface SearchItem {
 }
 export interface SearchResult {
   assessmentOf?: string;
+  assessmentTargets?: string[];
   answerReceipt?: {
     context?: string;
     observedAt: string;

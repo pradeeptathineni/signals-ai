@@ -148,6 +148,17 @@ it('only explicitly selected cited targets can attach a new assessment; plain an
     );
     expect(assessed.assessmentOf).toBe(result.runId);
     expect(calls).toBe(1);
+    const childPath = join(directory, '.signals/runs', `${assessed.runId}.json`);
+    const childBytes = await readFile(childPath, 'utf8');
+    await utimes(childPath, 0, 0);
+    await utimes(join(directory, '.signals/runs', `${result.runId}.json`), 0, 0);
+    await cleanRuns(directory);
+    const historicalCheck = await loadRun(assessed.runId, directory);
+    expect(historicalCheck.assessmentOf).toBe(result.runId);
+    expect(historicalCheck.assessmentTargets).toEqual(['https://example.com/tool#export']);
+    expect(historicalCheck.gaps.join(' ')).toContain('Missing defining evidence; abstain.');
+    expect(await readFile(childPath, 'utf8')).toBe(childBytes);
+    expect((await runHistory(directory)).map((row) => row.runId)).toContain(assessed.runId);
     await expect(
       signalSearch(
         {

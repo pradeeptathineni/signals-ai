@@ -58,4 +58,14 @@ test('plain answer is visibly unassessed, whole narrative can be found/reopened 
     captureUrls: ['https://example.com/tool#export'],
   });
   expect((selection as { assessmentOf: string }).assessmentOf).toMatch(/^[a-f0-9-]{36}$/);
+  await page.unroute('**/__signals/api/capture');
+  await page.getByRole('button', { name: 'Assess this citation', exact: true }).click();
+  const check = page.getByRole('region', { name: 'Linked citation assessment' });
+  await expect(check).toContainText('https://example.com/tool#export');
+  await page.getByText('Source coverage and gaps', { exact: true }).click();
+  await expect(
+    page.getByText('No decisive export evidence; abstain.', { exact: true }),
+  ).toBeVisible();
+  await check.getByRole('button', { name: 'Reopen original answer', exact: true }).click();
+  await expect(brief).toContainText('aurora quill constellation');
 });

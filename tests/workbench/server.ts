@@ -53,6 +53,32 @@ const api = searchApi(root, async (input, dependencies) => {
           }),
       },
     });
+  if (request.assessmentOf)
+    return signalSearch(request, {
+      ...dependencies,
+      root,
+      runner: {
+        evidenceClass: 'fixture',
+        readiness: () =>
+          Promise.resolve({
+            available: true,
+            broadSearch: true,
+            runner: 'fixture',
+            reason: 'Synthetic negative citation check; no model.',
+          }),
+        discover: () =>
+          Promise.resolve({
+            searches: 0,
+            usage: null,
+            proposal: {
+              sources: [],
+              candidates: [],
+              coverage: [],
+              gaps: ['No decisive export evidence; abstain.'],
+            },
+          }),
+      },
+    });
   dependencies?.progress?.('Replaying approved public evidence for UI verification.');
   if (request.query === 'cancellation fixture') {
     dependencies?.brief?.({

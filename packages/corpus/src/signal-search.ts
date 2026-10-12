@@ -794,7 +794,9 @@ export async function signalSearch(
     schemaVersion: 2,
     runId: randomUUID(),
     query: request.query,
-    ...(request.assessmentOf ? { assessmentOf: request.assessmentOf } : {}),
+    ...(request.assessmentOf
+      ? { assessmentOf: request.assessmentOf, assessmentTargets: request.captureUrls }
+      : {}),
     status: 'failed',
     items: [],
     sources: [],

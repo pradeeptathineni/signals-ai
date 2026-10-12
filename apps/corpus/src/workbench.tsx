@@ -1436,6 +1436,23 @@ export function Workbench({
                 </ol>
               </details>
             )}
+            {tab === 'Search' && result?.assessmentOf && (
+              <section aria-label="Linked citation assessment">
+                <p>This separate evidence check preserves the original answer and its question.</p>
+                <ul>
+                  {result.assessmentTargets?.map((uri) => (
+                    <li key={uri}>
+                      <a href={uri} target="_blank" rel="noreferrer">
+                        {uri}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+                <button onClick={() => void action(() => openRun(result.assessmentOf!))}>
+                  Reopen original answer
+                </button>
+              </section>
+            )}
             {tab === 'Search' && result?.interpretation && (
               <details className="desk-interpretation">
                 <summary>How your question was understood</summary>
