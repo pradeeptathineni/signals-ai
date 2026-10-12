@@ -20,7 +20,7 @@ export interface LibraryFinding {
   license: { state: 'known' | 'unknown'; values: string[]; openSource: boolean | null };
   access: { state: 'known' | 'unknown'; freeToUse: boolean | null };
   origin: {
-    format: 'native' | 'legacy' | 'lead';
+    format: 'native' | 'legacy' | 'lead' | 'answer';
     destination: 'public' | 'private';
     recordId: string;
   };
@@ -29,6 +29,14 @@ export interface LibraryFinding {
   feedback?: 'none' | 'skip' | 'mute' | 'useful';
   novelty?: 'confirmed-new' | 'known' | 'unknown';
   observedAt: string | null;
+  // Indexed only by the local lexical index; excluded from remote metadata projections.
+  answerText?: string;
+  answer?: {
+    runId: string;
+    sha256: string;
+    provenance: { receipt: string; requestedModel: string | null; servedModel: string | null };
+    limits: string[];
+  };
   native?: Entity;
   legacy?: PublicOption;
   lead?: {
@@ -155,6 +163,7 @@ export function projectLegacyLibrary(option: PublicOption): LibraryFinding {
   };
 }
 const fieldWeights = {
+  answerText: 1,
   title: 6,
   aliases: 5,
   description: 3,

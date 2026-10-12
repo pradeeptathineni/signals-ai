@@ -14,7 +14,7 @@ import {
   type LibraryFilters,
   type LibraryHit,
 } from '../../../packages/domain/src/library-search.js';
-import { Workbench } from './workbench.js';
+import { Workbench, Brief } from './workbench.js';
 import './experience.css';
 import {
   ProjectDesk,
@@ -862,9 +862,30 @@ export function Experience() {
                         </p>
                       )}
                       <div className="desk-actions">
-                        <a href={finding.uri} target="_blank" rel="noreferrer">
-                          Open original ↗
-                        </a>
+                        {finding.answer ? (
+                          <>
+                            <button onClick={() => navigate({ detail: finding.key })}>
+                              Reopen complete answer
+                            </button>
+                            <button
+                              onClick={() =>
+                                navigate({
+                                  view: 'Search',
+                                  mode: 'research',
+                                  run: finding.answer!.runId,
+                                  query: finding.title,
+                                  detail: '',
+                                })
+                              }
+                            >
+                              Review citations
+                            </button>
+                          </>
+                        ) : (
+                          <a href={finding.uri} target="_blank" rel="noreferrer">
+                            Open original ↗
+                          </a>
+                        )}
                         {local && (
                           <button
                             aria-pressed={finding.saved}
@@ -1284,6 +1305,22 @@ function FindingDetail({
   return (
     <div className="desk-detail">
       <p className="desk-detail-description">{finding.description}</p>
+      {finding.answer && (
+        <section aria-label="Complete retained answer">
+          <h4>Complete answer · Unassessed · Confidence Unknown</h4>
+          <Brief text={finding.answerText!} />
+          <p>
+            Receipt {finding.answer.runId} · SHA256 {finding.answer.sha256}. Observation time is
+            receipt time, not source freshness. Citation occurrence does not prove truth or
+            independence.
+          </p>
+          <details>
+            <summary>Original answer text and provenance</summary>
+            <pre>{finding.answerText}</pre>
+            <pre>{JSON.stringify(finding.answer.provenance, null, 2)}</pre>
+          </details>
+        </section>
+      )}
       <details>
         <summary>About this item</summary>
         <p>

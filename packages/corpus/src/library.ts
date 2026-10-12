@@ -18,6 +18,7 @@ import {
 import { loadPublicCorpus } from './public-corpus.js';
 import { loadPersonal, updatePersonal } from './search-personal.js';
 import { loadLibraryLeads } from './library-leads.js';
+import { loadAnswerLibrary } from './research-receipts.js';
 
 const annotationSchema = Type.Object(
   {
@@ -33,7 +34,7 @@ const collectionSchema = Type.Object(
     version: Type.Literal(1),
     collection: Type.Record(
       Type.String({
-        pattern: '^(?:native|legacy|lead):(?:public|private):[a-zA-Z0-9._:-]{1,200}$',
+        pattern: '^(?:native|legacy|lead|answer):(?:public|private):[a-zA-Z0-9._:-]{1,200}$',
       }),
       Type.Object(
         {
@@ -109,6 +110,7 @@ export async function loadLibrary(
   const privateRecords = await loadEntities(resolve(root, '.signals/corpus/entities'));
   findings.push(...privateRecords.map((record) => projectNativeLibrary(record, 'private')));
   findings.push(...(await loadLibraryLeads(root)));
+  findings.push(...(await loadAnswerLibrary(root)));
   const personal = await loadPersonal(root);
   const state = await collectionState(root);
   return findings.map((finding) => {

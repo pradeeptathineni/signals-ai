@@ -43,8 +43,7 @@ export function frozenFollowupMaterial(result: SearchResult, ids: string[]) {
     material,
     context,
     // A selected subset must not inherit synthesis about unselected records.
-    priorSynthesis:
-      selected.length === result.items.length ? result.brief?.text.slice(0, 12000) : undefined,
+    priorSynthesis: selected.length === result.items.length ? result.brief?.text : undefined,
     gaps: selected.length === result.items.length ? result.gaps.slice(0, 10) : [],
   };
 }
@@ -98,12 +97,28 @@ export function frozenLibraryMaterial(records: LibraryFinding[]) {
     ).slice(0, 10),
   }));
   while (JSON.stringify(context).length > 12000) context.pop();
+  const answers = records.filter((record) => record.answer && record.answerText);
+  const retainedAnswers: { key: string; text: string }[] = [];
+  for (const record of answers) {
+    const next = { key: record.key, text: record.answerText! };
+    if (JSON.stringify([...retainedAnswers, next]).length <= 110000) retainedAnswers.push(next);
+  }
   return {
     material: selected,
     context,
-    priorSynthesis: undefined,
+    priorSynthesis: retainedAnswers.length ? JSON.stringify(retainedAnswers) : undefined,
     gaps: [
       'Retained evidence only; no new source access or current-status check.',
+      ...(answers.length
+        ? [
+            'Selected complete answers are unassessed prior synthesis, not independently verified source evidence. Confidence Unknown.',
+          ]
+        : []),
+      ...(retainedAnswers.length < answers.length
+        ? [
+            `${answers.length - retainedAnswers.length} complete answers omitted by the discussion budget; reopen them individually.`,
+          ]
+        : []),
       ...(selected.length < material.length
         ? [
             `${material.length - selected.length} selected statements omitted by the discussion budget.`,

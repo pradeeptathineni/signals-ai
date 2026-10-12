@@ -44,6 +44,14 @@ Research preserves the original answer even when individual record metadata fail
 
 ### Keep a native research answer
 
+Online Research options includes **Answer first; assess selected citations later**. The CLI exposes the same opt-in route:
+
+```sh
+npm run signal-search -- --query 'Your research question' --method answer-first --cache private --save never
+```
+
+This uses one authenticated Codex session to obtain ordinary Markdown without the assessment schema. The complete answer appears before citation assessment, with **Confidence Unknown** and an explicit unassessed state. Private Library indexes the entire answer locally; reopen it from Library or Activity and discuss a selected answer as prior synthesis. Whole answer text is excluded from remote meaning-match metadata. Automatic public admission is unavailable on this route. Select **Assess this citation** to obtain a separate source-grounded assessment linked to the immutable answer. Assessing does not rewrite the earlier narrative. This route has no demonstrated research-quality or speed advantage yet.
+
 You can also bring an ordinary Markdown answer from your AI into the Personal Library. This command preserves the original answer and observation time, lists its inline citations, and makes no model call:
 
 ```sh
@@ -56,7 +64,7 @@ Inspect that plan, then add `--retain` to save the answer privately. Repeat `--s
 npm run research-answer -- --root /path/to/private-library --rediscover 'remembered source or purpose'
 ```
 
-Rediscovery uses the existing saved-lead search. Repeated explicit saves preserve history and deduplicate normalized citation locators. Citation occurrence does not verify a claim; confidence, source publication date, license and access remain unknown. This route does not create a public record. It currently provides a CLI import and rediscovery workflow; obtaining the native answer remains your AI host's responsibility.
+The private Library searches and reopens complete imported answers alongside selected leads, including earlier imports read in place without migration. This CLI rediscovery command searches selected saved leads. Repeated explicit saves preserve answer receipts and deduplicate normalized citation locators. Citation occurrence does not verify a claim; confidence, source publication date, license and access remain unknown. Neither import nor answer-first creates a public record. Answers are limited to 100,000 characters and the existing private byte budget; an oversized answer fails visibly rather than silently truncating. Selected-answer discussion passes complete answers within a disclosed discussion budget and reports omitted answers.
 
 ## Retain, compare and refresh
 

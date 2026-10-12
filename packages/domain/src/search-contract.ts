@@ -251,6 +251,8 @@ const requestSchema = Type.Object(
     ),
     profile: Type.Optional(enumOf(['quick', 'wide'])),
     route: Type.Optional(enumOf(['native', 'assessed'])),
+    method: Type.Optional(enumOf(['native', 'answer-first'])),
+    assessmentOf: Type.Optional(Type.String({ pattern: '^[a-f0-9-]{36}$' })),
     save: Type.Optional(enumOf(['never', 'eligible'])),
     cache: Type.Optional(enumOf(['memory', 'private'])),
     review: Type.Optional(Type.Boolean()),
@@ -358,6 +360,15 @@ export interface SearchItem {
   };
 }
 export interface SearchResult {
+  assessmentOf?: string;
+  answerReceipt?: {
+    context?: string;
+    observedAt: string;
+    sha256: string;
+    state: 'unassessed';
+    confidence: 'unknown';
+    provenance: { receipt: string; requestedModel: string | null; servedModel: string | null };
+  };
   interpretation?: QueryInterpretation;
   brief?: { format: 'markdown'; text: string };
   provisionalLeads?: ProvisionalLead[];
@@ -380,7 +391,7 @@ export interface SearchResult {
       researchMs: number;
       answerReadyMs: number;
       inspectionMs: number;
-      firstValidatedMs: number;
+      firstValidatedMs?: number;
     };
     cost: null;
   };
@@ -399,7 +410,9 @@ export function parseRequest(input: unknown): SearchRequest {
     if (original.search || original.hash) throw new Error('invalid_supplemental_site');
     return normalizeConsiderUrl(site).normalizedUrl;
   });
-  const captureUrls = input.captureUrls?.map((uri) => normalizeConsiderUrl(uri).normalizedUrl);
+  const captureUrls = input.captureUrls?.map(
+    (uri) => normalizeConsiderUrl(uri).normalizedUrl + new URL(uri).hash,
+  );
   return {
     ...input,
     supplementalSites: [...new Set(sites)],

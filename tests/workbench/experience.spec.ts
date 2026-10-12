@@ -227,7 +227,7 @@ test('cold browsing, scoped save, notes and URL restoration require no research 
       exact: true,
     }),
   ).toBeVisible();
-  const first = page.locator('.desk-finding').first();
+  const first = page.locator('.desk-finding[data-finding-key^="native:"]').first();
   const key = await first.getAttribute('data-finding-key');
   const title = await first.getByRole('heading', { level: 3 }).innerText();
   await first.getByRole('button', { name: 'Unsave', exact: true }).click();

@@ -64,6 +64,7 @@ export function Workbench({
   const [query, setQuery] = useState(''),
     [result, setResult] = useState<SearchResult | null>(null);
   const [earlyBrief, setEarlyBrief] = useState<SearchResult['brief']>();
+  const [researchMethod, setResearchMethod] = useState<'native' | 'answer-first'>('native');
   const [captureUrl, setCaptureUrl] = useState('');
   const [manualContext, setManualContext] = useState('');
   const [editedContext, setEditedContext] = useState<{
@@ -335,6 +336,7 @@ export function Workbench({
     supplementalSites?: string[],
     context?: string,
     captureUrls?: string[],
+    assessmentOf?: string,
   ) {
     reopening.current = false;
     setSourceResult(null);
@@ -343,6 +345,8 @@ export function Workbench({
       query: question,
       context,
       captureUrls,
+      method: captureUrls ? 'native' : researchMethod,
+      assessmentOf,
       supplementalSites,
       profile: providedProfile ?? settings?.profile ?? 'wide',
       save: 'never',
@@ -409,6 +413,37 @@ export function Workbench({
       setAnswerBusy(false);
     }
   }
+  const answerFirstVisible = !!result?.answerReceipt || (busy && researchMethod === 'answer-first');
+  const narrative =
+    tab === 'Search' && (result?.brief ?? earlyBrief)?.text ? (
+      <section className="research-brief" aria-label="Research brief">
+        <details open={!items.length}>
+          <summary>Research explanation and next steps</summary>
+          {answerFirstVisible && (
+            <p>
+              Unassessed answer · Confidence: Unknown. Support has not been independently checked.
+              Missing or contradictory requirements need an explicit assessment before a full-fit
+              decision.
+            </p>
+          )}
+          <Brief text={(result?.brief ?? earlyBrief)!.text} />
+          <p>
+            {busy
+              ? answerFirstVisible
+                ? 'Original answer ready; session completion is pending. '
+                : 'Original answer ready; source checks and saved-record preparation are pending. '
+              : 'Retained from this research session. '}
+            Inspect supporting evidence and limitations before acting.
+          </p>
+          {result?.assessmentOf && (
+            <p>
+              Assessment of retained answer {result.assessmentOf}. The original answer remains
+              unchanged.
+            </p>
+          )}
+        </details>
+      </section>
+    ) : null;
   return (
     <>
       <section id="workbench-content" className="workbench" aria-label="Native Signals entities">
@@ -1271,6 +1306,24 @@ export function Workbench({
                     <summary>Research options</summary>
                     <p>{ready}</p>
                     <label>
+                      Research method
+                      <select
+                        value={researchMethod}
+                        onChange={(event) =>
+                          setResearchMethod(event.target.value as 'native' | 'answer-first')
+                        }
+                      >
+                        <option value="native">Research with evidence assessment</option>
+                        <option value="answer-first">
+                          Answer first; assess selected citations later
+                        </option>
+                      </select>
+                    </label>
+                    <p>
+                      Answer first retains the complete narrative privately. Citation occurrence is
+                      not verification; confidence remains Unknown.
+                    </p>
+                    <label>
                       Capture a public URL
                       <input
                         type="url"
@@ -1410,6 +1463,7 @@ export function Workbench({
                 </p>
               </details>
             )}
+            {answerFirstVisible && narrative}
             {tab === 'Search' && result?.provisionalLeads && result.provisionalLeads.length > 0 && (
               <section aria-label="Leads with metadata gaps">
                 <h2>Leads with metadata gaps</h2>
@@ -1435,6 +1489,24 @@ export function Workbench({
                       >
                         Save lead privately
                       </button>
+                      {result.answerReceipt && (
+                        <button
+                          disabled={busy}
+                          onClick={() =>
+                            void action(() =>
+                              start(
+                                `Assess this cited resource for: ${result.query.slice(0, 1500)}. Retain decisive contrary evidence and abstain when required support is missing.`,
+                                undefined,
+                                result.answerReceipt?.context,
+                                [lead.uri],
+                                result.runId,
+                              ),
+                            )
+                          }
+                        >
+                          Assess this citation
+                        </button>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -2004,20 +2076,7 @@ export function Workbench({
                 retained.
               </p>
             )}
-            {tab === 'Search' && (result?.brief ?? earlyBrief)?.text && (
-              <section className="research-brief" aria-label="Research brief">
-                <details open={!items.length}>
-                  <summary>Research explanation and next steps</summary>
-                  <Brief text={(result?.brief ?? earlyBrief)!.text} />
-                  <p>
-                    {busy
-                      ? 'Original answer ready; source checks and saved-record preparation are pending. '
-                      : 'Retained from this research session. '}
-                    Inspect supporting evidence and limitations before acting.
-                  </p>
-                </details>
-              </section>
-            )}
+            {!answerFirstVisible && narrative}
             {result && tab === 'Search' && (
               <>
                 <details>
@@ -2135,7 +2194,7 @@ function inlineBrief(text: string): ReactNode[] {
   });
 }
 
-function Brief({ text }: { text: string }) {
+export function Brief({ text }: { text: string }) {
   return (
     <div className="brief-text">
       {text.split(/\n\s*\n/).map((block, index) => {

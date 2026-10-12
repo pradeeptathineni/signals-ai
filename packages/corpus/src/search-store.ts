@@ -45,6 +45,7 @@ import {
   interpretationSchema,
   relevanceSchema,
 } from '../../domain/src/search-assessment.js';
+import { importedAnswers } from './research-receipts.js';
 
 /** Read-only private state never creates directories and rejects every symlink component. */
 export async function readPrivateJson(
@@ -787,7 +788,15 @@ export async function loadRun(
 ): Promise<SearchResult> {
   if (!/^[a-f0-9-]{36}$/.test(runId)) throw new Error('invalid_run_identity');
   const path = resolve(root, '.signals/runs', `${runId}.json`);
-  const stat = await lstat(path);
+  const stat = await lstat(path).catch((error: NodeJS.ErrnoException) => {
+    if (error.code !== 'ENOENT') throw error;
+    return null;
+  });
+  if (!stat) {
+    const imported = (await importedAnswers(root)).filter((answer) => answer.runId === runId);
+    if (imported.length !== 1) throw new Error('unknown_retained_run');
+    return imported[0]!;
+  }
   if (
     !stat.isFile() ||
     stat.isSymbolicLink() ||
@@ -810,9 +819,26 @@ export async function loadRun(
     result.brief &&
     (result.brief.format !== 'markdown' ||
       typeof result.brief.text !== 'string' ||
-      result.brief.text.length > 24000)
+      result.brief.text.length > (result.answerReceipt ? 100000 : 24000))
   )
     throw new Error('invalid_run_brief');
+  if (result.answerReceipt) {
+    const receipt = result.answerReceipt;
+    if (
+      !result.brief?.text.trim() ||
+      receipt.state !== 'unassessed' ||
+      receipt.confidence !== 'unknown' ||
+      (receipt.context !== undefined &&
+        (typeof receipt.context !== 'string' || receipt.context.length > 4000)) ||
+      !Number.isFinite(Date.parse(receipt.observedAt)) ||
+      receipt.sha256 !== digest(result.brief.text) ||
+      typeof receipt.provenance?.receipt !== 'string' ||
+      ![receipt.provenance.requestedModel, receipt.provenance.servedModel].every(
+        (model) => model === null || typeof model === 'string',
+      )
+    )
+      throw new Error('invalid_answer_receipt');
+  }
   if (
     result.provisionalLeads &&
     (!Array.isArray(result.provisionalLeads) ||
@@ -892,7 +918,7 @@ export async function runHistory(root = process.cwd()) {
     const stat = await lstat(join(directory, name));
     if (!stat.isSymbolicLink()) entries.push({ name, date: stat.mtimeMs });
   }
-  return await Promise.all(
+  const history = await Promise.all(
     entries
       .sort((a, b) => b.date - a.date)
       .slice(0, 30)
@@ -912,6 +938,13 @@ export async function runHistory(root = process.cwd()) {
         };
       }),
   );
+  const answers = (await importedAnswers(root)).map((run) => ({
+    runId: run.runId,
+    query: run.query,
+    status: run.status,
+    candidates: 0,
+  }));
+  return [...history, ...answers];
 }
 export async function cleanRuns(root = process.cwd(), days = 7) {
   const directory = resolve(root, '.signals/runs');
@@ -919,7 +952,10 @@ export async function cleanRuns(root = process.cwd(), days = 7) {
     if (!/^[a-f0-9-]{36}\.json$/.test(name)) continue;
     const path = join(directory, name);
     const stat = await lstat(path);
-    if (!stat.isSymbolicLink() && stat.mtimeMs < Date.now() - days * 86400000) await rm(path);
+    if (!stat.isSymbolicLink() && stat.mtimeMs < Date.now() - days * 86400000) {
+      const run = await loadRun(name.slice(0, -5), root);
+      if (!run.answerReceipt) await rm(path);
+    }
   }
   const acquisitions = resolve(root, '.signals/acquisitions');
   for (const name of await readdir(acquisitions).catch(() => [])) {

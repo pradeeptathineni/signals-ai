@@ -78,7 +78,7 @@ void test('save, rediscover and reuse preserve the answer, merge only locator id
       ),
       ['https://example.com/tool#features'],
     );
-    const library = await loadLibrary(root);
+    const library = (await loadLibrary(root)).filter((item) => item.lead);
     assert.equal(library.length, 1);
     assert.equal(library[0]!.lead!.history.length, 2);
     assert.equal(library[0]!.intrinsicStrength.score, null);
@@ -136,10 +136,13 @@ void test('distinct hash-route destinations remain distinct saved and retrieved 
       plan.citations.map((item) => item.uri),
     );
     assert.equal(result.status, 'complete');
-    assert.deepEqual((await loadLibrary(root)).map((item) => item.uri).sort(), [
-      'https://example.com/#/docs',
-      'https://example.com/#/projects',
-    ]);
+    assert.deepEqual(
+      (await loadLibrary(root))
+        .filter((item) => item.lead)
+        .map((item) => item.uri)
+        .sort(),
+      ['https://example.com/#/docs', 'https://example.com/#/projects'],
+    );
     assert.equal(
       (await rediscoverResearch(root, 'Docs'))[0]!.finding.uri,
       'https://example.com/#/docs',
@@ -189,7 +192,7 @@ void test('a later batch limit failure retains an answer-only receipt without co
         JSON.parse(await readFile(result.receiptPath!, 'utf8')).leadCommitState,
         'confirmed',
       );
-      const library = await loadLibrary(root);
+      const library = (await loadLibrary(root)).filter((item) => item.lead);
       assert.equal(library.length, 1);
       assert.equal(library[0]!.lead!.history.length, 128);
     }
@@ -203,7 +206,8 @@ void test('empty selection retains only the answer; explicit subset and unsave/r
     const raw = input('[One](https://example.com/one) [Two](https://example.com/two)');
     const empty = await retainResearchAnswer(root, raw, []);
     assert.equal(empty.status, 'complete');
-    assert.equal((await loadLibrary(root)).length, 0);
+    assert.equal((await loadLibrary(root)).filter((item) => item.lead).length, 0);
+    assert.equal((await loadLibrary(root)).filter((item) => item.answer).length, 1);
     const saved = await retainResearchAnswer(root, raw, ['https://example.com/one']);
     assert.equal(saved.leads.length, 1);
     const finding = (await loadLibrary(root))[0]!;

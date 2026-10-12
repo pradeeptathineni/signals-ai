@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { searchApi } from '../../packages/corpus/src/search-api.js';
+import { signalSearch } from '../../packages/corpus/src/signal-search.js';
 import { loadEntities } from '../../packages/corpus/src/search-store.js';
 import { contextualize } from '../../packages/domain/src/search-priority.js';
 import { saveDecision } from '../../packages/domain/src/search-score.js';
@@ -26,6 +27,32 @@ for (const record of approved)
   );
 const api = searchApi(root, async (input, dependencies) => {
   const request = parseRequest(input);
+  if (request.method === 'answer-first')
+    return signalSearch(request, {
+      ...dependencies,
+      root,
+      runner: {
+        evidenceClass: 'fixture',
+        readiness: () =>
+          Promise.resolve({
+            available: true,
+            broadSearch: true,
+            runner: 'fixture',
+            reason: 'Synthetic public answer; no model calls.',
+          }),
+        discover: () =>
+          Promise.resolve({
+            searches: 0,
+            usage: null,
+            proposal: {
+              answer:
+                '## A partial possibility\r\n\r\nRequired offline export is unknown; do not assume full fit.\r\n\r\n' +
+                'Background note. '.repeat(1300) +
+                '\r\n\r\nRemembered Ω aurora quill constellation.\r\n\r\n[Primary citation](https://example.com/tool#export)',
+            },
+          }),
+      },
+    });
   dependencies?.progress?.('Replaying approved public evidence for UI verification.');
   if (request.query === 'cancellation fixture') {
     dependencies?.brief?.({

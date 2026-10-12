@@ -9,8 +9,10 @@ import { searchApi } from './search-api.js';
 import { loadEntities } from './search-store.js';
 import { selectSavedEntity } from './search-selection.js';
 import { budgets, type SearchResult } from '../../domain/src/search-contract.js';
+import type * as RunnerModule from './search-runner.js';
 
-vi.mock('./search-runner.js', () => ({
+vi.mock('./search-runner.js', async (original) => ({
+  ...(await original<typeof RunnerModule>()),
   codexRunner: () => ({
     readiness: async () => ({
       available: false,

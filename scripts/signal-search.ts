@@ -6,7 +6,11 @@ import {
 } from '../packages/corpus/src/signal-search.js';
 import { parseRequest, budgets } from '../packages/domain/src/search-contract.js';
 import { nativeBriefSchema } from '../packages/domain/src/search-native.js';
-import { codexRunner, decodeNativeOutput } from '../packages/corpus/src/search-runner.js';
+import {
+  codexRunner,
+  answerFirstOperation,
+  decodeNativeOutput,
+} from '../packages/corpus/src/search-runner.js';
 import { execFileSync } from 'node:child_process';
 import { searchEvidenceBundle } from '../packages/corpus/src/search-exchange.js';
 import { retainRun, saveEntities } from '../packages/corpus/src/search-store.js';
@@ -41,6 +45,8 @@ const { values } = parseArgs({
     schema: { type: 'boolean' },
     capability: { type: 'boolean' },
     review: { type: 'boolean' },
+    method: { type: 'string' },
+    'assessment-of': { type: 'string' },
     'sources-only': { type: 'boolean' },
     'github-plan': { type: 'string' },
     'corpus-only': { type: 'boolean' },
@@ -61,6 +67,8 @@ try {
       query: values.query ?? (values['check-primary'] ? 'Check saved primary source' : undefined),
       profile: values.profile ?? 'wide',
       route: 'native',
+      method: values.method,
+      assessmentOf: values['assessment-of'],
       save: values.save ?? 'never',
       cache: values.cache ?? 'memory',
       supplementalSites: values.site,
@@ -139,6 +147,7 @@ try {
             acquisition: await loadAcquisitionConfig(process.cwd()),
             extractionModel: values['extract-model'],
             extractionEffort: values['extract-effort'],
+            ...answerFirstOperation(request),
           }),
           signal: controller.signal,
           progress: (event) => process.stderr.write(`${event}\n`),

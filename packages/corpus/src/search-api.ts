@@ -12,7 +12,7 @@ import {
 } from '../../domain/src/search-contract.js';
 import { signalSearch } from './signal-search.js';
 import { directSearch } from './search-direct.js';
-import { codexRunner } from './search-runner.js';
+import { codexRunner, answerFirstOperation } from './search-runner.js';
 import { loadAcquisitionConfig, acquisitionReadiness } from './search-acquisition.js';
 import { scanSources } from './search-sources.js';
 import { loadPersonal, updatePersonal } from './search-personal.js';
@@ -511,6 +511,7 @@ export function searchApi(
               acquisition: await loadAcquisitionConfig(root),
               extractionModel: settings.extractionModel || undefined,
               extractionEffort: settings.extractionEffort || undefined,
+              ...answerFirstOperation(query),
             }),
             signal: controller.signal,
             provisional: (leads) => {
@@ -639,7 +640,12 @@ export function searchApi(
         const result = [...runs.values()].find((run) => run.result?.runId === body.runId)?.result;
         const lead = result?.provisionalLeads?.find((lead) => lead.uri === body.uri);
         if (!result || !lead) throw new Error('unknown_lead_selection');
-        json(200, await saveLibraryLead(root, lead, result.runId, result.query));
+        json(
+          200,
+          await saveLibraryLead(root, lead, result.runId, result.query, {
+            preserveFragment: !!result.answerReceipt,
+          }),
+        );
       } else if (route === 'save' && mutation) {
         if (!Value.Check(selection, body)) throw new Error('invalid_selection');
         const selected = body;

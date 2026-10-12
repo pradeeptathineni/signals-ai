@@ -14,9 +14,9 @@ export interface ResearchAnswer {
   observedAt: string;
   provenance: { receipt: string; requestedModel: string | null; servedModel: string | null };
 }
-function pairedEnd(text: string, start: number, opening: string, closing: string) {
+function pairedEnd(text: string, start: number, opening: string, closing: string, limit: number) {
   let depth = 1;
-  for (let i = start + 1; i < text.length; i++) {
+  for (let i = start + 1; i < Math.min(text.length, start + limit + 1); i++) {
     if (text[i] === '\\') {
       i++;
       continue;
@@ -66,9 +66,9 @@ function* inlineLinks(text: string) {
       continue;
     }
     if (text[i] !== '[' || text[i - 1] === '!') continue;
-    const labelEnd = pairedEnd(text, i, '[', ']');
+    const labelEnd = pairedEnd(text, i, '[', ']', 201);
     if (labelEnd < 0 || text[labelEnd + 1] !== '(') continue;
-    const end = pairedEnd(text, labelEnd + 1, '(', ')');
+    const end = pairedEnd(text, labelEnd + 1, '(', ')', 4097);
     if (end < 0) continue;
     const label = text.slice(i + 1, labelEnd);
     if (!label || label.length > 200 || label.includes('\n')) continue;
@@ -93,10 +93,19 @@ const citationUri = (uri: string) => normalizeConsiderUrl(uri).normalizedUrl + n
 /** Only literal inline references are recognized; their labels are not entity/type judgments. */
 export function planResearchRetention(input: ResearchAnswer) {
   if (
+    typeof input.query !== 'string' ||
+    typeof input.answer !== 'string' ||
+    typeof input.observedAt !== 'string' ||
+    typeof input.provenance?.receipt !== 'string' ||
+    !input.provenance.receipt.trim() ||
+    input.provenance.receipt.length > 2000 ||
+    ![input.provenance.requestedModel, input.provenance.servedModel].every(
+      (model) => model === null || (typeof model === 'string' && model.length <= 200),
+    ) ||
     !input.query.trim() ||
     input.query.length > 2000 ||
     !input.answer.trim() ||
-    input.answer.length > 24000 ||
+    input.answer.length > 100000 ||
     !Number.isFinite(Date.parse(input.observedAt))
   )
     throw new Error('invalid_research_answer');
@@ -157,6 +166,7 @@ export function planResearchRetention(input: ResearchAnswer) {
     rejectedReferences,
     limits: [
       'Only ordinary inline Markdown citations outside code are recognized; bare URLs, reference-style links and unsupported Markdown remain in the raw answer.',
+      'Inline labels are limited to 200 characters and destination/title segments to 4096; oversized references remain in the raw answer without citation credit.',
       'Citation destinations preserve fragments; base identity is separate and does not merge distinct navigation targets or entities.',
       'Citation occurrence validates a reference, not claim truth, source entailment or independent provenance.',
       'Observation time is receipt time, not source publication or factual freshness.',

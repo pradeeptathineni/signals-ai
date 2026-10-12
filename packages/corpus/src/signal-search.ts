@@ -15,9 +15,15 @@ import {
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
 import { assessEntity, filterSearchItems, saveDecision } from '../../domain/src/search-score.js';
 import { digest, fetchEvidence, normalizeText, normalizeSpan } from './search-fetch.js';
-import { codexRunner, RunnerFailure, type SearchRunner } from './search-runner.js';
+import {
+  codexRunner,
+  answerFirstOperation,
+  RunnerFailure,
+  type SearchRunner,
+} from './search-runner.js';
 import { privateCacheFetch } from './search-cache.js';
-import { atomicJson, saveEntities, retainRun, loadEntities } from './search-store.js';
+import { atomicJson, saveEntities, retainRun, loadEntities, loadRun } from './search-store.js';
+import { planResearchRetention } from './research-answer.js';
 import { resolve } from 'node:path';
 import { loadAcquisitionConfig } from './search-acquisition.js';
 import { configuredDocumentFetch } from './search-extractors.js';
@@ -764,6 +770,19 @@ export async function signalSearch(
   } = {},
 ): Promise<SearchResult> {
   const request = { ...parseRequest(input), route: 'native' as const };
+  if (request.method === 'answer-first' && (request.save === 'eligible' || request.assessmentOf))
+    throw new Error('answer_first_is_unassessed');
+  if (request.assessmentOf) {
+    const original = await loadRun(request.assessmentOf, dependencies.root ?? process.cwd());
+    if (
+      !original.answerReceipt ||
+      !request.captureUrls?.length ||
+      request.captureUrls.some(
+        (uri) => !original.provisionalLeads?.some((lead) => lead.uri === uri),
+      )
+    )
+      throw new Error('assessment_selection_not_cited');
+  }
   const started = Date.now();
   const limits = budgets[request.profile ?? 'wide'];
   const controller = new AbortController();
@@ -775,6 +794,7 @@ export async function signalSearch(
     schemaVersion: 2,
     runId: randomUUID(),
     query: request.query,
+    ...(request.assessmentOf ? { assessmentOf: request.assessmentOf } : {}),
     status: 'failed',
     items: [],
     sources: [],
@@ -798,6 +818,7 @@ export async function signalSearch(
       codexRunner(undefined, undefined, {
         root: dependencies.root ?? process.cwd(),
         acquisition: acquisitionConfig,
+        ...answerFirstOperation(request),
       });
     const readiness = await runner.readiness();
     const readinessMs = Date.now() - started;
@@ -825,7 +846,61 @@ export async function signalSearch(
       typeof discovery.proposal.answer === 'string' &&
       discovery.proposal.answer.trim()
     ) {
-      base.brief = { format: 'markdown', text: discovery.proposal.answer.slice(0, 24000) };
+      if (discovery.proposal.answer.length > (request.method === 'answer-first' ? 100000 : 24000))
+        throw new Error('complete_answer_exceeds_retention_budget');
+      base.brief = { format: 'markdown', text: discovery.proposal.answer };
+      if (request.method === 'answer-first') {
+        const usage = discovery.usage as { model?: unknown; servedModel?: unknown } | null;
+        const plan = planResearchRetention({
+          query: request.query,
+          answer: base.brief.text,
+          observedAt: new Date().toISOString(),
+          provenance: {
+            receipt: base.runId,
+            requestedModel: typeof usage?.model === 'string' ? usage.model : null,
+            servedModel: typeof usage?.servedModel === 'string' ? usage.servedModel : null,
+          },
+        });
+        base.answerReceipt = {
+          ...(request.context ? { context: request.context } : {}),
+          observedAt: plan.input.observedAt,
+          sha256: plan.answerSha256,
+          state: 'unassessed',
+          confidence: 'unknown',
+          provenance: plan.input.provenance,
+        };
+        base.provisionalLeads = plan.citations.slice(0, 60).map((citation) => ({
+          uri: citation.uri,
+          name: citation.label,
+          description: citation.context,
+          limits: plan.limits,
+        }));
+        base.gaps = [
+          'Answer and citation references are unassessed. Confidence Unknown. Select a cited resource for an explicit evidence assessment.',
+          ...plan.limits,
+        ];
+        if (plan.rejectedReferences.length)
+          base.gaps.push(
+            `${plan.rejectedReferences.length} unsafe or unsupported citation destinations rejected; original text retained.`,
+          );
+        base.counts = {
+          leads: plan.citations.length,
+          distinct: 0,
+          duplicates: 0,
+          omitted: Math.max(0, plan.citations.length - 60),
+        };
+        base.usage.stages = {
+          readinessMs,
+          researchMs: answerReadyMs - (researchStarted - started),
+          answerReadyMs,
+          inspectionMs: 0,
+        };
+        dependencies.brief?.(base.brief);
+        dependencies.provisional?.(base.provisionalLeads);
+        base.status = controller.signal.aborted ? 'cancelled' : 'completed';
+        if (discovery.searches > limits.searches) throw new Error('budget_exhausted');
+        return base;
+      }
       dependencies.brief?.(base.brief);
     }
     const research = decodeNativeResearch(discovery.proposal);

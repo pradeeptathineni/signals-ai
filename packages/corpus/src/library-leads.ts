@@ -53,8 +53,9 @@ export async function saveLibraryLead(
   lead: ProvisionalLead,
   runId: string,
   query: string,
+  options: { preserveFragment?: boolean } = {},
 ) {
-  return (await saveLibraryLeads(root, [lead], runId, query))[0]!;
+  return (await saveLibraryLeads(root, [lead], runId, query, options))[0]!;
 }
 /** One atomic batch: a later invalid/over-limit lead cannot leave earlier leads committed. */
 export async function saveLibraryLeads(
