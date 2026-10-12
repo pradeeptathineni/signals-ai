@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { AxeBuilder } from '@axe-core/playwright';
+import { expectAccessibleViewport } from './accessibility.js';
 import { loadEntities } from '../../packages/corpus/src/search-store.js';
 import { projectNativeLibrary } from '../../packages/domain/src/library-search.js';
 
@@ -154,7 +154,7 @@ test('server-owned replay supports evidence, private notes, manual saves, inbox 
   const first = page.locator('.entity-card').first();
   const annotatedName = await first.getByRole('heading', { level: 2 }).innerText();
   await first.getByText('Score, limits and sources', { exact: true }).click();
-  await first.locator('details details summary').click();
+  await first.getByText(/^Observation inputs/).click();
   await first
     .getByRole('button', { name: /^Preview evidence for/ })
     .first()
@@ -199,17 +199,7 @@ test('server-owned replay supports evidence, private notes, manual saves, inbox 
   await expect(page.getByText('No pending leads.', { exact: false })).toBeVisible();
   await research(page);
   for (const width of [1440, 320]) {
-    await page.setViewportSize({ width, height: 900 });
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
-      true,
-    );
-    expect(
-      (
-        await new AxeBuilder({ page })
-          .withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'])
-          .analyze()
-      ).violations,
-    ).toEqual([]);
+    await expectAccessibleViewport(page, width);
     await page.screenshot({ path: test.info().outputPath(`portal-${width}.png`), fullPage: true });
   }
   const blocked = await request.get('__signals/api/personal', {

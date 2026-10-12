@@ -1,5 +1,5 @@
 import type { Entity, Assessment, SearchItem } from './search-contract.js';
-import { assessSuccessor } from './search-assessment.js';
+import { assessSuccessor, assessmentHolds, sameObservationClaim } from './search-assessment.js';
 
 const weights = {
   corroboration: 25,
@@ -85,6 +85,8 @@ export function activeObservations(
       'signal-strength-v6',
       'signal-strength-v7',
       'signal-strength-v8',
+      'signal-strength-v9',
+      'signal-strength-v10',
     ].includes(policy)
   ) {
     const physical = new Set(
@@ -105,7 +107,22 @@ export function activeObservations(
         evidence.add(source.id);
     });
   }
-  const superseded = new Set(entity.observations.flatMap((item) => item.supersedes));
+  const superseded = new Set(
+    entity.observations.flatMap((item) =>
+      item.supersedes.filter((id) => {
+        if (policy !== 'signal-strength-v10') return true;
+        const prior = entity.observations.find((entry) => entry.id === id);
+        return (
+          !prior ||
+          (prior.feature !== 'risk' && prior.status === 'supported') ||
+          (item.verified &&
+            item.status !== 'uncertain' &&
+            evidence.has(item.evidenceId) &&
+            sameObservationClaim(entity, item, prior))
+        );
+      }),
+    ),
+  );
   return entity.observations.filter(
     (item) => evidence.has(item.evidenceId) && !superseded.has(item.id),
   );
@@ -138,6 +155,40 @@ function originGroups(entity: Pick<Entity, 'evidence'>) {
   );
 }
 
+/** Equal known acquired payloads exclude extra support; they do not establish creator identity. */
+function duplicateSupportGroups(
+  entity: Pick<Entity, 'evidence' | 'currentEvidence'>,
+  active: Entity['observations'],
+) {
+  const selected = new Set([
+    ...activeEvidenceIds(entity),
+    ...active.map((item) => item.evidenceId),
+  ]);
+  const groups: { ids: Set<string>; keys: Set<string> }[] = [];
+  for (const source of entity.evidence
+    .filter((item) => selected.has(item.id) && item.state === 'fetched')
+    .sort((a, b) => a.id.localeCompare(b.id))) {
+    const group = { ids: new Set([source.id]), keys: new Set([`uri:${source.uri}`]) };
+    if (source.digest && /^[a-f0-9]{64}$/.test(source.digest))
+      group.keys.add(`payload:${source.digest}`);
+    for (let index = groups.length - 1; index >= 0; index--) {
+      const prior = groups[index]!;
+      if ([...group.keys].some((key) => prior.keys.has(key))) {
+        prior.ids.forEach((id) => group.ids.add(id));
+        prior.keys.forEach((key) => group.keys.add(key));
+        groups.splice(index, 1);
+      }
+    }
+    groups.push(group);
+  }
+  return new Map(
+    groups.flatMap((group) => {
+      const representative = [...group.ids].sort()[0]!;
+      return [...group.ids].map((id) => [id, representative] as const);
+    }),
+  );
+}
+
 export function assessEntity(
   entity: Pick<
     Entity,
@@ -155,8 +206,24 @@ export function assessEntity(
 ): Assessment {
   if (!Number.isFinite(Date.parse(asOf))) throw new Error('invalid_assessment_date');
   const active = activeObservations(entity, policy);
-  if (policy === 'signal-strength-v7' || policy === 'signal-strength-v8')
-    return assessSuccessor(entity, asOf, active, originGroups(entity), policy);
+  if (
+    [
+      'signal-strength-v7',
+      'signal-strength-v8',
+      'signal-strength-v9',
+      'signal-strength-v10',
+    ].includes(policy)
+  )
+    return assessSuccessor(
+      entity,
+      asOf,
+      active,
+      policy === 'signal-strength-v10'
+        ? duplicateSupportGroups(entity, active)
+        : originGroups(entity),
+      policy as
+        'signal-strength-v7' | 'signal-strength-v8' | 'signal-strength-v9' | 'signal-strength-v10',
+    );
   const usable = active.filter(
     (observation) => observation.verified && observation.status === 'supported',
   );
@@ -388,13 +455,38 @@ export function saveDecision(entity: Entity, match: SearchItem['match'], thresho
   if (entity.identity !== 'resolved') reasons.push('ambiguous_identity');
   if (entity.assessment.score === null)
     reasons.push(
-      ['signal-strength-v7', 'signal-strength-v8'].includes(entity.assessment.policy)
+      [
+        'signal-strength-v7',
+        'signal-strength-v8',
+        'signal-strength-v9',
+        'signal-strength-v10',
+      ].includes(entity.assessment.policy)
         ? 'assessment_not_scoreable'
         : 'no_supported_defining_claim',
     );
   else if (entity.assessment.score < threshold) reasons.push('below_threshold');
   if (match.level !== 'direct') reasons.push('not_direct');
   if (entity.inspection?.state === 'deferred') reasons.push('inspection_incomplete');
+  if (
+    [
+      'signal-strength-v7',
+      'signal-strength-v8',
+      'signal-strength-v9',
+      'signal-strength-v10',
+    ].includes(entity.assessment.policy)
+  ) {
+    if (entity.assessment.disposition !== 'completed') reasons.push('assessment_incomplete');
+    if (
+      ['basis', 'work', 'applicability'].some(
+        (name) =>
+          entity.assessment.features[name]?.state !== 'observed' ||
+          (entity.assessment.features[name]?.value ?? 0) <= 0,
+      )
+    )
+      reasons.push('essential_dimension_has_no_positive_support');
+  }
+  if (assessmentHolds(entity, entity.assessment.asOf).length)
+    reasons.push('unresolved_decisive_evidence');
   const defining = activeObservations(entity, entity.assessment.policy).filter(
     (observation) =>
       observation.feature === 'defining' &&
@@ -429,7 +521,12 @@ export function personalSaveDecision(
   const decision = saveDecision(entity, match, threshold);
   const reasons = [...decision.reasons];
   if (
-    !['signal-strength-v7', 'signal-strength-v8'].includes(entity.assessment.policy) ||
+    ![
+      'signal-strength-v7',
+      'signal-strength-v8',
+      'signal-strength-v9',
+      'signal-strength-v10',
+    ].includes(entity.assessment.policy) ||
     entity.assessment.disposition !== 'completed'
   )
     reasons.push('assessment_incomplete');

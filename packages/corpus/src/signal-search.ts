@@ -194,6 +194,13 @@ export async function acceptDiscovery(
     for (const candidate of proposal.candidates) {
       // Every claimed fact must still be checked, including adverse/rejected findings.
       candidate.observations.forEach((observation) => inspect.add(observation.source));
+      candidate.relevance?.sources.forEach((index) => inspect.add(index));
+      candidate.signalJudgment?.originInspections?.forEach((inspection) =>
+        inspect.add(inspection.source),
+      );
+      candidate.relevance?.constraints.forEach((constraint) =>
+        constraint.sources.forEach((index) => inspect.add(index)),
+      );
       if (candidate.priority?.action !== 'reject' && candidate.match.level !== 'out-of-scope') {
         candidate.match.sources.forEach((index) => inspect.add(index));
         candidate.priority?.sources.forEach((index) => inspect.add(index));
@@ -394,11 +401,14 @@ export async function acceptDiscovery(
     if (source.state !== 'fetched') return;
     const text = documents.get(source.uri)?.text.toLowerCase() ?? '';
     const quotes = proposal.candidates
-      .flatMap((candidate) =>
-        candidate.observations
+      .flatMap((candidate) => [
+        ...candidate.observations
           .filter((observation) => sources[observation.source]?.uri === source.uri)
           .map((observation) => normalizeSpan(observation.quote)),
-      )
+        ...(candidate.signalJudgment?.originInspections ?? [])
+          .filter((inspection) => sources[inspection.source]?.uri === source.uri)
+          .map((inspection) => normalizeSpan(inspection.quote)),
+      ])
       .filter((quote) => quote.length >= 8 && text.includes(quote.toLowerCase()));
     const excerpt = [...new Set(quotes)].sort().join(' … ');
     source.excerpt = excerpt.slice(0, 12000);
@@ -473,6 +483,9 @@ export async function acceptDiscovery(
       ...candidate.match.sources
         .map((index) => sources[index]?.id)
         .filter((id): id is string => !!id),
+      ...(candidate.signalJudgment?.originInspections ?? []).flatMap((inspection) =>
+        sources[inspection.source] ? [sources[inspection.source]!.id] : [],
+      ),
     ]);
     const evidence = [
       ...new Map(
@@ -495,6 +508,16 @@ export async function acceptDiscovery(
       ? ({
           ...candidate.signalJudgment,
           gaps: [...candidate.signalJudgment.gaps],
+          ...(candidate.signalJudgment.originInspections
+            ? {
+                originInspections: candidate.signalJudgment.originInspections.flatMap(
+                  (inspection) =>
+                    sources[inspection.source] && safeEvidence.has(sources[inspection.source]!.id)
+                      ? [{ ...inspection, source: sources[inspection.source]!.id }]
+                      : [],
+                ),
+              }
+            : {}),
           dimensions: Object.fromEntries(
             dimensionNames.map((key) => {
               const judgment = candidate.signalJudgment!.dimensions[key];
@@ -598,6 +621,11 @@ export async function acceptDiscovery(
       ].sort();
       prior.entity.assessment = assessEntity(prior.entity, asOf, prior.entity.assessment.policy);
     } else {
+      const requiredConstraints = new Set(
+        proposal.interpretation?.constraints
+          .filter((item) => item.required)
+          .map((item) => item.text),
+      );
       const parent = candidate.discovery?.parentUri
         ? normalizeConsiderUrl(candidate.discovery.parentUri).normalizedUrl
         : undefined;
@@ -627,6 +655,7 @@ export async function acceptDiscovery(
                     ? null
                     : candidate.relevance.constraints.some(
                           (item) =>
+                            requiredConstraints.has(item.text) &&
                             item.state === 'conflicts' &&
                             item.sources.length &&
                             item.sources.every((index) => sources[index]?.state === 'fetched'),
@@ -635,9 +664,10 @@ export async function acceptDiscovery(
                       : candidate.relevance.value === 100 &&
                           (candidate.relevance.constraints.some(
                             (item) =>
-                              item.state !== 'satisfied' ||
-                              !item.sources.length ||
-                              item.sources.some((index) => sources[index]?.state !== 'fetched'),
+                              requiredConstraints.has(item.text) &&
+                              (item.state !== 'satisfied' ||
+                                !item.sources.length ||
+                                item.sources.some((index) => sources[index]?.state !== 'fetched')),
                           ) ||
                             proposal.interpretation.constraints
                               .filter((item) => item.required)
@@ -652,7 +682,12 @@ export async function acceptDiscovery(
                         : candidate.relevance.value,
               },
             }
-          : ['signal-strength-v7', 'signal-strength-v8'].includes(proposal.assessmentPolicy ?? '')
+          : [
+                'signal-strength-v7',
+                'signal-strength-v8',
+                'signal-strength-v9',
+                'signal-strength-v10',
+              ].includes(proposal.assessmentPolicy ?? '')
             ? {
                 relevance: {
                   value: null,

@@ -21,7 +21,12 @@ import type { PersonalState } from '../../../packages/domain/src/search-priority
 import type { InboxEntry } from '../../../packages/corpus/src/search-inbox.js';
 import type { runDueOnce } from '../../../packages/corpus/src/search-scheduler.js';
 import { rejectedNativeLeads } from '../../../packages/domain/src/search-rejected.js';
-import { ScoreView } from './candidate-views.js';
+import {
+  ScoreView,
+  AssessmentConfidence,
+  AssessmentDerivation,
+  ComparisonBasis,
+} from './candidate-views.js';
 
 const base = import.meta.env.BASE_URL;
 const settingsTabs = ['Settings', 'Interests', 'Sources', 'Jobs'];
@@ -1695,6 +1700,15 @@ export function Workbench({
             {compared.length === 2 && (
               <section aria-label="Compare entities">
                 <h2>Compare</h2>
+                <ComparisonBasis
+                  rows={compared.map((item) => ({
+                    key: item.entity.id,
+                    title: item.entity.name,
+                    policy: item.entity.assessment.policy,
+                    rubric: item.entity.assessment.rubric ?? item.entity.kind,
+                    state: item.entity.assessment.disposition ?? item.entity.assessment.state,
+                  }))}
+                />
                 <div className="entity-grid">
                   {compared.map((item) => (
                     <article key={item.entity.id}>
@@ -1900,20 +1914,8 @@ export function Workbench({
                       {item.entity.assessment.policy}: evidence strength, not probability.{' '}
                       {Math.round(item.entity.assessment.coverage * 100)}% feature coverage.
                     </p>
-                    <dl>
-                      {Object.entries(item.entity.assessment.features).map(([name, feature]) => (
-                        <div key={name}>
-                          <dt>{name}</dt>
-                          <dd>
-                            {feature.contribution.toFixed(1)} points · {feature.state}
-                          </dd>
-                        </div>
-                      ))}
-                    </dl>
-                    <p>
-                      Risk adjustment: −{item.entity.assessment.risk}. Missing:{' '}
-                      {item.entity.assessment.missing.join(', ') || 'none'}
-                    </p>
+                    <AssessmentConfidence />
+                    <AssessmentDerivation entity={item.entity} />
                     <ul>
                       {item.entity.limits.map((limit) => (
                         <li key={limit}>{limit}</li>

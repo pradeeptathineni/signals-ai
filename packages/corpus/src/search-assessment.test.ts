@@ -14,6 +14,7 @@ import {
   assessEntity,
   filterSearchItems,
   personalSaveDecision,
+  saveDecision,
 } from '../../domain/src/search-score.js';
 import { saveEntities, loadEntities, validateEntity, retainRun, loadRun } from './search-store.js';
 import type { SignalJudgment } from '../../domain/src/search-assessment.js';
@@ -99,6 +100,139 @@ function native(version = 4) {
   };
 }
 const fetched = async (uri: string) => ({ uri, text: quote, digest: 'a'.repeat(64) });
+
+describe('v9 decisive holds and current automatic admission', () => {
+  const accept = (input = native(6), denied = false) =>
+    acceptDiscovery(
+      input,
+      { query: 'Inspect a useful tool.', route: 'native', profile: 'wide' },
+      {
+        asOf: date,
+        fetch: async (uri) => {
+          if (denied && uri.includes('adverse')) throw new Error('fixture_denied');
+          return {
+            uri,
+            text: `${quote} ${uri}`,
+            digest: uri.includes('adverse')
+              ? 'b'.repeat(64)
+              : uri.includes('source-1')
+                ? 'c'.repeat(64)
+                : uri.includes('source-2')
+                  ? 'd'.repeat(64)
+                  : 'a'.repeat(64),
+          };
+        },
+      },
+    );
+  function adverse(version = 6, status = 'supported') {
+    const input = native(version);
+    input.sources.push({
+      ...input.sources[1]!,
+      uri: 'https://adverse.example.org/report',
+      publisher: 'Adverse',
+      origin: 'adverse',
+    });
+    input.candidates[0]!.observations.push({ ...fact('risk/material', 3, true), status });
+    return input;
+  }
+  it('holds inaccessible, uncertain and inactive retained adverse evidence without rewriting v8', async () => {
+    const historic = (await accept(adverse(5), true)).items[0]!;
+    expect(historic.entity.assessment.score).toBe(81);
+    expect(saveDecision(historic.entity, historic.match).eligible).toBe(false);
+    for (const [input, denied] of [
+      [adverse(), true],
+      [adverse(6, 'uncertain'), false],
+    ] as const) {
+      const item = (await accept(input, denied)).items[0]!;
+      expect(item.entity.assessment).toMatchObject({
+        policy: 'signal-strength-v9',
+        score: null,
+        disposition: 'not-scoreable',
+      });
+      expect(item.entity.assessment.nextVerification).toContain('adverse');
+      validateEntity(item.entity);
+    }
+    const item = (await accept(adverse())).items[0]!;
+    const evidenceId = item.entity.observations.find((o) => o.feature === 'risk')!.evidenceId;
+    item.entity.currentEvidence = item.entity.currentEvidence!.filter((id) => id !== evidenceId);
+    expect(assessEntity(item.entity, date, 'signal-strength-v9').score).toBeNull();
+  });
+  it('holds decisive bound work contradictions while allowing explicitly refuted adverse claims', async () => {
+    const input = adverse();
+    input.candidates[0]!.observations.at(-1)!.signal = 'verification/worked-example';
+    input.candidates[0]!.observations.at(-1)!.status = 'contradicted';
+    input.candidates[0]!.signalJudgment.dimensions.work.observations.push(6);
+    const item = (await accept(input)).items[0]!;
+    expect(item.entity.assessment.score).toBeNull();
+    expect(item.entity.assessment.reasons?.join(' ')).toContain('work evidence is contradicted');
+    const unavailable = (await accept(input, true)).items[0]!;
+    expect(unavailable.entity.assessment.score).toBeNull();
+    expect(unavailable.entity.assessment.reasons?.join(' ')).toContain(
+      'contradiction is unverified',
+    );
+    input.candidates[0]!.observations.at(-1)!.status = 'uncertain';
+    expect((await accept(input)).items[0]!.entity.assessment.score).toBeNull();
+    const refuted = (await accept(adverse(6, 'contradicted'))).items[0]!;
+    expect(refuted.entity.assessment.score).toBe(81);
+    expect(saveDecision(refuted.entity, refuted.match).eligible).toBe(true);
+  });
+  it('requires verified available successors to retire an adverse hold', async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-v9-adverse-history-')));
+    try {
+      const prior = (await accept(adverse(6, 'uncertain'))).items[0]!;
+      await saveEntities([prior], 'manual', root, 'private', 75, true);
+      const unavailable = (await accept(adverse(6, 'contradicted'), true)).items[0]!;
+      await saveEntities([unavailable], 'manual', root, 'private', 75, true);
+      const held = (await loadEntities(join(root, '.signals/corpus/entities')))[0]!.entity;
+      validateEntity(held);
+      expect(held.assessment.score).toBeNull();
+      const differentSource = adverse(6, 'contradicted');
+      differentSource.sources[3]!.uri = 'https://different.example.org/report';
+      await saveEntities(
+        (await accept(differentSource)).items,
+        'manual',
+        root,
+        'private',
+        75,
+        true,
+      );
+      expect(
+        (await loadEntities(join(root, '.signals/corpus/entities')))[0]!.entity.assessment.score,
+      ).toBeNull();
+      const refuted = (await accept(adverse(6, 'contradicted'))).items[0]!;
+      await saveEntities([refuted], 'manual', root, 'private', 75, true);
+      const resolved = (await loadEntities(join(root, '.signals/corpus/entities')))[0]!.entity;
+      validateEntity(resolved);
+      expect(resolved.assessment.score).toBe(81);
+      expect(resolved.observations.some((item) => item.supersedes.length > 0)).toBe(true);
+      expect(resolved.observations.some((item) => item.status === 'uncertain')).toBe(true);
+      expect(assessEntity(resolved, date, 'signal-strength-v9')).toEqual(resolved.assessment);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+  it('retains historical zero-dimension scores but blocks compensating automatic admission', async () => {
+    for (const name of ['basis', 'work', 'applicability'] as const) {
+      const input = native(5);
+      input.candidates[0]!.signalJudgment.dimensions[name].level = 0;
+      const item = (await accept(input)).items[0]!;
+      const historical = structuredClone(item.entity.assessment);
+      expect(saveDecision(item.entity, item.match, 0).reasons).toContain(
+        'essential_dimension_has_no_positive_support',
+      );
+      expect(personalSaveDecision(item.entity, item.match, item.relevance, 0).eligible).toBe(false);
+      expect(item.entity.assessment).toEqual(historical);
+    }
+    const input = native(6);
+    input.candidates[0]!.signalJudgment.gaps.push({
+      decisive: false,
+      reason: 'Secondary gap.',
+      nextVerification: 'Check later.',
+    });
+    const item = (await accept(input)).items[0]!;
+    expect(saveDecision(item.entity, item.match).reasons).toContain('assessment_incomplete');
+  });
+});
 const scopeText = [
   'The library performs bounded parsing.',
   'The worked example returns a parsed object.',
@@ -146,11 +280,254 @@ async function accept(input = native()) {
 }
 
 describe('native successor assessment and historical capacity', () => {
-  it('advertises brief v5 in both the machine schema and native guidance', () => {
-    expect(Value.Check(nativeBriefSchema, native(5))).toBe(true);
+  it.each([
+    {
+      name: 'optional conflict',
+      value: 75,
+      optional: 'conflicts',
+      required: 'satisfied',
+      expected: 75,
+    },
+    {
+      name: 'optional unknown',
+      value: 100,
+      optional: 'unknown',
+      required: 'satisfied',
+      expected: 100,
+    },
+    {
+      name: 'optional conflict with unknown relevance',
+      value: null,
+      optional: 'conflicts',
+      required: 'satisfied',
+      expected: null,
+    },
+    {
+      name: 'required conflict',
+      value: 75,
+      optional: 'satisfied',
+      required: 'conflicts',
+      expected: 0,
+    },
+    {
+      name: 'required satisfied',
+      value: 100,
+      optional: 'satisfied',
+      required: 'satisfied',
+      expected: 100,
+    },
+    {
+      name: 'required unknown',
+      value: 100,
+      optional: 'satisfied',
+      required: 'unknown',
+      expected: 50,
+    },
+    {
+      name: 'required without evidence',
+      value: 100,
+      optional: 'satisfied',
+      required: 'satisfied',
+      evidence: false,
+      expected: 50,
+    },
+    {
+      name: 'required omitted',
+      value: 100,
+      optional: 'satisfied',
+      required: 'satisfied',
+      omitted: true,
+      expected: 50,
+    },
+  ])('preserves native preference judgment and mandatory safeguards: $name', async (row) => {
+    const input = native(5);
+    const required = {
+      text: 'Required capability',
+      state: row.required,
+      sources: row.evidence === false ? [] : [0],
+    };
+    const result = await acceptDiscovery(
+      {
+        ...input,
+        interpretation: {
+          ...input.interpretation,
+          constraints: [
+            { text: 'Required capability', required: true },
+            { text: 'Preferred interface', required: false },
+          ],
+        },
+        candidates: input.candidates.map((candidate) => ({
+          ...candidate,
+          relevance: {
+            ...candidate.relevance,
+            value: row.value,
+            constraints: [
+              ...(row.omitted ? [] : [required]),
+              { text: 'Preferred interface', state: row.optional, sources: [0] },
+            ],
+          },
+        })),
+      },
+      { query: 'Inspect a useful tool.', route: 'native', profile: 'wide' },
+      { asOf: date, fetch: fetched },
+    );
+    const item = result.items[0]!;
+    expect(item.relevance?.value).toBe(row.expected);
+    expect(item.entity.assessment.score).toBe(81);
+    expect(personalSaveDecision(item.entity, item.match, item.relevance).eligible).toBe(
+      row.expected !== null && row.expected >= 75,
+    );
+    if (row.name === 'optional conflict') {
+      const topicOnly = {
+        ...item,
+        entity: { ...item.entity, id: 'topic-only' },
+        relevance: { ...item.relevance!, value: 25 as const },
+      };
+      expect(filterSearchItems([topicOnly, item])[0]?.entity.id).toBe(item.entity.id);
+    }
+  });
+  it.each([
+    { scope: 'overall', expected: null },
+    { scope: 'required', expected: 50 },
+  ])('preserves unavailable-source safeguards for $scope evidence', async ({ scope, expected }) => {
+    const input = native(5);
+    const unavailable = 'https://unavailable.example.org/evidence';
+    const attempted: string[] = [];
+    const result = await acceptDiscovery(
+      {
+        ...input,
+        sources: [...input.sources, { ...input.sources[0]!, uri: unavailable }],
+        interpretation: {
+          ...input.interpretation,
+          constraints: [{ text: 'Required capability', required: true }],
+        },
+        candidates: input.candidates.map((candidate) => ({
+          ...candidate,
+          relevance: {
+            ...candidate.relevance,
+            sources: scope === 'overall' ? [3] : [0],
+            constraints: [
+              {
+                text: 'Required capability',
+                state: 'satisfied',
+                sources: scope === 'required' ? [3] : [0],
+              },
+            ],
+          },
+        })),
+      },
+      { query: 'Inspect a useful tool.', route: 'native', profile: 'wide' },
+      {
+        asOf: date,
+        fetch: async (uri) => {
+          attempted.push(uri);
+          if (uri === unavailable) throw new Error('Fixture source unavailable');
+          return fetched(uri);
+        },
+      },
+    );
+    expect(result.items[0]?.relevance?.value).toBe(expected);
+    expect(result.items[0]?.entity.assessment.score).toBe(81);
+    expect(attempted).toContain(unavailable);
+    expect(result.sources.find((source) => source.uri === unavailable)?.reason).not.toBe(
+      'native_inspection_deferred',
+    );
+  });
+  it.each(['overall', 'required'])(
+    'fetches accessible relevance-only $scope evidence before judging it',
+    async (scope) => {
+      const input = native(5);
+      const accessible = 'https://accessible.example.org/evidence';
+      const attempted: string[] = [];
+      const result = await acceptDiscovery(
+        {
+          ...input,
+          sources: [...input.sources, { ...input.sources[0]!, uri: accessible }],
+          interpretation: {
+            ...input.interpretation,
+            constraints: [{ text: 'Required capability', required: true }],
+          },
+          candidates: input.candidates.map((candidate) => ({
+            ...candidate,
+            relevance: {
+              ...candidate.relevance,
+              sources: scope === 'overall' ? [3] : [0],
+              constraints: [
+                {
+                  text: 'Required capability',
+                  state: 'satisfied',
+                  sources: scope === 'required' ? [3] : [0],
+                },
+              ],
+            },
+          })),
+        },
+        { query: 'Inspect a useful tool.', route: 'native', profile: 'wide' },
+        {
+          asOf: date,
+          fetch: async (uri) => {
+            attempted.push(uri);
+            return fetched(uri);
+          },
+        },
+      );
+      expect(attempted).toContain(accessible);
+      expect(result.sources.find((source) => source.uri === accessible)?.state).toBe('fetched');
+      expect(result.items[0]?.relevance?.value).toBe(100);
+      expect(result.items[0]?.entity.assessment.score).toBe(81);
+    },
+  );
+  it('keeps relevance-only inspection within the existing document cap', async () => {
+    const input = native(5);
+    const extra = Array.from({ length: budgets.quick.documents + 1 }, (_, index) => ({
+      ...input.sources[0]!,
+      uri: `https://constraint-${index}.example.org/evidence`,
+    }));
+    const attempted: string[] = [];
+    const result = await acceptDiscovery(
+      {
+        ...input,
+        sources: [...input.sources, ...extra],
+        interpretation: {
+          ...input.interpretation,
+          constraints: [{ text: 'Required capability', required: true }],
+        },
+        candidates: input.candidates.map((candidate) => ({
+          ...candidate,
+          relevance: {
+            ...candidate.relevance,
+            constraints: [
+              {
+                text: 'Required capability',
+                state: 'satisfied',
+                sources: extra.map((_, index) => index + 3),
+              },
+            ],
+          },
+        })),
+      },
+      { query: 'Inspect a useful tool.', route: 'native', profile: 'quick' },
+      {
+        asOf: date,
+        fetch: async (uri) => {
+          attempted.push(uri);
+          return fetched(uri);
+        },
+      },
+    );
+    expect(attempted).toHaveLength(budgets.quick.documents);
+    expect(
+      result.sources.some((source) => source.reason === 'document_inspection_budget_exhausted'),
+    ).toBe(true);
+    expect(result.items[0]?.relevance?.value).toBe(50);
+    expect(result.items[0]?.entity.assessment.score).toBe(81);
+  });
+  it('advertises brief v7 in both the machine schema and native guidance', () => {
+    expect(Value.Check(nativeBriefSchema, native(7))).toBe(true);
+    expect(Value.Check(nativeBriefSchema, native(5))).toBe(false);
     expect(Value.Check(nativeBriefSchema, native(4))).toBe(false);
     const prompt = nativePrompt({ query: 'Inspect a useful tool.' }, budgets.wide);
-    expect(prompt).toContain('Return version 5');
+    expect(prompt).toContain('Return version 7');
     expect(prompt).toContain('belong to query relevance or contextual usefulness');
   });
   it('keeps identical brief-v4 evidence null under v7 and grants only limited v8 applicability', async () => {

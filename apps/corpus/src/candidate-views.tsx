@@ -1,5 +1,10 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import type { LibraryFinding } from '../../../packages/domain/src/library-search.js';
+import type { Entity } from '../../../packages/domain/src/search-contract.js';
+import {
+  assessmentHolds,
+  originInspectionBinding,
+} from '../../../packages/domain/src/search-assessment.js';
 
 const date = (value: string | null) =>
   value
@@ -16,6 +21,161 @@ export function ScoreView({ score, label }: { score: number | null; label: strin
       <strong>{score ?? '—'}</strong>
       <span>{label}</span>
     </span>
+  );
+}
+
+export function AssessmentConfidence() {
+  return (
+    <p className="desk-limit">
+      Confidence in this assessment: Unknown. Signal is an evidence policy index, not a probability
+      of correctness.
+    </p>
+  );
+}
+
+export function ComparisonBasis({
+  rows,
+}: {
+  rows: { key: string; title: string; policy: string; rubric: string; state: string }[];
+}) {
+  return (
+    <section aria-label="Comparison score basis">
+      <p>Different policies and type rubrics are not directly comparable.</p>
+      <AssessmentConfidence />
+      {rows.map((row) => (
+        <p key={row.key}>
+          {row.title}: {row.policy} · {row.rubric} · {row.state}
+        </p>
+      ))}
+    </section>
+  );
+}
+
+/** Render the retained derivation; this view never recomputes or changes the assessment. */
+export function AssessmentDerivation({ entity }: { entity: Entity }) {
+  const bound = new Set(
+    Object.values(entity.assessment.features).flatMap((feature) => feature.observations),
+  );
+  const sourceTitle = (id: string) =>
+    entity.evidence.find((source) => source.id === id)?.title ?? 'Unavailable source';
+  const readableReason = (reason: string) =>
+    entity.evidence.reduce((text, source) => text.replaceAll(source.id, source.title), reason);
+  const currentHolds = assessmentHolds(entity, entity.assessment.asOf).filter(
+    (hold) => !entity.assessment.reasons?.includes(hold.reason),
+  );
+  return (
+    <section aria-label="Signal derivation">
+      <p>
+        {entity.assessment.policy} · assessed {date(entity.assessment.asOf)} ·{' '}
+        {entity.assessment.disposition ?? entity.assessment.state}
+      </p>
+      <p>
+        Evidence-policy contributions are summed before the final score is rounded. Points below are
+        approximate policy credit; they do not measure assessment accuracy.
+      </p>
+      {Object.entries(entity.assessment.features).map(([dimension, feature]) => (
+        <details key={dimension}>
+          <summary>
+            {dimension} · approximately {Math.round(feature.contribution)} points · {feature.state}
+          </summary>
+          {entity.signalBasis && dimension in entity.signalBasis.dimensions && (
+            <p>{entity.signalBasis.dimensions[dimension as 'basis'].reason}</p>
+          )}
+          <p>Bound support and limitations:</p>
+          <ul>
+            {feature.observations.map((id) => {
+              const observation = entity.observations.find((item) => item.id === id);
+              return observation ? (
+                <li key={id}>
+                  {observation.statement} — {sourceTitle(observation.evidenceId)} ·{' '}
+                  {observation.feature}/{observation.indicator} · {observation.status}
+                </li>
+              ) : (
+                <li key={id}>Bound observation unavailable.</li>
+              );
+            })}
+          </ul>
+          {!feature.observations.length && (
+            <p>No supporting observation bound. Unknown is not a verdict of poor quality.</p>
+          )}
+        </details>
+      ))}
+      {entity.assessment.reasons?.map((reason) => (
+        <p key={reason}>{readableReason(reason)}</p>
+      ))}
+      {!!currentHolds.length && (
+        <section aria-label="Current admission holds">
+          <p>
+            Current automatic admission is held. The historical numerical assessment keeps its
+            original policy.
+          </p>
+          {currentHolds.map((hold) => (
+            <div key={hold.reason}>
+              <p>{readableReason(hold.reason)}</p>
+              <p>Next verification: {hold.nextVerification}</p>
+            </div>
+          ))}
+        </section>
+      )}
+      {/^signal-strength-v[0-6]$/.test(entity.assessment.policy) && (
+        <p>Historical risk adjustment: −{entity.assessment.risk}.</p>
+      )}
+      {entity.assessment.nextVerification && (
+        <p>Next verification: {entity.assessment.nextVerification}</p>
+      )}
+      {!!entity.signalBasis?.originInspections?.length && (
+        <details>
+          <summary>Origin attribution and relationships</summary>
+          <p>
+            Returned attribution judgments need a matched passage and meaningful reason.
+            Native-reviewed interpretation is not proven independence.
+          </p>
+          {entity.signalBasis.originInspections.map((inspection, index) => {
+            const binding = originInspectionBinding(entity, inspection, entity.assessment.asOf);
+            return (
+              <div key={`${inspection.source}:${index}`}>
+                <p>
+                  {sourceTitle(inspection.source)} ·{' '}
+                  {binding.state === 'native-reviewed'
+                    ? 'Native-reviewed attribution'
+                    : 'Attribution Unknown'}{' '}
+                  · reported relationship: {inspection.relationship} · originating effort:{' '}
+                  {entity.evidence.find((source) => source.id === inspection.source)?.origin ??
+                    'Unknown'}
+                </p>
+                <p>{inspection.reason}</p>
+                <p>{binding.reason}</p>
+                {binding.state === 'native-reviewed' ? (
+                  <blockquote>{inspection.quote}</blockquote>
+                ) : (
+                  <p>Reported attribution, not an accepted source passage: {inspection.quote}</p>
+                )}
+              </div>
+            );
+          })}
+        </details>
+      )}
+      {!!entity.observations.filter((observation) => !bound.has(observation.id)).length && (
+        <details>
+          <summary>Other retained findings</summary>
+          <p>
+            These records are outside the displayed contributing bindings. Decisive adverse findings
+            can still hold an assessment; the reasons and next check above explain those holds.
+          </p>
+          <ul>
+            {entity.observations
+              .filter((observation) => !bound.has(observation.id))
+              .map((observation) => (
+                <li key={observation.id}>
+                  {observation.statement} — {sourceTitle(observation.evidenceId)} ·{' '}
+                  {observation.status} ·{' '}
+                  {observation.verified ? 'Matched passage' : 'Unmatched passage'}
+                </li>
+              ))}
+          </ul>
+        </details>
+      )}
+    </section>
   );
 }
 
@@ -79,16 +239,18 @@ export function ComparisonView({
       </div>
       <details>
         <summary>Score basis</summary>
-        <p>Different policies and type rubrics are not directly comparable.</p>
-        {findings.map((finding) => (
-          <p key={finding.key}>
-            {finding.title}: {finding.intrinsicStrength.policy} ·{' '}
-            {finding.native?.assessment.rubric ?? finding.kind} ·{' '}
-            {finding.native?.assessment.disposition ??
+        <ComparisonBasis
+          rows={findings.map((finding) => ({
+            key: finding.key,
+            title: finding.title,
+            policy: finding.intrinsicStrength.policy,
+            rubric: finding.native?.assessment.rubric ?? finding.kind,
+            state:
+              finding.native?.assessment.disposition ??
               finding.native?.assessment.state ??
-              'Historical review'}
-          </p>
-        ))}
+              (finding.origin.format === 'legacy' ? 'Historical review' : 'Unassessed lead'),
+          }))}
+        />
       </details>
       {children}
     </section>

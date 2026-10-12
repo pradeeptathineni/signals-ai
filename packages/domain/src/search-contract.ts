@@ -162,7 +162,12 @@ export const candidateSchema = Type.Object(
 export const proposalSchema = Type.Object(
   {
     assessmentPolicy: Type.Optional(
-      Type.Union([Type.Literal('signal-strength-v7'), Type.Literal('signal-strength-v8')]),
+      Type.Union([
+        Type.Literal('signal-strength-v7'),
+        Type.Literal('signal-strength-v8'),
+        Type.Literal('signal-strength-v9'),
+        Type.Literal('signal-strength-v10'),
+      ]),
     ),
     interpretation: Type.Optional(interpretationSchema),
     sources: Type.Array(
@@ -282,6 +287,7 @@ export interface Entity extends Omit<
   id: string;
   acquisition?: 'configured-live' | 'native-agent' | 'fixture';
   currentEvidence?: string[];
+  retainedDecisiveObservations?: string[];
   currentChecks?: Record<string, string>;
   observations: (Omit<Observation, 'source'> & {
     id: string;
@@ -306,7 +312,9 @@ export interface Assessment {
     | 'signal-strength-v5'
     | 'signal-strength-v6'
     | 'signal-strength-v7'
-    | 'signal-strength-v8';
+    | 'signal-strength-v8'
+    | 'signal-strength-v9'
+    | 'signal-strength-v10';
   asOf: string;
   score: number | null;
   features: Record<

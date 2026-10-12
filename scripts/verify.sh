@@ -10,6 +10,7 @@ npm run context:verify
 npm run context:pack:test
 npm run quality:structure
 npm test
+npm run test:research-answer
 npm run build
 npm run test:provenance
 npm run security:dependencies

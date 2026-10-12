@@ -54,37 +54,58 @@ export async function saveLibraryLead(
   runId: string,
   query: string,
 ) {
-  const uri = normalizeConsiderUrl(lead.uri).normalizedUrl;
-  const id = leadId(uri);
+  return (await saveLibraryLeads(root, [lead], runId, query))[0]!;
+}
+/** One atomic batch: a later invalid/over-limit lead cannot leave earlier leads committed. */
+export async function saveLibraryLeads(
+  root: string,
+  leads: ProvisionalLead[],
+  runId: string,
+  query: string,
+  options: { preserveFragment?: boolean } = {},
+) {
+  if (!leads.length) return [];
+  const prepared = leads.map((lead) => ({
+    lead,
+    uri:
+      normalizeConsiderUrl(lead.uri).normalizedUrl +
+      (options.preserveFragment ? new URL(lead.uri).hash : ''),
+  }));
   return withWriter(root, async () => {
     const records = await state(root);
-    let record = records.find((row) => row.id === id);
-    if (!record) {
-      record = { id, uri, snapshots: [] };
-      records.push(record);
-    }
-    const snapshot = {
-      runId,
-      query,
-      savedAt: new Date().toISOString(),
-      name: lead.name,
-      description: lead.description,
-      limits: lead.limits,
-    };
-    if (
-      !record.snapshots.some(
-        (row) =>
-          row.runId === runId &&
-          row.query === query &&
-          row.name === lead.name &&
-          row.description === lead.description &&
-          JSON.stringify(row.limits) === JSON.stringify(lead.limits),
+    const retained = [];
+    for (const { lead, uri } of prepared) {
+      const id = leadId(uri);
+      let record = records.find((row) => row.id === id);
+      if (!record) {
+        record = { id, uri, snapshots: [] };
+        records.push(record);
+      }
+      const snapshot = {
+        runId,
+        query,
+        savedAt: new Date().toISOString(),
+        name: lead.name,
+        description: lead.description,
+        limits: lead.limits,
+      };
+      if (
+        !record.snapshots.some(
+          (row) =>
+            row.runId === runId &&
+            row.query === query &&
+            row.name === lead.name &&
+            row.description === lead.description &&
+            JSON.stringify(row.limits) === JSON.stringify(lead.limits),
+        )
       )
-    )
-      record.snapshots.push(snapshot);
-    if (!Value.Check(schema, records)) throw new Error('lead_retention_limit_or_invalid_metadata');
+        record.snapshots.push(snapshot);
+      if (!Value.Check(schema, records))
+        throw new Error('lead_retention_limit_or_invalid_metadata');
+      retained.push({ key: `lead:private:${id}`, id, state: 'saved-lead' });
+    }
     await atomicJson(resolve(root, '.signals/library-leads.json'), records);
-    return { key: `lead:private:${id}`, id, state: 'saved-lead' };
+    return retained;
   });
 }
 export async function loadLibraryLeads(root: string): Promise<LibraryFinding[]> {

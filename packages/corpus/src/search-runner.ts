@@ -182,6 +182,7 @@ export function codexRunner(
   operation: {
     task?: string;
     schema?: unknown;
+    naturalAnswer?: boolean;
     live?: boolean;
     extractionModel?: string;
     extractionEffort?: string;
@@ -213,6 +214,8 @@ export function codexRunner(
       }
     },
     async discover(request, signal, progress, acquisitionHints) {
+      if (operation.naturalAnswer && (!operation.task?.trim() || operation.schema))
+        throw new Error('natural_answer_requires_explicit_task_without_schema');
       const acquisitionStarted = Date.now();
       const answerSchema = operation.schema ?? nativeBriefSchema;
       const lease = join(tmpdir(), `signals-ai-${digest(homedir()).slice(0, 24)}.ai-lease`);
@@ -266,7 +269,8 @@ export function codexRunner(
           progress(
             `Direct acquisition: ${direct.hits.length} ranked locators, ${direct.searches} calls, ${direct.gaps.length} gaps.`,
           );
-        await writeFile(schema, JSON.stringify(providerSchema(answerSchema)));
+        if (!operation.naturalAnswer)
+          await writeFile(schema, JSON.stringify(providerSchema(answerSchema)));
         // Read only model selection, never authentication; ambient hooks/MCP/project instructions stay out.
         const config = await readFile(join(homedir(), '.codex/config.toml'), 'utf8').catch(
           () => '',
@@ -283,8 +287,7 @@ export function codexRunner(
           '--sandbox',
           'read-only',
           '--json',
-          '--output-schema',
-          schema,
+          ...(!operation.naturalAnswer ? ['--output-schema', schema] : []),
           '--cd',
           directory,
           '-c',
@@ -336,6 +339,11 @@ export function codexRunner(
             reads = 0,
             unclassifiedToolCalls = 0;
           let final = '';
+          const termination: {
+            exitCode: number | null;
+            signal: NodeJS.Signals | null;
+            trigger: string | null;
+          } = { exitCode: null, signal: null, trigger: null };
           const receipt = (rejectedProposal: unknown = null) => ({
             provider: usage,
             model: selectedModel ?? 'host-default',
@@ -347,6 +355,7 @@ export function codexRunner(
             nativeSessions: child.pid ? 1 : 0,
             servedModel: null,
             rejectedProposal,
+            termination: { ...termination },
           });
           const rejectedFinal = () => {
             try {
@@ -355,7 +364,8 @@ export function codexRunner(
               return null;
             }
           };
-          const stop = () => {
+          const stop = (trigger = 'runner_guard') => {
+            termination.trigger ??= trigger;
             try {
               if (child.pid && process.platform !== 'win32') process.kill(-child.pid, 'SIGKILL');
               else child.kill('SIGKILL');
@@ -369,16 +379,19 @@ export function codexRunner(
               JSON.stringify({ pid: process.pid, childPid: child.pid, started: Date.now() }),
             ).catch(() => {
               output = 'runner_lease_registration_failed';
-              stop();
+              stop('lease_registration_failed');
             });
-          const timer = setTimeout(stop, budgets[request.profile ?? 'wide'].seconds * 1000);
-          const abort = () => stop();
+          const timer = setTimeout(
+            () => stop('native_deadline'),
+            budgets[request.profile ?? 'wide'].seconds * 1000,
+          );
+          const abort = () => stop('request_aborted');
           signal.addEventListener('abort', abort, { once: true });
-          if (signal.aborted) stop();
+          if (signal.aborted) stop('request_aborted');
           child.stdout.on('data', (chunk: Buffer) => {
             bytes += chunk.length;
             if (bytes > 3000000) {
-              stop();
+              stop('output_byte_limit');
               return;
             }
             pending += chunk.toString();
@@ -407,7 +420,7 @@ export function codexRunner(
                       budgets[request.profile ?? 'wide'].searches +
                         budgets[request.profile ?? 'wide'].documents
                     )
-                      stop();
+                      stop('action_limit');
                   }
                   if (event.type === 'item.completed') {
                     if (event.item.action?.type === 'search') searches++;
@@ -417,7 +430,7 @@ export function codexRunner(
                       searches > budgets[request.profile ?? 'wide'].searches ||
                       reads > budgets[request.profile ?? 'wide'].documents
                     )
-                      stop();
+                      stop('action_limit');
                   }
                 }
                 if (event.item?.type === 'agent_message' && event.type === 'item.completed')
@@ -426,7 +439,7 @@ export function codexRunner(
                   event.item &&
                   ['command_execution', 'mcp_tool_call'].includes(event.item.type)
                 ) {
-                  stop();
+                  stop('forbidden_runner_tool');
                   output = 'forbidden_runner_tool';
                 }
               } catch {
@@ -440,7 +453,9 @@ export function codexRunner(
           child.on('error', (failure) =>
             reject(new RunnerFailure(failure.message, searches, receipt())),
           );
-          child.on('close', (code) => {
+          child.on('close', (code, childSignal) => {
+            termination.exitCode = code;
+            termination.signal = childSignal;
             clearTimeout(timer);
             signal.removeEventListener('abort', abort);
             if (signal.aborted) {
@@ -468,10 +483,14 @@ export function codexRunner(
             let rejectedProposal: unknown = null;
             try {
               // Strip a transport fence only; never ask another model to repair facts.
-              rejectedProposal = operation.schema
-                ? (JSON.parse(final) as unknown)
-                : decodeNativeOutput(final);
-              const proposed = restoreOptionals(rejectedProposal, answerSchema);
+              rejectedProposal = operation.naturalAnswer
+                ? { answer: final }
+                : operation.schema
+                  ? (JSON.parse(final) as unknown)
+                  : decodeNativeOutput(final);
+              const proposed = operation.naturalAnswer
+                ? rejectedProposal
+                : restoreOptionals(rejectedProposal, answerSchema);
               if (
                 operation.live !== false &&
                 proposed &&
@@ -512,6 +531,7 @@ export function codexRunner(
                   nativeSessions: 1,
                   servedModel: null,
                   actionCounts: { toolCalls, reads, unclassifiedToolCalls },
+                  termination: { ...termination },
                 },
                 searches,
               });
@@ -568,7 +588,7 @@ export function codexRunner(
         await rm(lease, { recursive: true, force: true });
       }
     },
-    ...(operation.live === false
+    ...(operation.live === false || operation.naturalAnswer
       ? {}
       : {
           async enrich(

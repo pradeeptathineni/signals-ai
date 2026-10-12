@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AssessmentConfidence,
+  AssessmentDerivation,
   CandidateSummary,
   EvidencePanel,
   HomeOverview,
@@ -1288,6 +1290,7 @@ function FindingDetail({
           {finding.intrinsicStrength.policy}: signal strength records an evidence policy judgment;
           it is separate from query relevance and does not prove usefulness.
         </p>
+        <AssessmentConfidence />
         <p>
           License:{' '}
           {finding.license.state === 'known' ? finding.license.values.join(', ') : 'Unknown'}.
@@ -1357,6 +1360,13 @@ function FindingDetail({
                 Publication: {date(source.publishedAt)} · fetched: {date(source.fetchedAt)} ·
                 origin: {source.origin}
               </p>
+              <details>
+                <summary>Acquisition receipt</summary>
+                <p>
+                  Acquired payload digest: <code>{source.digest ?? 'Unknown'}</code>. Equal known
+                  payloads establish duplicated material, not creator identity.
+                </p>
+              </details>
               <p>{source.excerpt || source.reason}</p>
               <details>
                 <summary>Bound observations</summary>
@@ -1390,30 +1400,7 @@ function FindingDetail({
               {finding.native.assessment.rubric ?? finding.kind} ·{' '}
               {finding.native.assessment.disposition ?? finding.native.assessment.state}
             </p>
-            <table className="desk-assessment-table">
-              <thead>
-                <tr>
-                  <th scope="col">Dimension</th>
-                  <th scope="col">Points</th>
-                  <th scope="col">Evidence state</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(finding.native.assessment.features).map(([dimension, feature]) => (
-                  <tr key={dimension}>
-                    <th scope="row">{dimension}</th>
-                    <td>{feature.contribution.toFixed(2)}</td>
-                    <td>{feature.state}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {finding.native.assessment.reasons?.map((reason) => (
-              <p key={reason}>{reason}</p>
-            ))}
-            {finding.native.assessment.nextVerification && (
-              <p>Next verification: {finding.native.assessment.nextVerification}</p>
-            )}
+            <AssessmentDerivation entity={finding.native} />
             <details>
               <summary>Full stored assessment</summary>
               <pre>{JSON.stringify(finding.native.assessment, null, 2)}</pre>

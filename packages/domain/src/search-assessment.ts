@@ -18,6 +18,7 @@ export const rubricIds = [
 const gap = Type.Object({ reason, decisive: Type.Boolean(), nextVerification: reason }, closed);
 function judgmentSchema(
   reference: ReturnType<typeof Type.Integer> | ReturnType<typeof Type.String>,
+  sourceReference: ReturnType<typeof Type.Integer> | ReturnType<typeof Type.String>,
 ) {
   return Type.Object(
     {
@@ -42,12 +43,39 @@ function judgmentSchema(
       contrary: Type.Enum(['inspected', 'unresolved']),
       status: Type.Enum(['inspected', 'unresolved']),
       gaps: Type.Array(gap, { maxItems: 24 }),
+      originInspections: Type.Optional(
+        Type.Array(
+          Type.Object(
+            {
+              source: sourceReference,
+              quote: Type.String({ minLength: 8, maxLength: 800 }),
+              reason: Type.String({ minLength: 1, maxLength: 800 }),
+              relationship: Type.Enum(['independent', 'resource-own', 'derived', 'unknown']),
+            },
+            closed,
+          ),
+          { maxItems: 60 },
+        ),
+      ),
+      ...(reference.type === 'string'
+        ? {
+            retainedDecisiveObservations: Type.Optional(
+              Type.Array(reference, { maxItems: 1000, uniqueItems: true }),
+            ),
+          }
+        : {}),
     },
     closed,
   );
 }
-export const signalJudgmentSchema = judgmentSchema(Type.Integer({ minimum: 0, maximum: 23 }));
-export const signalBasisSchema = judgmentSchema(Type.String({ minLength: 1, maxLength: 100 }));
+export const signalJudgmentSchema = judgmentSchema(
+  Type.Integer({ minimum: 0, maximum: 23 }),
+  Type.Integer({ minimum: 0, maximum: 59 }),
+);
+export const signalBasisSchema = judgmentSchema(
+  Type.String({ minLength: 1, maxLength: 100 }),
+  Type.String({ minLength: 1, maxLength: 100 }),
+);
 // Explicit types keep the dynamically generated closed dimension object precise for consumers.
 export interface SignalBasis {
   rubric: (typeof rubricIds)[number];
@@ -59,12 +87,25 @@ export interface SignalBasis {
   contrary: 'inspected' | 'unresolved';
   status: 'inspected' | 'unresolved';
   gaps: { reason: string; decisive: boolean; nextVerification: string }[];
+  originInspections?: {
+    source: string;
+    quote: string;
+    reason: string;
+    relationship: 'independent' | 'resource-own' | 'derived' | 'unknown';
+  }[];
+  retainedDecisiveObservations?: string[];
 }
-export type SignalJudgment = Omit<SignalBasis, 'dimensions'> & {
+export type SignalJudgment = Omit<
+  SignalBasis,
+  'dimensions' | 'originInspections' | 'retainedDecisiveObservations'
+> & {
   dimensions: Record<
     (typeof dimensionNames)[number],
     { level: number | null; reason: string; observations: number[] }
   >;
+  originInspections?: (Omit<NonNullable<SignalBasis['originInspections']>[number], 'source'> & {
+    source: number;
+  })[];
 };
 export const interpretationSchema = Type.Object(
   {
@@ -168,16 +209,197 @@ const attentionAnchors = {
   mentions: 10,
 };
 
+/** Current admission holds never reinterpret a historical numerical receipt. */
+export function sameObservationClaim(
+  entity: Pick<Entity, 'evidence'>,
+  left: Entity['observations'][number],
+  right: Entity['observations'][number],
+) {
+  const normalize = (value: string) => value.trim().toLowerCase().replace(/\s+/g, ' ');
+  return (
+    left.feature === right.feature &&
+    left.indicator === right.indicator &&
+    normalize(left.statement) === normalize(right.statement) &&
+    normalize(left.quote) === normalize(right.quote) &&
+    entity.evidence.find((source) => source.id === left.evidenceId)?.uri ===
+      entity.evidence.find((source) => source.id === right.evidenceId)?.uri
+  );
+}
+
+const normalizedAttribution = (value: string) => value.trim().toLowerCase().replace(/\s+/g, ' ');
+
+/** Shared attribution binding status; a match never proves real-world independence. */
+export function originInspectionBinding(
+  entity: Pick<Entity, 'kind' | 'evidence' | 'currentChecks' | 'signalBasis'>,
+  inspection: NonNullable<SignalBasis['originInspections']>[number],
+  asOf: string,
+) {
+  const unknown = (reason: string) => ({ state: 'unknown' as const, reason });
+  const quote = normalizedAttribution(inspection.quote);
+  if (quote.length < 8 || !normalizedAttribution(inspection.reason))
+    return unknown('Attribution needs a meaningful short passage and nonempty inspection reason.');
+  const source = entity.evidence.find((item) => item.id === inspection.source);
+  if (!source || source.state !== 'fetched') return unknown('Attribution source is unavailable.');
+  if (
+    entity.signalBasis?.originInspections?.filter((item) => item.source === inspection.source)
+      .length !== 1
+  )
+    return unknown('Multiple attribution judgments for this source remain unresolved.');
+  if (
+    inspection.relationship === 'unknown' ||
+    !normalizedAttribution(source.origin) ||
+    normalizedAttribution(source.origin) === 'unknown'
+  )
+    return unknown('Originating effort or relationship is unknown.');
+  const now = Date.parse(asOf),
+    fetched = Date.parse(source.fetchedAt);
+  const checked = Date.parse(entity.currentChecks?.[source.uri] ?? source.fetchedAt);
+  const published = source.publishedAt === null ? null : Date.parse(source.publishedAt);
+  const days = ['publication', 'practice'].includes(entity.kind) ? 1825 : 365;
+  if (
+    ![now, fetched, checked].every(Number.isFinite) ||
+    fetched > now ||
+    checked > now ||
+    (published !== null && (!Number.isFinite(published) || published > now)) ||
+    (now - checked) / 86400000 > days
+  )
+    return unknown('Attribution source status is stale, future-dated or unavailable.');
+  if (!normalizedAttribution(source.excerpt).includes(quote))
+    return unknown('Reported attribution passage is unmatched in retained source text.');
+  return {
+    state: 'native-reviewed' as const,
+    reason:
+      'Matched attribution passage with a native relationship judgment; credit also depends on effort and duplicate exclusions.',
+  };
+}
+
+export function assessmentHolds(
+  entity: Pick<
+    Entity,
+    | 'kind'
+    | 'observations'
+    | 'evidence'
+    | 'signalBasis'
+    | 'currentEvidence'
+    | 'currentChecks'
+    | 'retainedDecisiveObservations'
+  >,
+  asOf: string,
+  historicalV9 = false,
+) {
+  const selected = entity.currentEvidence
+    ? new Set(entity.currentEvidence)
+    : new Set(
+        entity.evidence.filter((source) => source.state === 'fetched').map((source) => source.id),
+      );
+  const available = (item: Entity['observations'][number]) =>
+    selected.has(item.evidenceId) &&
+    entity.evidence.some((source) => {
+      const check = Date.parse(entity.currentChecks?.[source.uri] ?? source.fetchedAt);
+      const limit = ['publication', 'practice'].includes(entity.kind) ? 1825 : 365;
+      return (
+        source.id === item.evidenceId &&
+        source.state === 'fetched' &&
+        Number.isFinite(check) &&
+        check <= Date.parse(asOf) &&
+        Date.parse(source.fetchedAt) <= Date.parse(asOf) &&
+        (source.publishedAt === null || Date.parse(source.publishedAt) <= Date.parse(asOf)) &&
+        (Date.parse(asOf) - check) / 86400000 <= limit
+      );
+    });
+  // An unavailable or unverified successor cannot erase an earlier consequential finding.
+  const retired = new Set(
+    entity.observations
+      .filter((item) => item.verified && item.status !== 'uncertain' && available(item))
+      .flatMap((item) =>
+        item.supersedes.filter((id) => {
+          const prior = entity.observations.find((entry) => entry.id === id);
+          return historicalV9 || (prior && sameObservationClaim(entity, item, prior));
+        }),
+      ),
+  );
+  const retained = entity.observations
+    .filter((item) => !retired.has(item.id))
+    .sort((a, b) => a.id.localeCompare(b.id));
+  const holds: { reason: string; nextVerification: string }[] = [];
+  const normalizeClaim = (value: string) => value.trim().toLowerCase().replace(/\s+/g, ' ');
+  const resolvedByCurrentRefutation = (item: Entity['observations'][number]) =>
+    retained.some(
+      (successor) =>
+        successor.id !== item.id &&
+        successor.verified &&
+        available(successor) &&
+        successor.status === 'contradicted' &&
+        successor.feature === item.feature &&
+        successor.indicator === item.indicator &&
+        normalizeClaim(successor.statement) === normalizeClaim(item.statement) &&
+        normalizeClaim(successor.quote) === normalizeClaim(item.quote) &&
+        entity.evidence.find((source) => source.id === successor.evidenceId)?.uri ===
+          entity.evidence.find((source) => source.id === item.evidenceId)?.uri,
+    );
+  for (const item of retained) {
+    if (item.feature === 'risk' && ['material', 'decisive'].includes(item.indicator)) {
+      if (resolvedByCurrentRefutation(item)) continue;
+      if (item.verified && available(item) && item.status === 'contradicted') continue;
+      if (!item.verified || !available(item) || item.status === 'uncertain')
+        holds.push({
+          reason: `Retained ${item.indicator} adverse evidence is unresolved: ${item.statement}`,
+          nextVerification:
+            'Check the retained adverse finding against current original and contrary evidence; unavailable retrieval is not disproof.',
+        });
+    }
+    const dimensions = ['basis', 'work', 'applicability'].filter((name) =>
+      entity.signalBasis?.dimensions[name as 'basis'].observations.includes(item.id),
+    );
+    if (
+      !historicalV9 &&
+      !dimensions.length &&
+      (entity.signalBasis?.retainedDecisiveObservations?.includes(item.id) ||
+        entity.retainedDecisiveObservations?.includes(item.id))
+    )
+      dimensions.push('previously decisive');
+    if (
+      item.feature !== 'risk' &&
+      item.status === 'contradicted' &&
+      (item.feature === 'defining' || dimensions.length)
+    )
+      holds.push({
+        reason: item.verified
+          ? `Retained decisive ${dimensions.join('/') || 'defining'} evidence is contradicted: ${item.statement}`
+          : `Retained decisive ${dimensions.join('/') || 'defining'} contradiction is unverified: ${item.statement}`,
+        nextVerification:
+          'Resolve the decisive contradiction with a source-bound successor judgment, preserving the earlier finding.',
+      });
+    if (item.feature !== 'risk' && dimensions.length && item.status === 'uncertain')
+      holds.push({
+        reason: `Retained decisive ${dimensions.join('/')} evidence is uncertain: ${item.statement}`,
+        nextVerification:
+          'Inspect the uncertain decisive finding before treating the assessment as completed.',
+      });
+  }
+  return holds;
+}
+
 /** Each successor consumes retained judgments under its declared replay policy. */
 export function assessSuccessor(
   entity: Pick<
     Entity,
-    'kind' | 'identity' | 'observations' | 'evidence' | 'signalBasis' | 'currentChecks'
+    | 'kind'
+    | 'identity'
+    | 'observations'
+    | 'evidence'
+    | 'signalBasis'
+    | 'currentChecks'
+    | 'currentEvidence'
   >,
   asOf: string,
   active: Entity['observations'],
   originGroups: Map<string, string>,
-  policy: 'signal-strength-v7' | 'signal-strength-v8' = 'signal-strength-v7',
+  policy:
+    | 'signal-strength-v7'
+    | 'signal-strength-v8'
+    | 'signal-strength-v9'
+    | 'signal-strength-v10' = 'signal-strength-v7',
 ): Assessment {
   const basis = entity.signalBasis;
   if (basis && !Value.Check(signalBasisSchema, basis)) throw new Error('invalid_signal_basis');
@@ -208,6 +430,8 @@ export function assessSuccessor(
   );
   const defining = usable.some((item) => item.feature === 'defining');
   const failures: { reason: string; nextVerification: string }[] = [];
+  if (['signal-strength-v9', 'signal-strength-v10'].includes(policy))
+    failures.push(...assessmentHolds(entity, asOf, policy === 'signal-strength-v9'));
   const dateGaps: { reason: string; decisive: boolean; nextVerification: string }[] = [];
   for (const item of sourceBound.filter(
     (entry) => entry.feature === 'risk' && invalidDates.has(entry.evidenceId),
@@ -285,8 +509,29 @@ export function assessSuccessor(
         ?.toLowerCase()}`;
     return parsed.hostname.replace(/^www\./, '').toLowerCase();
   };
+  const reviewedOrigin = (item: Entity['observations'][number]) => {
+    const inspections =
+      basis?.originInspections?.filter((entry) => entry.source === item.evidenceId) ?? [];
+    const inspection = inspections.length === 1 ? inspections[0] : undefined;
+    return inspection &&
+      originInspectionBinding(entity, inspection, asOf).state === 'native-reviewed'
+      ? inspection
+      : undefined;
+  };
   const independent = (item: Entity['observations'][number]) => {
     const source = entity.evidence.find((entry) => entry.id === item.evidenceId)!;
+    if (policy === 'signal-strength-v10') {
+      const inspection = reviewedOrigin(item);
+      return !!(
+        item.independent &&
+        inspection?.relationship === 'independent' &&
+        originGroups.has(source.id) &&
+        !primaryGroups.has(originGroups.get(source.id)) &&
+        !primary.some(
+          (entry) => normalizedAttribution(entry.origin) === normalizedAttribution(source.origin),
+        )
+      );
+    }
     return (
       item.independent &&
       source.origin.trim().toLowerCase() !== 'unknown' &&
@@ -296,6 +541,23 @@ export function assessSuccessor(
     );
   };
   const ceilingReasons: string[] = [];
+  const provenanceGaps: { reason: string; decisive: boolean; nextVerification: string }[] = [];
+  if (policy === 'signal-strength-v10') {
+    const duplicates = new Map<string, string[]>();
+    for (const source of entity.evidence.filter((entry) =>
+      usable.some((item) => item.evidenceId === entry.id),
+    )) {
+      const group = originGroups.get(source.id);
+      if (group) duplicates.set(group, [...(duplicates.get(group) ?? []), source.id]);
+    }
+    for (const ids of [...duplicates.values()]
+      .map((ids) => ids.sort())
+      .filter((ids) => ids.length > 1)
+      .sort((a, b) => a[0]!.localeCompare(b[0]!)))
+      ceilingReasons.push(
+        `Duplicated acquired material counts once: ${ids.slice(0, 20).join(', ')}${ids.length > 20 ? ` and ${ids.length - 20} further retained sources` : ''}. Payload equality does not establish creator identity.`,
+      );
+  }
   for (const [index, name] of dimensionNames.entries()) {
     const judgment = basis?.dimensions[name];
     if (judgment?.observations.some((id) => !knownIds.has(id)))
@@ -308,7 +570,7 @@ export function assessSuccessor(
         'currentness',
         'authority',
         'risk',
-        ...(policy === 'signal-strength-v8' && basis?.rubric !== 'standard-v1'
+        ...(policy !== 'signal-strength-v7' && basis?.rubric !== 'standard-v1'
           ? ['verification']
           : []),
       ],
@@ -369,8 +631,8 @@ export function assessSuccessor(
           {
             inspectable: 1,
             'worked-example': 2,
-            'independent-applied': independent(item) ? 3 : 2,
-            replicated: independent(item) ? 4 : 2,
+            'independent-applied': independent(item) ? 3 : policy === 'signal-strength-v10' ? 0 : 2,
+            replicated: independent(item) ? 4 : policy === 'signal-strength-v10' ? 0 : 2,
           }[item.indicator as 'inspectable'] ?? 0
         );
       if (item.feature === 'maturity')
@@ -391,6 +653,29 @@ export function assessSuccessor(
       );
     };
     const ceiling = Math.max(0, ...bound.map(supportedLevel));
+    const uninspectedOrigins =
+      policy === 'signal-strength-v10' && ['work', 'scrutiny'].includes(name)
+        ? bound.filter((item) => {
+            if (item.feature === 'risk') return false;
+            if (
+              !item.independent &&
+              !['independent-applied', 'replicated'].includes(item.indicator)
+            )
+              return false;
+            const inspection = reviewedOrigin(item);
+            return !inspection || inspection.relationship === 'unknown';
+          })
+        : [];
+    if (uninspectedOrigins.length) {
+      const gap = {
+        reason: `${name} originating effort/relationship is unknown for ${[...new Set(uninspectedOrigins.map((item) => item.evidenceId))].sort().join(', ')}; asserted independence earns no origin-dependent credit.`,
+        decisive: name === 'work' && ceiling === 0,
+        nextVerification:
+          'Inspect a short attribution passage and explain who generated the underlying effort and its relationship to the resource and other efforts.',
+      };
+      provenanceGaps.push(gap);
+      if (gap.decisive) failures.push(gap);
+    }
     if (level !== undefined && level !== null && level > ceiling && name !== 'scrutiny')
       ceilingReasons.push(
         `${name} proposed level ${level} exceeds the inspected evidence-class ceiling ${ceiling}; only supported credit is retained.`,
@@ -424,18 +709,44 @@ export function assessSuccessor(
     let contribution = value * weights[index]!;
     if (name === 'scrutiny') {
       // Publisher/origin/mirror overlap cannot manufacture independent scrutiny.
-      const origins = new Set(
-        support
-          .filter(
-            (item) =>
-              independent(item) &&
-              item.indicator !== 'attention' &&
-              !['promotion', 'mention', 'unknown'].includes(item.indicator),
-          )
-          .map((item) => originGroups.get(item.evidenceId)!),
+      const independentSupport = support.filter(
+        (item) =>
+          independent(item) &&
+          item.indicator !== 'attention' &&
+          !['promotion', 'mention', 'unknown'].includes(item.indicator),
       );
-      if (!origins.size) contribution = 0;
-      else if (origins.size === 1) contribution = Math.min(contribution, weights[index]! / 2);
+      const origins = new Set(
+        independentSupport.map((item) =>
+          policy === 'signal-strength-v10'
+            ? entity.evidence
+                .find((entry) => entry.id === item.evidenceId)!
+                .origin.trim()
+                .toLowerCase()
+                .replace(/\s+/g, ' ')
+            : originGroups.get(item.evidenceId)!,
+        ),
+      );
+      let originCount = origins.size;
+      if (policy === 'signal-strength-v10') {
+        const supportUnits: Set<string>[] = [];
+        for (const item of independentSupport) {
+          const source = entity.evidence.find((entry) => entry.id === item.evidenceId)!;
+          const keys = new Set([
+            `effort:${source.origin.trim().toLowerCase().replace(/\s+/g, ' ')}`,
+            `material:${originGroups.get(item.evidenceId)}`,
+          ]);
+          for (let index = supportUnits.length - 1; index >= 0; index--) {
+            if ([...keys].some((key) => supportUnits[index]!.has(key))) {
+              supportUnits[index]!.forEach((key) => keys.add(key));
+              supportUnits.splice(index, 1);
+            }
+          }
+          supportUnits.push(keys);
+        }
+        originCount = supportUnits.length;
+      }
+      if (!originCount) contribution = 0;
+      else if (originCount === 1) contribution = Math.min(contribution, weights[index]! / 2);
       if (basis?.rubric === 'software-v1' && level !== null && level !== undefined) {
         const attention = Math.max(
           0,
@@ -464,7 +775,14 @@ export function assessSuccessor(
       value = Math.min(value, name === 'work' ? 0.25 : 0);
       contribution = value * weights[index]!;
     }
-    if (level === null || level === undefined || !bound.length || (level > 0 && !support.length))
+    if (
+      level === null ||
+      level === undefined ||
+      !bound.length ||
+      (level > 0 && !support.length) ||
+      (policy === 'signal-strength-v10' && name === 'work' && level > 0 && ceiling === 0) ||
+      (policy === 'signal-strength-v10' && name === 'scrutiny' && uninspectedOrigins.length > 0)
+    )
       missing.push(name);
     features[name] = {
       value,
@@ -514,12 +832,19 @@ export function assessSuccessor(
           'Check authoritative current status and applicable versions, preserving the earlier evidence.',
       });
   }
-  const gaps = [...(basis?.gaps ?? []), ...dateGaps];
+  const gaps = [...(basis?.gaps ?? []), ...dateGaps, ...provenanceGaps];
   const state = failures.length
     ? 'unassessed'
     : missing.length || gaps.length
       ? 'provisional'
       : 'assessed';
+  const allReasons = [
+    ...failures.map((item) => item.reason),
+    ...ceilingReasons,
+    ...materialRisks.map((item) => `Supported ${item.indicator} limitation: ${item.statement}`),
+    ...gaps.filter((item) => !item.decisive).map((item) => item.reason),
+  ];
+  const reasons = policy === 'signal-strength-v10' ? [...new Set(allReasons)].sort() : allReasons;
   return {
     policy,
     asOf,
@@ -538,12 +863,19 @@ export function assessSuccessor(
         : state === 'provisional'
           ? 'provisional'
           : 'not-scoreable',
-    reasons: [
-      ...failures.map((item) => item.reason),
-      ...ceilingReasons,
-      ...materialRisks.map((item) => `Supported ${item.indicator} limitation: ${item.statement}`),
-      ...gaps.filter((item) => !item.decisive).map((item) => item.reason),
-    ],
+    reasons:
+      policy === 'signal-strength-v10'
+        ? reasons
+            .slice(0, 39)
+            .map((item) => item.slice(0, 1600))
+            .concat(
+              reasons.length > 39
+                ? [
+                    `${reasons.length - 39} further reasons exceed the summary boundary; retained evidence and hold disposition remain inspectable.`,
+                  ]
+                : [],
+            )
+        : reasons,
     nextVerification: failures[0]?.nextVerification ?? gaps[0]?.nextVerification ?? null,
   };
 }

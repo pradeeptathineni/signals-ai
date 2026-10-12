@@ -61,6 +61,9 @@ features:
     intent:
       Explain supported signal strength separately from relevance, novelty, and suitability; keep
       promising low-evidence and older options discoverable.
+      Distinguish evidence sufficiency and confidence in the assessment itself; unknown confidence
+      and unproven cross-domain accuracy must remain explicit rather than becoming probabilities
+      from heuristic scores.
   - id: briefs
     name: Briefs & comparisons
     role: core

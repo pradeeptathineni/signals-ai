@@ -10,9 +10,14 @@ not required. Do not launch another AI to perform this skill's reasoning.
 
 Research the ordinary question and write a useful original answer first: concrete
 opportunities, their connection to the need, alternatives, constraints, source links
-and next steps. Return native brief v5 JSON with that Markdown in `answer` and compact
+and next steps. Return the current machine schema's native brief (currently v7) JSON with that Markdown in `answer` and compact
 sources, candidates, interpretation, relevance, signal judgments, coverage and gaps.
 The protocol defines evidence requirements and policy meanings; never invent scores.
+For origin-dependent credit, include source-indexed `originInspections` with a short
+exact attribution passage and meaningful reason/relationship. Native review remains
+fallible; host/publisher names or matching text alone do not prove independence.
+Use null/unknown when support is insufficient. Retained decisive-history IDs are
+internal writer metadata, not fields for the model to invent.
 
 Submit your generated JSON through stdin to
 `npm run --silent signal-search -- --accept --query 'the ordinary question' --profile wide --save never`.

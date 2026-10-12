@@ -90,6 +90,9 @@ const entitySchema = Type.Object(
     currentEvidence: Type.Optional(
       Type.Array(Type.String(), { maxItems: 1000, uniqueItems: true }),
     ),
+    retainedDecisiveObservations: Type.Optional(
+      Type.Array(Type.String(), { maxItems: 1000, uniqueItems: true }),
+    ),
     observations: Type.Array(
       Type.Object(
         {
@@ -151,6 +154,8 @@ const entitySchema = Type.Object(
           'signal-strength-v6',
           'signal-strength-v7',
           'signal-strength-v8',
+          'signal-strength-v9',
+          'signal-strength-v10',
         ]),
         asOf: Type.String(),
         score: Type.Union([Type.Integer({ minimum: 0, maximum: 100 }), Type.Null()]),
@@ -295,6 +300,24 @@ function validateRetainedEntity(input: unknown): Entity {
     )
       throw new Error('invalid_current_check');
   }
+  if (
+    entity.signalBasis?.originInspections?.some(
+      (inspection) => !entity.evidence.some((source) => source.id === inspection.source),
+    )
+  )
+    throw new Error('unbound_origin_inspection');
+  if (
+    entity.signalBasis?.retainedDecisiveObservations?.some(
+      (id) => !entity.observations.some((item) => item.id === id),
+    )
+  )
+    throw new Error('unbound_retained_decisive_observation');
+  if (
+    entity.retainedDecisiveObservations?.some(
+      (id) => !entity.observations.some((item) => item.id === id),
+    )
+  )
+    throw new Error('unbound_retained_decisive_observation');
   if (
     !isDeepStrictEqual(
       assessEntity(entity, entity.assessment.asOf, entity.assessment.policy),
@@ -482,6 +505,7 @@ function mergeEntity(prior: Entity, incoming: Entity): Entity {
     isDeepStrictEqual([...activeEvidenceIds(prior)].sort(), currentEvidence) &&
     prior.kind === incoming.kind &&
     isDeepStrictEqual(prior.signalBasis, incoming.signalBasis) &&
+    isDeepStrictEqual(prior.retainedDecisiveObservations, incoming.retainedDecisiveObservations) &&
     isDeepStrictEqual(prior.inspection, incoming.inspection) &&
     incoming.aliases.every((alias) => prior.aliases.includes(alias))
   ) {
@@ -545,12 +569,26 @@ function mergeEntity(prior: Entity, incoming: Entity): Entity {
   ].sort((a, b) => a.id.localeCompare(b.id));
   const merged = {
     ...incoming,
+    ...(incoming.signalBasis ? { signalBasis: structuredClone(incoming.signalBasis) } : {}),
     aliases: [...new Set([...prior.aliases, ...incoming.aliases])].sort(),
     evidence,
     observations,
     currentEvidence,
     currentChecks,
   };
+  merged.retainedDecisiveObservations = [
+    ...new Set([
+      ...(prior.retainedDecisiveObservations ?? []),
+      ...(incoming.retainedDecisiveObservations ?? []),
+      ...(prior.signalBasis?.retainedDecisiveObservations ?? []),
+      ...(merged.signalBasis?.retainedDecisiveObservations ?? []),
+      ...['basis', 'work', 'applicability'].flatMap(
+        (name) => prior.signalBasis?.dimensions[name as 'basis'].observations ?? [],
+      ),
+    ]),
+  ].sort();
+  if (merged.signalBasis)
+    merged.signalBasis.retainedDecisiveObservations = [...merged.retainedDecisiveObservations];
   merged.assessment = assessEntity(merged, asOf, policy);
   if (
     prior.assessment.policy === merged.assessment.policy &&

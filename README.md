@@ -42,11 +42,27 @@ Research preserves the original answer even when individual record metadata fail
 
 `--save never --cache memory` requires no existing Corpus and creates no repository state; the AI host may retain its own logs. `--cache private` retains run history locally. `--context` exports frozen schema-v1 interchange with separate native assessment extensions. Explicit `--review` requests a bounded no-web reassessment over fetched material; ordinary research uses one native task. See [optional providers](docs/providers.md) for acquisition and extraction settings.
 
+### Keep a native research answer
+
+You can also bring an ordinary Markdown answer from your AI into the Personal Library. This command preserves the original answer and observation time, lists its inline citations, and makes no model call:
+
+```sh
+npm run research-answer -- --query 'Your original question' --answer-file /path/to/answer.md --observed-at '2026-10-12T07:43:44.655Z' --root /path/to/private-library
+```
+
+Inspect that plan, then add `--retain` to save the answer privately. Repeat `--select HTTPS_URL` for each cited source you choose to retain as an unassessed lead. With no selected sources, only the answer is saved. The command reports saved paths and a recovery receipt; inspect any partial or uncertain outcome before explicitly trying again.
+
+```sh
+npm run research-answer -- --root /path/to/private-library --rediscover 'remembered source or purpose'
+```
+
+Rediscovery uses the existing saved-lead search. Repeated explicit saves preserve history and deduplicate normalized citation locators. Citation occurrence does not verify a claim; confidence, source publication date, license and access remain unknown. This route does not create a public record. It currently provides a CLI import and rediscovery workflow; obtaining the native answer remains your AI host's responsibility.
+
 ## Retain, compare and refresh
 
 Manual personal saving accepts unassessed leads. Optional automatic personal saving is off by default and requires completed assessment, supported resolved identity, relevance at least 75 and the chosen Signal threshold, initially 75. Public inclusion and publication have separate review and owner boundaries. CLI `--save eligible` writes eligible public entities locally; it does not commit or push.
 
-Cards distinguish intrinsic Signal, query relevance, contextual priority and saved state. Evidence strength is a versioned policy judgment, not probability or demonstrated usefulness. Native brief v5 uses `signal-strength-v8`; older records replay their declared policies. The [assessment contract](docs/signals-contract.md) defines these meanings.
+Cards distinguish intrinsic Signal, query relevance, contextual priority and saved state. Evidence strength is a versioned policy judgment, not probability or demonstrated usefulness. Native brief v7 uses `signal-strength-v10`; older records replay their declared numerical policies, while current admission retains unresolved decisive history across refresh formats. The [assessment contract](docs/signals-contract.md) defines these meanings.
 
 Notes, feedback, dismissals, followed sources, inbox entries and saved question/interest associations remain private under `.signals/`. Personal novelty stays unknown until you supply feedback. A source scan records acquisition and newly exposed links; repeated scans do not invent discoveries or usefulness. Changed source content requires assessment before becoming a meaningful claim change.
 
