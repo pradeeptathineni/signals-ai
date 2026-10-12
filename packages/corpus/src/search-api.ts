@@ -499,6 +499,14 @@ export function searchApi(
         active = true;
         void search(effectiveQuery, {
           root,
+          claimRunner: (task, schema) =>
+            codexRunner(settings.model || undefined, settings.effort || undefined, {
+              root,
+              task,
+              schema,
+              live: false,
+              maxResponseBytes: 65536,
+            }),
           runner: codexRunner(settings.model || undefined, settings.effort || undefined, {
             root,
             acquisition: await loadAcquisitionConfig(root),

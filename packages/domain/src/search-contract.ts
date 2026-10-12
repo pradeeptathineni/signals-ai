@@ -17,6 +17,7 @@ const label = Type.String({ minLength: 1, maxLength: 200 });
 const labels = Type.Array(label, { maxItems: 40, uniqueItems: true });
 import { kinds, channels } from './search-vocabulary.js';
 import type { budgets } from './search-vocabulary.js';
+import type { ClaimReceipt } from './claim-check.js';
 export { channels, budgets } from './search-vocabulary.js';
 const enumOf = <const T extends string>(values: readonly T[]) => Type.Enum<T[]>(values);
 export const indicators = {
@@ -253,6 +254,20 @@ const requestSchema = Type.Object(
     route: Type.Optional(enumOf(['native', 'assessed'])),
     method: Type.Optional(enumOf(['native', 'answer-first'])),
     assessmentOf: Type.Optional(Type.String({ pattern: '^[a-f0-9-]{36}$' })),
+    claimText: Type.Optional(Type.String({ minLength: 1, maxLength: 1600 })),
+    claimSources: Type.Optional(
+      Type.Array(
+        Type.Object(
+          {
+            sourceIndex: Type.Integer({ minimum: 0, maximum: 1 }),
+            runId: Type.String({ pattern: '^[a-f0-9-]{36}$' }),
+            sourceId: Type.String({ minLength: 1, maxLength: 200 }),
+          },
+          closed,
+        ),
+        { maxItems: 2 },
+      ),
+    ),
     save: Type.Optional(enumOf(['never', 'eligible'])),
     cache: Type.Optional(enumOf(['memory', 'private'])),
     review: Type.Optional(Type.Boolean()),
@@ -360,6 +375,7 @@ export interface SearchItem {
   };
 }
 export interface SearchResult {
+  claimCheck?: ClaimReceipt;
   assessmentOf?: string;
   assessmentTargets?: string[];
   answerReceipt?: {
@@ -406,6 +422,24 @@ export type ProvisionalLead = Pick<
 >;
 export function parseRequest(input: unknown): SearchRequest {
   if (!Value.Check(requestSchema, input) || !input.query.trim()) throw new Error('invalid_request');
+  if (
+    input.claimText !== undefined &&
+    (!input.claimText.trim() ||
+      !input.assessmentOf ||
+      !input.captureUrls?.length ||
+      input.captureUrls.length > 2 ||
+      input.method === 'answer-first' ||
+      input.save === 'eligible')
+  )
+    throw new Error('invalid_claim_request');
+  if (
+    input.claimSources &&
+    (!input.claimText ||
+      new Set(input.claimSources.map((ref) => ref.sourceIndex)).size !==
+        input.claimSources.length ||
+      input.claimSources.some((ref) => !input.captureUrls?.[ref.sourceIndex]))
+  )
+    throw new Error('invalid_claim_sources');
   const sites = (input.supplementalSites ?? []).map((site) => {
     const original = new URL(site);
     if (original.search || original.hash) throw new Error('invalid_supplemental_site');

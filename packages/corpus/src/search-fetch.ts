@@ -32,6 +32,18 @@ const header = (value: string | string[] | undefined, max = 4096) => {
 };
 
 export const digest = (value: string) => createHash('sha256').update(value).digest('hex');
+export function boundedTextReceipt(raw: string, complete = true) {
+  const bytes = Buffer.from(raw);
+  let end = Math.min(bytes.length, 32768);
+  while (end > 0 && end < bytes.length && (bytes[end]! & 0xc0) === 0x80) end--;
+  return {
+    text: bytes.subarray(0, end).toString(),
+    capturedDigest: digest(raw),
+    capturedBytes: bytes.length,
+    omittedBytes: bytes.length - end,
+    captureComplete: complete,
+  };
+}
 export const normalizeSpan = (value: string) => value.replace(/\s+/g, ' ').trim();
 const character = (value: number) =>
   Number.isInteger(value) &&
@@ -100,7 +112,9 @@ export async function fetchEvidence(
   for (const value of Object.values(options.conditional ?? {}))
     if (value !== undefined && (value.length > 4096 || /[\r\n]/.test(value)))
       throw new Error('invalid_conditional_header');
+  signal?.throwIfAborted();
   const { url, address } = await resolvePublicUrl(input);
+  signal?.throwIfAborted();
   return new Promise((resolve, reject) => {
     const req = request(
       url,

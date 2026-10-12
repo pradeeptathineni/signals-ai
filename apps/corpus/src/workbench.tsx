@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useRef, type ReactNode } from 'react';
+import { ClaimCheck } from './claim-check.js';
 import {
   filterSearchItems,
   sourceHost,
@@ -67,6 +68,7 @@ export function Workbench({
     [result, setResult] = useState<SearchResult | null>(null);
   const [earlyBrief, setEarlyBrief] = useState<SearchResult['brief']>();
   const [researchMethod, setResearchMethod] = useState<'native' | 'answer-first'>('native');
+  const [claimText, setClaimText] = useState('');
   const [captureUrl, setCaptureUrl] = useState('');
   const [manualContext, setManualContext] = useState('');
   const [editedContext, setEditedContext] = useState<{
@@ -330,6 +332,7 @@ export function Workbench({
     context?: string,
     captureUrls?: string[],
     assessmentOf?: string,
+    claim?: string,
   ) {
     reopening.current = false;
     setSourceResult(null);
@@ -340,8 +343,9 @@ export function Workbench({
       captureUrls,
       method: captureUrls ? 'native' : researchMethod,
       assessmentOf,
+      claimText: claim,
       supplementalSites,
-      profile: providedProfile ?? settings?.profile ?? 'wide',
+      profile: claim ? 'quick' : (providedProfile ?? settings?.profile ?? 'wide'),
       save: 'never',
       cache: 'private',
     });
@@ -1453,6 +1457,7 @@ export function Workbench({
                 </button>
               </section>
             )}
+            {tab === 'Search' && result?.claimCheck && <ClaimCheck receipt={result.claimCheck} />}
             {tab === 'Search' && result?.interpretation && (
               <details className="desk-interpretation">
                 <summary>How your question was understood</summary>
@@ -1482,6 +1487,22 @@ export function Workbench({
                   when useful.
                 </p>
                 <ul>
+                  {result.answerReceipt && (
+                    <li>
+                      <label>
+                        Proposition to check
+                        <input
+                          maxLength={1600}
+                          value={claimText}
+                          onChange={(event) => setClaimText(event.target.value)}
+                        />
+                      </label>
+                      <p>
+                        A focused check uses only the selected citation; unresolved access or
+                        evidence stays visible.
+                      </p>
+                    </li>
+                  )}
                   {result.provisionalLeads.map((lead, index) => (
                     <li key={index}>
                       <strong>{lead.name}</strong>
@@ -1499,6 +1520,25 @@ export function Workbench({
                       >
                         Save lead privately
                       </button>
+                      {result.answerReceipt && (
+                        <button
+                          disabled={busy || !claimText.trim()}
+                          onClick={() =>
+                            void action(() =>
+                              start(
+                                result.query,
+                                undefined,
+                                result.answerReceipt?.context,
+                                [lead.uri],
+                                result.runId,
+                                claimText,
+                              ),
+                            )
+                          }
+                        >
+                          Check proposition against this citation
+                        </button>
+                      )}
                       {result.answerReceipt && (
                         <button
                           disabled={busy}

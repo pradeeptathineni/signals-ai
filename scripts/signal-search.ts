@@ -47,6 +47,7 @@ const { values } = parseArgs({
     review: { type: 'boolean' },
     method: { type: 'string' },
     'assessment-of': { type: 'string' },
+    claim: { type: 'string' },
     'sources-only': { type: 'boolean' },
     'github-plan': { type: 'string' },
     'corpus-only': { type: 'boolean' },
@@ -57,6 +58,17 @@ const { values } = parseArgs({
   },
 });
 try {
+  if (
+    values.claim &&
+    (values.accept ||
+      values['sources-only'] ||
+      values['corpus-only'] ||
+      values['check-primary'] ||
+      values.context ||
+      values.schema ||
+      values.capability)
+  )
+    throw new Error('claim_requires_linked_check_route');
   if (values.schema) process.stdout.write(`${JSON.stringify(nativeBriefSchema)}\n`);
   else if (values.capability)
     process.stdout.write(
@@ -69,6 +81,7 @@ try {
       route: 'native',
       method: values.method,
       assessmentOf: values['assessment-of'],
+      claimText: values.claim,
       save: values.save ?? 'never',
       cache: values.cache ?? 'memory',
       supplementalSites: values.site,
@@ -141,6 +154,14 @@ try {
           limits: budgets[request.profile ?? 'wide'],
         }
       : await signalSearch(request, {
+          claimRunner: (task, schema) =>
+            codexRunner(values.model ?? 'gpt-6.1-sol', values.effort ?? 'low', {
+              task,
+              schema,
+              live: false,
+              root: process.cwd(),
+              maxResponseBytes: 65536,
+            }),
           runner: codexRunner(values.model ?? 'gpt-6.1-sol', values.effort ?? 'low', {
             githubPlans,
             root: process.cwd(),

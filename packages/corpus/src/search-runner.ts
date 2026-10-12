@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 import { mkdtemp, readFile, writeFile, rm, mkdir } from 'node:fs/promises';
 import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
-import { digest } from './search-fetch.js';
+import { digest, boundedTextReceipt } from './search-fetch.js';
 import { directSearch } from './search-direct.js';
 import { type GitHubPlan, privateGitHubCache, memoryGitHubCache } from './search-github.js';
 import { acquireConfigured, type AcquisitionConfig } from './search-acquisition.js';
@@ -199,6 +199,7 @@ export function codexRunner(
     acquisition?: AcquisitionConfig;
     githubPlans?: GitHubPlan[];
     root?: string;
+    maxResponseBytes?: number;
   } = {},
 ): SearchRunner {
   return {
@@ -349,6 +350,7 @@ export function codexRunner(
             reads = 0,
             unclassifiedToolCalls = 0;
           let final = '';
+          let rejectedOutput: ReturnType<typeof boundedTextReceipt> | undefined;
           const termination: {
             exitCode: number | null;
             signal: NodeJS.Signals | null;
@@ -365,6 +367,9 @@ export function codexRunner(
             nativeSessions: child.pid ? 1 : 0,
             servedModel: null,
             rejectedProposal,
+            ...(rejectedOutput || (operation.maxResponseBytes && final)
+              ? { rejectedOutput: rejectedOutput ?? boundedTextReceipt(final) }
+              : {}),
             termination: { ...termination },
           });
           const rejectedFinal = () => {
@@ -400,7 +405,9 @@ export function codexRunner(
           if (signal.aborted) stop('request_aborted');
           child.stdout.on('data', (chunk: Buffer) => {
             bytes += chunk.length;
-            if (bytes > 3000000) {
+            if (
+              bytes > (operation.maxResponseBytes ? operation.maxResponseBytes + 32768 : 3000000)
+            ) {
               stop('output_byte_limit');
               return;
             }
@@ -443,8 +450,18 @@ export function codexRunner(
                       stop('action_limit');
                   }
                 }
-                if (event.item?.type === 'agent_message' && event.type === 'item.completed')
+                if (event.item?.type === 'agent_message' && event.type === 'item.completed') {
                   final = event.item.text ?? '';
+                  if (
+                    operation.maxResponseBytes &&
+                    Buffer.byteLength(final) > operation.maxResponseBytes
+                  ) {
+                    rejectedOutput = boundedTextReceipt(final);
+                    final = Buffer.from(final).subarray(0, operation.maxResponseBytes).toString();
+                    output = 'runner_response_byte_limit';
+                    stop('response_byte_limit');
+                  }
+                }
                 if (
                   event.item &&
                   ['command_execution', 'mcp_tool_call'].includes(event.item.type)
@@ -479,7 +496,7 @@ export function codexRunner(
               );
               return;
             }
-            if (code !== 0 || !final) {
+            if (code !== 0 || !final || termination.trigger) {
               reject(
                 new RunnerFailure(
                   `runner_failed:${output.slice(0, 300)}`,

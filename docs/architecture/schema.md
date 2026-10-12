@@ -21,6 +21,8 @@ Evidence is append-only. `excerptDigest` distinguishes projections, `normalizer:
 
 ## Private state
 
+An optional linked `claimCheck` inside a private run contains exact proposition/parent digests and one or two indexed primary-material outcomes. Usable text is limited to 48,000 combined UTF-16 units and retained with its own SHA256, distinct from original document lineage. Explicit historical excerpts preserve original dates and scope; their captured closure remains readable if the origin's temporary run expires. Source denials/whole-document omissions and cancelled review remain separate from semantic verdicts. Rejected output has a bounded diagnostic prefix with captured-byte counts and truncation scope. Run serialization and replay retain the existing two-million-byte ceiling. Memory mode writes no receipt or source cache.
+
 All of `.signals/` is ignored, excluded from public assets and denied by local/static serving. Public admission additionally rejects private bytes. Private history may retain source text containing credential-shaped documentation placeholders; structure, identity and evidence bindings still validate.
 
 | State                                             | Purpose                                                                                                                                  |

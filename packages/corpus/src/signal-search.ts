@@ -22,6 +22,7 @@ import {
   type SearchRunner,
 } from './search-runner.js';
 import { privateCacheFetch } from './search-cache.js';
+import { runClaimCheck } from './search-claim.js';
 import { atomicJson, saveEntities, retainRun, loadEntities, loadRun } from './search-store.js';
 import { planResearchRetention } from './research-answer.js';
 import { resolve } from 'node:path';
@@ -760,6 +761,7 @@ export async function signalSearch(
   input: unknown,
   dependencies: {
     runner?: SearchRunner;
+    claimRunner?: (task: string, schema: unknown) => SearchRunner;
     signal?: AbortSignal;
     progress?: (event: string) => void;
     provisional?: (leads: ProvisionalLead[]) => void;
@@ -770,6 +772,7 @@ export async function signalSearch(
   } = {},
 ): Promise<SearchResult> {
   const request = { ...parseRequest(input), route: 'native' as const };
+  if (request.claimText !== undefined) return runClaimCheck(request, dependencies);
   if (request.method === 'answer-first' && (request.save === 'eligible' || request.assessmentOf))
     throw new Error('answer_first_is_unassessed');
   if (request.assessmentOf) {

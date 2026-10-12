@@ -38,6 +38,7 @@ import {
   contextualizeResult,
 } from './signal-search.js';
 import { digest, normalizeText, normalizeSpan } from './search-fetch.js';
+import { validateClaimReceipt } from './search-claim.js';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
 import {
   signalBasisSchema,
@@ -775,6 +776,7 @@ export async function retainRun(result: SearchResult, root = process.cwd()) {
     return null;
   });
   const bytes = `${JSON.stringify(result, null, 2)}\n`;
+  if (Buffer.byteLength(bytes) > 2000000) throw new Error('run_snapshot_size');
   if (prior !== null) {
     if (prior !== bytes) throw new Error('immutable_run_conflict');
     return;
@@ -785,7 +787,10 @@ export async function loadRun(
   runId: string,
   root = process.cwd(),
   threshold = 75,
+  ancestors = new Set<string>(),
 ): Promise<SearchResult> {
+  if (ancestors.has(runId) || ancestors.size >= 16) throw new Error('cyclic_run_reference');
+  const lineage = new Set([...ancestors, runId]);
   if (!/^[a-f0-9-]{36}$/.test(runId)) throw new Error('invalid_run_identity');
   const path = resolve(root, '.signals/runs', `${runId}.json`);
   const stat = await lstat(path).catch((error: NodeJS.ErrnoException) => {
@@ -852,6 +857,20 @@ export async function loadRun(
       )
     )
       throw new Error('invalid_answer_receipt');
+  }
+  if (result.claimCheck) {
+    const receipt = validateClaimReceipt(result);
+    const parent = await loadRun(receipt.parentRunId, root, threshold, lineage);
+    if (
+      !parent.answerReceipt ||
+      parent.answerReceipt.sha256 !== receipt.parentAnswerDigest ||
+      parent.query !== receipt.originalNeed ||
+      (parent.answerReceipt.context ?? '') !== receipt.originalContext ||
+      result.assessmentTargets!.some(
+        (uri) => !parent.provisionalLeads?.some((lead) => lead.uri === uri),
+      )
+    )
+      throw new Error('invalid_claim_parent');
   }
   if (
     result.provisionalLeads &&

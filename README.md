@@ -52,6 +52,14 @@ npm run signal-search -- --query 'Your research question' --method answer-first 
 
 This uses one authenticated Codex session to obtain ordinary Markdown without the assessment schema. The complete answer appears before citation assessment, with **Confidence Unknown** and an explicit unassessed state. Private Library indexes the entire answer locally; reopen it from Library or Activity and discuss a selected answer as prior synthesis. Whole answer text is excluded from remote meaning-match metadata. Automatic public admission is unavailable on this route. Select **Assess this citation** to obtain a separate source-grounded assessment linked to the immutable answer. Assessing does not rewrite the earlier narrative. This route has no demonstrated research-quality or speed advantage yet.
 
+For a narrower check, enter a **Proposition to check** and select its citation. The same route is available in the CLI:
+
+```sh
+npm run signal-search -- --query 'Original question' --assessment-of ANSWER_RUN_UUID --url https://example.org/primary --claim 'The exact proposition to check' --profile quick --cache private --save never
+```
+
+This checks one proposition against one or two selected cited sources, with no broad discovery or scoring. Unusable source text produces an explicit acquisition outcome without inference. When primary text is usable, one frozen native review may return supported, contradicted or uncertain; matched quotes prove occurrence rather than entailment. The bounded text snapshot, original dates and negative/partial checks remain linked to the original answer. Confidence stays Unknown. `--cache memory` returns proof without saving history. A source access denial says nothing about the claim's truth or permission. This focused route has no measured quality or speed advantage yet.
+
 You can also bring an ordinary Markdown answer from your AI into the Personal Library. This command preserves the original answer and observation time, lists its inline citations, and makes no model call:
 
 ```sh
