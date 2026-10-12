@@ -6,7 +6,12 @@ import { Value } from 'typebox/value';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
 import { normalizeSpan, digest } from './search-fetch.js';
 import { currentHtmlText, type SourceText } from '../../domain/src/source-text.js';
-import { htmlLayout, explicitlyHidden } from './search-html-layout.js';
+import {
+  htmlLayout,
+  explicitlyHidden,
+  layoutProjectionDigest,
+  validateLayoutProjection,
+} from './search-html-layout.js';
 
 export interface DocumentMaterial {
   text: string;
@@ -40,6 +45,7 @@ const materialSchema = Type.Object(
         {
           kind: Type.Literal('html-layout-v1'),
           textDigest: Type.String({ pattern: '^[a-f0-9]{64}$' }),
+          projectionDigest: Type.String({ pattern: '^[a-f0-9]{64}$' }),
           excludedNodes: Type.Integer({ minimum: 0 }),
           tables: Type.Integer({ minimum: 0 }),
           omittedTables: Type.Integer({ minimum: 0 }),
@@ -58,6 +64,11 @@ export function cachedMaterial(value: unknown): DocumentMaterial | undefined {
   for (const link of value.links) normalizeConsiderUrl(link.uri);
   if (value.scope && value.scope.textDigest !== digest(value.text))
     throw new Error('invalid_document_layout_digest');
+  if (value.scope) {
+    if (value.scope.projectionDigest !== layoutProjectionDigest(value.sections))
+      throw new Error('invalid_document_projection_digest');
+    validateLayoutProjection(value.text, value.sections);
+  }
   return value;
 }
 const date = (value?: string | null) =>

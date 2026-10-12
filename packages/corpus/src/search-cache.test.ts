@@ -18,6 +18,7 @@ it('reacquires old normalized cache representations instead of promoting strippe
       text: '{"description":"We do recommend this"}',
       fetchedAt: new Date().toISOString(),
     });
+    const original = await readFile(path);
     let calls = 0;
     const fetch = privateCacheFetch(root, undefined, async () => {
       calls++;
@@ -30,7 +31,15 @@ it('reacquires old normalized cache representations instead of promoting strippe
     expect(second.cached).toBe(true);
     expect(second.fetchedAt).toBe(first.fetchedAt);
     expect(calls).toBe(1);
-    expect(JSON.parse(await readFile(path, 'utf8'))).toHaveProperty('normalizer', 'text-v2');
+    expect(await readFile(path)).toEqual(original);
+    expect(
+      JSON.parse(
+        await readFile(
+          join(root, '.signals/source-cache', `${digest(`${uri}:text-v2`)}.json`),
+          'utf8',
+        ),
+      ),
+    ).toHaveProperty('normalizer', 'text-v2');
   } finally {
     await rm(root, { recursive: true, force: true });
   }

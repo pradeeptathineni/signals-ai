@@ -1,15 +1,70 @@
 import { it, expect } from 'vitest';
-import { mkdtemp, realpath, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, realpath, rm, readFile, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { extractHtml, cachedMaterial } from './search-document.js';
 import { digest } from './search-fetch.js';
 import { privateCacheFetch } from './search-cache.js';
 import { atomicJson } from './search-store.js';
+import { layoutProjectionDigest } from './search-html-layout.js';
 
 const uri = 'https://example.org/limits';
 const raw =
   '<html><head><title>Numeric controls</title></head><body><main><h1>Published limits</h1><table id="limits"><tr><th>Date</th><th>Maximum USD</th></tr><tr><td>2026-10-12</td><td>10</td></tr><tr><td>2026-10-13</td><td>100</td></tr></table><p>This proposed launch is not operational. These amounts are limits, not observed usage.</p></main></body></html>';
+
+it.each(['snapshot', 'span', 'text', 'grid'])(
+  'rejects projection %s tampering even with recomputed metadata digest',
+  (field) => {
+    const doc = extractHtml(raw, uri);
+    const table = doc.sections.find((section) => section.provenance)?.provenance?.[0] as {
+      snapshotDigest: string;
+      cells: { start: number; text: string }[];
+      grid: number[][];
+    };
+    if (field === 'snapshot') table.snapshotDigest = 'a'.repeat(64);
+    if (field === 'span') table.cells[0]!.start++;
+    if (field === 'text') table.cells[0]!.text = 'Invented';
+    if (field === 'grid') table.grid[0]![0] = 1;
+    doc.scope!.projectionDigest = layoutProjectionDigest(doc.sections);
+    expect(() => cachedMaterial(doc)).toThrow(/invalid_table_/);
+  },
+);
+
+it.each([false, true])(
+  'preserves legacy HTML cache across plain-text changes at every age (expired=%s)',
+  async (expired) => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-cache-kind-')));
+    const path = join(root, '.signals/source-cache', `${digest(uri)}.json`);
+    try {
+      const old = extractHtml(raw, uri, 'text-v2');
+      await atomicJson(path, {
+        uri,
+        text: old.text,
+        material: old,
+        digest: digest(raw),
+        normalizer: 'text-v2',
+      });
+      if (expired) await utimes(path, new Date(0), new Date(0));
+      const bytes = await readFile(path);
+      let calls = 0;
+      const fetch = privateCacheFetch(root, undefined, async () => {
+        calls++;
+        return {
+          uri,
+          text: 'A changed plain-text body.',
+          digest: digest('A changed plain-text body.'),
+          normalizer: 'text-v2',
+        };
+      });
+      await fetch(uri);
+      expect((await fetch(uri)).text).toBe('A changed plain-text body.');
+      expect(calls).toBe(1);
+      expect(await readFile(path)).toEqual(bytes);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
 
 it('retains the exact historical v2 fixture while v3 preserves dates/amounts with snapshot-bound cell spans', () => {
   expect(digest(raw)).toBe('0612b0595ce0aba7befe970bac9155a2f0bd9f0ca95d08681e597a4cdaf302ac');

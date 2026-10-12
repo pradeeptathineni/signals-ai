@@ -492,7 +492,8 @@ function mergeEntity(prior: Entity, incoming: Entity): Entity {
     // Retained results remain replayable, but cannot rewind the canonical receipt or decoder.
     if (
       selected &&
-      (sourceTextRank(source.normalizer) < sourceTextRank(selected.normalizer) ||
+      ((sourceTextRank(source.normalizer) < sourceTextRank(selected.normalizer) &&
+        (!supportedSourceText(source.normalizer) || source.digest === selected.digest)) ||
         Date.parse(checkedAt) < Date.parse(currentChecks[source.uri]!))
     )
       continue;

@@ -1,5 +1,7 @@
 import { parseHTML } from 'linkedom';
 import { digest, normalizeSpan } from './search-fetch.js';
+import { Type } from 'typebox';
+import { Value } from 'typebox/value';
 
 const blocks = new Set(
   'ADDRESS ARTICLE ASIDE BLOCKQUOTE BR DD DIV DL DT FIGCAPTION FIGURE FOOTER H1 H2 H3 H4 H5 H6 HEADER HR LI MAIN OL P PRE SECTION UL'.split(
@@ -46,6 +48,106 @@ interface Table {
   cells: Cell[];
   grid: (number | null)[][];
   unresolved: string[];
+}
+const count = Type.Integer({ minimum: 0 });
+const positive = Type.Integer({ minimum: 1, maximum: 200 });
+const label = Type.String({ maxLength: 2000000 });
+const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });
+const tableSchema = Type.Object(
+  {
+    kind: Type.Literal('html-table-v1'),
+    table: positive,
+    coordinate: Type.Literal('UTF16-in-normalized-text'),
+    ordinalCoordinate: Type.Literal('zero-based-DOM-row-and-cell; logical-grid-column'),
+    snapshotDigest: hash,
+    start: count,
+    end: count,
+    cells: Type.Array(
+      Type.Object(
+        {
+          row: count,
+          domCell: count,
+          rowGroup: label,
+          column: count,
+          rowSpan: positive,
+          columnSpan: positive,
+          tag: Type.Enum(['th', 'td']),
+          text: label,
+          headers: Type.Array(label),
+          scope: Type.Union([label, Type.Null()]),
+          id: Type.Union([label, Type.Null()]),
+          start: count,
+          end: count,
+        },
+        { additionalProperties: false },
+      ),
+      { maxItems: 2000 },
+    ),
+    grid: Type.Array(Type.Array(Type.Union([count, Type.Null()]), { maxItems: 64 }), {
+      maxItems: 200,
+    }),
+    unresolved: Type.Array(label),
+  },
+  { additionalProperties: false },
+);
+type Section = { locator: string; text: string; provenance?: unknown[] };
+export const layoutProjectionDigest = (sections: Section[]) =>
+  digest(
+    JSON.stringify(
+      sections.filter((section) =>
+        section.provenance?.some(
+          (value) =>
+            value && typeof value === 'object' && 'kind' in value && value.kind === 'html-table-v1',
+        ),
+      ),
+    ),
+  );
+
+/** Validates declared geometry and snapshot bindings, not raw HTML semantics or entailment. */
+export function validateLayoutProjection(text: string, sections: Section[]) {
+  const textHash = digest(text);
+  for (const section of sections)
+    for (const value of section.provenance ?? []) {
+      if (
+        !value ||
+        typeof value !== 'object' ||
+        !('kind' in value) ||
+        value.kind !== 'html-table-v1'
+      )
+        continue;
+      if (!Value.Check(tableSchema, value)) throw new Error('invalid_table_projection');
+      const width = value.grid[0]?.length ?? 0;
+      if (
+        value.snapshotDigest !== textHash ||
+        value.start > value.end ||
+        value.end > text.length ||
+        text.slice(value.start, value.end) !== section.text ||
+        value.grid.some((row) => row.length !== width)
+      )
+        throw new Error('invalid_table_snapshot_binding');
+      const grid: (number | null)[][] = value.grid.map(() =>
+        Array<number | null>(width).fill(null),
+      );
+      for (const [index, cell] of value.cells.entries()) {
+        if (
+          cell.start < value.start ||
+          cell.end > value.end ||
+          cell.start > cell.end ||
+          text.slice(cell.start, cell.end) !== cell.text ||
+          cell.row + cell.rowSpan > grid.length ||
+          cell.column + cell.columnSpan > width
+        )
+          throw new Error('invalid_table_cell_binding');
+        for (let row = cell.row; row < cell.row + cell.rowSpan; row++)
+          for (let column = cell.column; column < cell.column + cell.columnSpan; column++) {
+            if (grid[row]![column] !== null && !value.unresolved.length)
+              throw new Error('invalid_table_overlap');
+            grid[row]![column] ??= index;
+          }
+      }
+      if (JSON.stringify(grid) !== JSON.stringify(value.grid))
+        throw new Error('invalid_table_occupancy');
+    }
 }
 /** Inert DOM geometry only. Separators and references are generated representation metadata. */
 export function htmlLayout(raw: string, title: string) {
@@ -119,7 +221,11 @@ export function htmlLayout(raw: string, title: string) {
         const remaining = rows
           .slice(r)
           .filter((other) => other.parentElement === row.parentElement).length;
-        const rowSpan = Math.min(span(element.getAttribute('rowspan'), remaining, true), remaining);
+        const rowSpan = Math.min(
+          span(element.getAttribute('rowspan'), remaining, true),
+          remaining,
+          200 - r,
+        );
         const columnSpan = span(element.getAttribute('colspan'), 64 - column, false);
         if (column + columnSpan > 64) {
           unresolved.push('Column span exceeds projection bounds.');
@@ -255,6 +361,7 @@ export function htmlLayout(raw: string, title: string) {
     scope: {
       kind: 'html-layout-v1' as const,
       textDigest,
+      projectionDigest: layoutProjectionDigest(sections),
       excludedNodes: removals.size,
       tables: tableNumber,
       omittedTables,

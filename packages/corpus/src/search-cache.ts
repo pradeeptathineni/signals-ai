@@ -41,7 +41,6 @@ export function privateCacheFetch(
       '.signals/source-cache',
       `${digest(`${normalized}:text-v2`)}.json`,
     );
-    let preserveLegacyHtml = false;
     for (const path of [currentPath, plainPath, legacyPath]) {
       const stat = await lstat(path).catch(() => null);
       if (stat && (!stat.isFile() || stat.isSymbolicLink() || (await realpath(path)) !== path))
@@ -58,10 +57,8 @@ export function privateCacheFetch(
           'normalizer' in cached &&
           cached.normalizer === 'text-v2' &&
           material?.extractor === 'readability-0.6.0'
-        ) {
-          preserveLegacyHtml = true;
+        )
           continue;
-        }
         if (
           cached &&
           typeof cached === 'object' &&
@@ -131,16 +128,13 @@ export function privateCacheFetch(
     )
       throw new Error('invalid_source_representation');
     const fetchedAt = new Date().toISOString();
-    await atomicJson(
-      normalizer === currentHtmlText ? currentPath : preserveLegacyHtml ? plainPath : legacyPath,
-      {
-        ...fetched,
-        normalizer,
-        uri: normalized,
-        finalUri: fetched.uri,
-        fetchedAt,
-      },
-    );
+    await atomicJson(normalizer === currentHtmlText ? currentPath : plainPath, {
+      ...fetched,
+      normalizer,
+      uri: normalized,
+      finalUri: fetched.uri,
+      fetchedAt,
+    });
     return { ...fetched, normalizer, cached: false, fetchedAt };
   };
 }

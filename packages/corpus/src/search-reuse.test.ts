@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { acceptDiscovery } from './signal-search.js';
 import { digest } from './search-fetch.js';
-import { saveEntities } from './search-store.js';
+import { saveEntities, loadEntities } from './search-store.js';
 import { researchCorpusSlice, checkPrimaryMaterial } from './search-reuse.js';
 import type { Proposal } from '../../domain/src/search-contract.js';
 
@@ -36,6 +36,9 @@ async function acquired(
     counterevidence?: boolean;
     identityUnverified?: boolean;
     normalizer?: 'text-v2' | 'text-v3';
+    document?: string;
+    asOf?: string;
+    legacy?: boolean;
   } = {},
 ) {
   const uri = `https://example.org/drainage-${index}`;
@@ -114,18 +117,53 @@ async function acquired(
       proposal,
       { query: 'wet soil' },
       {
-        asOf: date,
+        asOf: options.asOf ?? date,
         fetch: async () => ({
           uri,
-          text,
-          digest: digest(text),
-          normalizer: options.normalizer ?? 'text-v2',
+          text: options.document ?? text,
+          digest: digest(options.document ?? text),
+          normalizer: options.legacy ? undefined : (options.normalizer ?? 'text-v2'),
           identityUnverified: options.identityUnverified,
         }),
       },
     )
   ).items[0]!;
 }
+it.each([
+  [false, false],
+  [true, false],
+  [true, true],
+])(
+  'preserves history and advances only changed supported bodies after v3 (changed=%s, legacy=%s)',
+  async (changed, legacy) => {
+    const root = await realpath(
+      await mkdtemp(join(tmpdir(), 'signals-representation-transition-')),
+    );
+    try {
+      const older = await acquired(0, undefined, 0, {
+        normalizer: 'text-v3',
+        asOf: '2026-10-10T00:00:00Z',
+      });
+      const newer = await acquired(0, undefined, 0, {
+        normalizer: 'text-v2',
+        asOf: '2026-10-11T00:00:00Z',
+        document: changed ? `${text} A newly published plain-text appendix.` : text,
+        legacy,
+      });
+      const before = JSON.stringify(older);
+      await saveEntities([older], 'manual', root, 'private', 75, true);
+      await saveEntities([newer], 'refresh', root, 'private', 75, true);
+      const stored = (await loadEntities(join(root, '.signals/corpus/entities')))[0]!.entity;
+      expect(stored.evidence).toHaveLength(2);
+      const current = changed && !legacy ? newer : older;
+      expect(stored.currentEvidence).toContain(current.entity.evidence[0]!.id);
+      expect(stored.currentChecks?.[older.entity.uri]).toBe(current.entity.evidence[0]!.fetchedAt);
+      expect(JSON.stringify(older)).toBe(before);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
 async function snapshot(root: string) {
   const files: [string, string][] = [];
   async function visit(path: string) {
