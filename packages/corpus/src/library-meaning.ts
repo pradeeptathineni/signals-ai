@@ -113,23 +113,38 @@ export async function matchLibrary(
     .search('', filters)
     .map((hit) => hit.finding)
     .sort((a, b) => a.key.localeCompare(b.key));
-  const rows: {
-    key: string;
-    title: string;
-    description: string;
-    kind: string;
-    capabilities: string[];
-    tags: string[];
-  }[] = [];
-  for (const finding of population) {
-    const row = {
+  const metadata = population.map((finding) => ({
+    finding,
+    row: {
       key: finding.key,
       title: finding.title,
       description: finding.description.slice(0, 1200),
       kind: finding.kind,
       capabilities: finding.capabilities.slice(0, 12),
       tags: finding.tags.slice(0, 12),
-    };
+    },
+  }));
+  // Prioritize query-connected records using only the metadata disclosed below.
+  // Private notes, complete answers and other local-only fields cannot affect this pool.
+  const metadataIndex = createLibraryIndex(
+    metadata.map(({ finding, row }) => ({
+      ...finding,
+      ...row,
+      aliases: [],
+      domains: [],
+      useCases: [],
+      technologies: [],
+      sourceNames: [],
+      notes: undefined,
+      answerText: undefined,
+    })),
+  );
+  const byMetadataKey = new Map(metadata.map(({ row }) => [row.key, row]));
+  const priority = metadataIndex.search(query).map((hit) => hit.finding.key);
+  const ordered = [...new Set([...priority, ...population.map((finding) => finding.key)])];
+  const rows: (typeof metadata)[number]['row'][] = [];
+  for (const key of ordered) {
+    const row = byMetadataKey.get(key)!;
     if (rows.length === 200 || JSON.stringify([...rows, row]).length > 48000) break;
     rows.push(row);
   }
@@ -177,7 +192,7 @@ export async function matchLibrary(
       hits: [...semantic, ...literal.filter((hit) => !matched.has(hit.finding.key))],
       state: omitted ? 'partial' : 'completed',
       reason:
-        'Meaning matches use retained metadata. Literal matches follow. Matching does not assess query relevance or change Signal.',
+        'Meaning matches use query-prioritized retained metadata within a bounded pool; omitted records can include paraphrases without shared wording. Literal matches follow. Matching does not assess query relevance or change Signal.',
       omitted,
       usage: response.usage,
     };
