@@ -196,6 +196,11 @@ export function answerFirstOperation(request: SearchRequest) {
     : {};
 }
 
+/** Frozen claim review: no live web, one capped schema-bound response over supplied material. */
+export function claimReviewOperation(root: string, task: string, schema: unknown) {
+  return { task, schema, live: false, root, maxResponseBytes: 65536 };
+}
+
 export function codexRunner(
   model?: string,
   effort?: string,

@@ -12,7 +12,7 @@ import {
 } from '../../domain/src/search-contract.js';
 import { signalSearch } from './signal-search.js';
 import { directSearch } from './search-direct.js';
-import { codexRunner, answerFirstOperation } from './search-runner.js';
+import { codexRunner, answerFirstOperation, claimReviewOperation } from './search-runner.js';
 import { loadAcquisitionConfig, acquisitionReadiness } from './search-acquisition.js';
 import { scanSources } from './search-sources.js';
 import { loadPersonal, updatePersonal } from './search-personal.js';
@@ -505,13 +505,11 @@ export function searchApi(
         void search(effectiveQuery, {
           root,
           claimRunner: (task, schema) =>
-            codexRunner(settings.model || undefined, settings.effort || undefined, {
-              root,
-              task,
-              schema,
-              live: false,
-              maxResponseBytes: 65536,
-            }),
+            codexRunner(
+              settings.model || undefined,
+              settings.effort || undefined,
+              claimReviewOperation(root, task, schema),
+            ),
           ...(query.claimText
             ? {}
             : {

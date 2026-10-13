@@ -9,6 +9,7 @@ import { nativeBriefSchema } from '../packages/domain/src/search-native.js';
 import {
   codexRunner,
   answerFirstOperation,
+  claimReviewOperation,
   decodeNativeOutput,
 } from '../packages/corpus/src/search-runner.js';
 import { execFileSync } from 'node:child_process';
@@ -159,13 +160,11 @@ try {
         }
       : await signalSearch(request, {
           claimRunner: (task, schema) =>
-            codexRunner(values.model ?? 'gpt-6.1-sol', values.effort ?? 'low', {
-              task,
-              schema,
-              live: false,
-              root: process.cwd(),
-              maxResponseBytes: 65536,
-            }),
+            codexRunner(
+              values.model ?? 'gpt-6.1-sol',
+              values.effort ?? 'low',
+              claimReviewOperation(process.cwd(), task, schema),
+            ),
           ...(request.claimText
             ? {}
             : {

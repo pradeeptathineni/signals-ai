@@ -20,7 +20,12 @@ import { supportedSourceText } from '../../domain/src/source-text.js';
 import { digest, normalizeSpan, fetchEvidence, boundedTextReceipt } from './search-fetch.js';
 import { materialOmissions } from './search-document.js';
 import { loadRun, retainRun } from './search-store.js';
-import { codexRunner, RunnerFailure, type SearchRunner } from './search-runner.js';
+import {
+  codexRunner,
+  claimReviewOperation,
+  RunnerFailure,
+  type SearchRunner,
+} from './search-runner.js';
 import { partialOrigin, validatePartialClosure } from './search-note.js';
 
 const runBytes = (value: unknown) => Buffer.byteLength(`${JSON.stringify(value, null, 2)}\n`);
@@ -549,13 +554,7 @@ export async function runClaimCheck(
     const runner =
       dependencies.claimRunner?.(task, claimResponseSchema) ??
       dependencies.runner ??
-      codexRunner(undefined, undefined, {
-        task,
-        schema: claimResponseSchema,
-        live: false,
-        root,
-        maxResponseBytes: 65536,
-      });
+      codexRunner(undefined, undefined, claimReviewOperation(root, task, claimResponseSchema));
     nativeStarted = Date.now();
     const readiness = await claimStage(() => runner.readiness(), controller.signal);
     if (!readiness.available) {
