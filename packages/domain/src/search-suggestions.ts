@@ -46,7 +46,7 @@ export const rejectedSuggestionsSchema = Type.Object(
       'duplicate_check_suggestion_url',
     ]),
     diagnostic: Type.Optional(
-      Type.Omit(linkedClaimReceiptSchema.properties.rejectedOutput, ['captureScope']),
+      Type.Omit(linkedClaimReceiptSchema.properties.rejectedOutput, ['captureScope'], closed),
     ),
   },
   closed,

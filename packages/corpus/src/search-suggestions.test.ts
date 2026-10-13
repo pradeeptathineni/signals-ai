@@ -291,6 +291,8 @@ it('retains bounded parsed-field rejection diagnostics, never source evidence or
       { ...receipt, presence: 'missing' },
       { ...receipt, diagnostic: { ...receipt.diagnostic!, capturedBytes: 1 } },
       { ...receipt, diagnostic: { ...receipt.diagnostic!, captureComplete: false } },
+      { ...receipt, diagnostic: { ...receipt.diagnostic!, captureScope: 'runner-stdout' } },
+      { ...receipt, diagnostic: { ...receipt.diagnostic!, unrecognized: true } },
     ]) {
       await writeFile(file, JSON.stringify({ ...parent, rejectedCheckSuggestions: mutation }));
       await expect(loadRun(parent.runId, area)).rejects.toThrow('invalid_suggestion_rejection');
