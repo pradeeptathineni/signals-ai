@@ -14,7 +14,13 @@ import {
 } from '../../domain/src/search-contract.js';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
 import { assessEntity, filterSearchItems, saveDecision } from '../../domain/src/search-score.js';
-import { digest, fetchEvidence, normalizeText, normalizeSpan } from './search-fetch.js';
+import {
+  digest,
+  fetchEvidence,
+  normalizeText,
+  normalizeSpan,
+  boundedTextReceipt,
+} from './search-fetch.js';
 import {
   codexRunner,
   answerFirstOperation,
@@ -25,7 +31,11 @@ import { privateCacheFetch } from './search-cache.js';
 import { runClaimCheck } from './search-claim.js';
 import { atomicJson, saveEntities, retainRun, loadEntities, loadRun } from './search-store.js';
 import { planResearchRetention } from './research-answer.js';
-import { checkSuggestions, offeredPayload } from '../../domain/src/search-suggestions.js';
+import {
+  checkSuggestions,
+  offeredPayload,
+  rejectedSuggestionsSchema,
+} from '../../domain/src/search-suggestions.js';
 import { resolve } from 'node:path';
 import { loadAcquisitionConfig } from './search-acquisition.js';
 import { configuredDocumentFetch } from './search-extractors.js';
@@ -886,9 +896,10 @@ export async function signalSearch(
           ...plan.limits,
         ];
         if (request.suggestChecks) {
+          const present = Object.hasOwn(discovery.proposal, 'suggestions');
+          const offered =
+            'suggestions' in discovery.proposal ? discovery.proposal.suggestions : undefined;
           try {
-            const offered =
-              'suggestions' in discovery.proposal ? discovery.proposal.suggestions : undefined;
             base.checkSuggestions = checkSuggestions(
               {
                 version: 1,
@@ -905,9 +916,32 @@ export async function signalSearch(
             base.gaps.push(
               'Suggested checks are unverified hypotheses; no proposition has been checked.',
             );
-          } catch {
+          } catch (error) {
+            const reason = error instanceof Error ? error.message : '';
+            base.rejectedCheckSuggestions = {
+              version: 1,
+              answerDigest: plan.answerSha256,
+              scope: 'parsed-final-suggestions',
+              presence: present ? 'nonserializable' : 'missing',
+              reason: rejectedSuggestionsSchema.properties.reason.enum.some(
+                (value) => value === reason,
+              )
+                ? (reason as NonNullable<SearchResult['rejectedCheckSuggestions']>['reason'])
+                : 'invalid_check_suggestions',
+            };
+            if (present) {
+              try {
+                const parsed = JSON.stringify(offered);
+                if (parsed !== undefined) {
+                  base.rejectedCheckSuggestions.presence = 'serializable';
+                  base.rejectedCheckSuggestions.diagnostic = boundedTextReceipt(parsed);
+                }
+              } catch {
+                // No payload is claimed when the supplied parsed field cannot serialize.
+              }
+            }
             base.gaps.push(
-              'Suggested checks omitted: invalid metadata or uncited references. The complete answer remains available for manual selection.',
+              `Suggested checks omitted (${base.rejectedCheckSuggestions.reason}): invalid metadata or uncited references. The complete answer remains available for manual selection.`,
             );
           }
         }

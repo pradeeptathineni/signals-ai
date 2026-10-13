@@ -19,7 +19,7 @@ import { kinds, channels } from './search-vocabulary.js';
 import type { budgets } from './search-vocabulary.js';
 import type { ClaimReceipt } from './claim-check.js';
 import type { SourceText } from './source-text.js';
-import type { CheckSuggestions } from './search-suggestions.js';
+import type { CheckSuggestions, RejectedCheckSuggestions } from './search-suggestions.js';
 export { channels, budgets } from './search-vocabulary.js';
 const enumOf = <const T extends string>(values: readonly T[]) => Type.Enum<T[]>(values);
 export const indicators = {
@@ -382,6 +382,7 @@ export interface SearchItem {
 }
 export interface SearchResult {
   checkSuggestions?: CheckSuggestions;
+  rejectedCheckSuggestions?: RejectedCheckSuggestions;
   suggestionIndex?: number;
   suggestionDigest?: string;
   claimCheck?: ClaimReceipt;

@@ -7,6 +7,9 @@ import { answerFirstOperation, type SearchRunner } from './search-runner.js';
 import { loadRun, retainRun, cleanRuns } from './search-store.js';
 import { digest } from './search-fetch.js';
 import { parseRequest } from '../../domain/src/search-contract.js';
+import { checkSuggestions, offeredPayload } from '../../domain/src/search-suggestions.js';
+import { normalizeConsiderUrl } from '../../domain/src/url.js';
+import { searchEvidenceBundle } from './search-exchange.js';
 
 const uri = 'https://example.com/science#methods';
 const answer = `Original Ω answer\r\n\r\n[Methods](${uri}). Unknown deployment constraints.`;
@@ -215,6 +218,135 @@ it('replay rejects answer, ordered-offer and citation tampering without changing
       { root: area, runner: runner(offered) },
     );
     expect((await loadRun(old.runId, area)).checkSuggestions).toBeUndefined();
+  } finally {
+    await rm(area, { recursive: true, force: true });
+  }
+});
+
+it('matches canonical own citations while preserving offered strings and rejecting uncited aliases', () => {
+  const canonical = 'https://github.com/owner/repo?a=1&b=2#methods';
+  const raw = 'https://GITHUB.com:443/owner/repo/?b=2&utm_source=ignored&a=1#methods';
+  const admit = (urls: string[], citations = [canonical]) => {
+    const values = [{ ...offered[0]!, urls }];
+    return checkSuggestions(
+      {
+        version: 1,
+        state: 'unverified',
+        answerDigest: digest(answer),
+        offered: values,
+        offeredDigest: digest(offeredPayload(values)),
+      },
+      digest(answer),
+      citations,
+    );
+  };
+  expect(admit([raw]).offered[0]?.urls).toEqual([raw]);
+  for (const destination of [
+    'https://www.github.com/owner/repo?a=1&b=2#methods',
+    'https://github.com/owner/repo.git?a=1&b=2#methods',
+    'https://github.com/owner/repo?a=1&b=3#methods',
+    'https://github.com/owner/repo?a=1&b=2#results',
+    'https://example.com/redirect-destination',
+  ])
+    expect(() => admit([destination])).toThrow('check_suggestion_not_cited');
+  expect(() => admit([canonical, raw])).toThrow('duplicate_check_suggestion_url');
+  const unicode = `https://example.com/${'🧪'.repeat(200)}`;
+  const expanded = normalizeConsiderUrl(unicode).normalizedUrl;
+  expect(unicode.length).toBeLessThan(2048);
+  expect(expanded.length).toBeGreaterThan(2048);
+  expect(() => admit([unicode], [expanded])).toThrow('invalid_check_suggestion_url');
+});
+
+it('retains bounded parsed-field rejection diagnostics, never source evidence or implicit memory history', async () => {
+  const area = await root();
+  try {
+    const rejected = [{ ...offered[0]!, why: '\u0000🧪'.repeat(9000) }];
+    const raw = JSON.stringify(rejected);
+    const parent = await signalSearch(request, { root: area, runner: runner(rejected) });
+    const receipt = parent.rejectedCheckSuggestions!;
+    expect(receipt).toMatchObject({
+      scope: 'parsed-final-suggestions',
+      presence: 'serializable',
+      answerDigest: digest(answer),
+      diagnostic: {
+        captureComplete: true,
+        capturedDigest: digest(raw),
+        capturedBytes: Buffer.byteLength(raw),
+      },
+    });
+    expect(Buffer.byteLength(receipt.diagnostic!.text)).toBeLessThanOrEqual(32768);
+    expect(receipt.diagnostic!.text).not.toContain('�');
+    expect(receipt.diagnostic!.omittedBytes).toBe(
+      Buffer.byteLength(raw) - Buffer.byteLength(receipt.diagnostic!.text),
+    );
+    expect((await loadRun(parent.runId, area)).rejectedCheckSuggestions).toEqual(receipt);
+    expect(Buffer.byteLength(JSON.stringify(parent, null, 2))).toBeLessThan(2000000);
+    expect(JSON.stringify(searchEvidenceBundle(parent, 'a'.repeat(40)))).not.toContain(
+      'parsed-final-suggestions',
+    );
+    const file = join(area, '.signals/runs', `${parent.runId}.json`);
+    for (const mutation of [
+      { ...receipt, answerDigest: '0'.repeat(64) },
+      { ...receipt, scope: 'runner-stdout' },
+      { ...receipt, presence: 'missing' },
+      { ...receipt, diagnostic: { ...receipt.diagnostic!, capturedBytes: 1 } },
+      { ...receipt, diagnostic: { ...receipt.diagnostic!, captureComplete: false } },
+    ]) {
+      await writeFile(file, JSON.stringify({ ...parent, rejectedCheckSuggestions: mutation }));
+      await expect(loadRun(parent.runId, area)).rejects.toThrow('invalid_suggestion_rejection');
+    }
+    const complete = await signalSearch(request, { root: area, runner: runner(null) });
+    const accepted = await signalSearch(request, { root: area, runner: runner(offered) });
+    await expect(
+      retainRun({ ...accepted, rejectedCheckSuggestions: complete.rejectedCheckSuggestions }, area),
+    ).rejects.toThrow('invalid_suggestion_rejection');
+    await expect(
+      retainRun(
+        {
+          ...complete,
+          rejectedCheckSuggestions: {
+            ...complete.rejectedCheckSuggestions!,
+            diagnostic: {
+              ...complete.rejectedCheckSuggestions!.diagnostic!,
+              capturedDigest: '0'.repeat(64),
+            },
+          },
+        },
+        area,
+      ),
+    ).rejects.toThrow('invalid_suggestion_rejection');
+    const circular: unknown[] = [];
+    circular.push(circular);
+    const memoryArea = await root();
+    try {
+      const missing = await signalSearch(
+        { ...request, cache: 'memory' },
+        {
+          root: memoryArea,
+          runner: {
+            ...runner([]),
+            discover: async () => ({ proposal: { answer }, usage: null, searches: 0 }),
+          },
+        },
+      );
+      expect(missing.rejectedCheckSuggestions).toMatchObject({
+        presence: 'missing',
+        scope: 'parsed-final-suggestions',
+      });
+      expect(missing.rejectedCheckSuggestions?.diagnostic).toBeUndefined();
+      for (const values of [undefined, circular]) {
+        const memory = await signalSearch(
+          { ...request, cache: 'memory' },
+          { root: memoryArea, runner: runner(values) },
+        );
+        expect(memory.brief?.text).toBe(answer);
+        expect(memory.rejectedCheckSuggestions?.presence).toBe('nonserializable');
+        expect(memory.rejectedCheckSuggestions?.diagnostic).toBeUndefined();
+      }
+      expect(await readdir(memoryArea)).toEqual([]);
+    } finally {
+      await rm(memoryArea, { recursive: true, force: true });
+    }
   } finally {
     await rm(area, { recursive: true, force: true });
   }
