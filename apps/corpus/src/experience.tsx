@@ -127,6 +127,9 @@ function writeLocation(state: LocationState, replace: boolean) {
     `${window.location.pathname}?${params.toString()}`,
   );
 }
+function automaticReopen(state: LocationState) {
+  return state.view === 'Search' && state.mode === 'research' ? state.run : '';
+}
 function date(value: string | null) {
   return value
     ? new Date(value).toLocaleDateString('en-US', { timeZone: 'UTC', dateStyle: 'medium' })
@@ -136,7 +139,7 @@ export function Experience() {
   const [state, setState] = useState(locationState);
   const currentState = useRef(state);
   currentState.current = state;
-  const activeReopen = useRef(state.mode === 'research' ? state.run : '');
+  const activeReopen = useRef(automaticReopen(state));
   const [records, setRecords] = useState<LibraryFinding[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState('');
@@ -146,7 +149,7 @@ export function Experience() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [opportunities, setOpportunities] = useState<DisplayOpportunity[]>([]);
   const [pending, setPending] = useState<string[]>([]);
-  const [reopenRun, setReopenRun] = useState(state.run);
+  const [reopenRun, setReopenRun] = useState(() => automaticReopen(state));
   const [workbenchStarted, setWorkbenchStarted] = useState(local && state.mode === 'research');
   const [visibleCount, setVisibleCount] = useState(40);
   const [projectResearch, setProjectResearch] = useState<ApprovedResearchPreview | null>(null);
@@ -317,7 +320,8 @@ export function Experience() {
       const next = locationState();
       setProjectResearch((current) => (previewLocationMatches(current, next) ? current : null));
       setState(next);
-      setReopenRun(next.run);
+      activeReopen.current = automaticReopen(next);
+      setReopenRun(activeReopen.current);
     };
     window.addEventListener('popstate', back);
     return () => window.removeEventListener('popstate', back);

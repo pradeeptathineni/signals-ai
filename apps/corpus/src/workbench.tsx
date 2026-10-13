@@ -151,6 +151,7 @@ export function Workbench({
   const [answerBusy, setAnswerBusy] = useState(false);
   const discussionEpoch = useRef(0);
   const discussionParent = useRef<string | null>(null);
+  const openingEpoch = useRef(0);
   function clearDiscussion(parent: string | null = null) {
     discussionParent.current = parent;
     discussionEpoch.current++;
@@ -172,6 +173,7 @@ export function Workbench({
     }[]
   >([]);
   useEffect(() => {
+    openingEpoch.current++;
     if (requestedTab) setTab(requestedTab);
     if (requestedTab === 'Jobs') void action(loadHistory);
   }, [requestedTab]);
@@ -180,9 +182,13 @@ export function Workbench({
   }, [question]);
   useEffect(() => {
     if (reopenRun) void action(() => openRun(reopenRun));
+    return () => {
+      openingEpoch.current++;
+    };
   }, [reopenRun]);
   useEffect(() => {
     if (monitorRun) {
+      openingEpoch.current++;
       clearDiscussion();
       setRun(monitorRun);
       setBusy(true);
@@ -356,6 +362,7 @@ export function Workbench({
     claim?: string,
     method: 'native' | 'answer-first' | 'primary-check' = 'native',
   ) {
+    openingEpoch.current++;
     const direct = method === 'primary-check';
     if (direct && !primaryReady)
       throw new Error('Supply a proposition and one or two primary URLs.');
@@ -407,8 +414,16 @@ export function Workbench({
       !saved.has(item.entity.id),
   );
   async function openRun(runId: string) {
+    const opening = ++openingEpoch.current;
     clearDiscussion();
-    const opened = await api<{ id: string }>('history/open', { runId });
+    let opened: { id: string };
+    try {
+      opened = await api<{ id: string }>('history/open', { runId });
+    } catch (failure) {
+      if (opening !== openingEpoch.current) return;
+      throw failure;
+    }
+    if (opening !== openingEpoch.current) return;
     onOpenResult?.(runId);
     setRun(opened.id);
     reopening.current = true;
