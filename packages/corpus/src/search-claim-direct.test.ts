@@ -225,6 +225,34 @@ it('memory and failed source review preserve no history and never bind caller te
   expect(await readdir(root)).toEqual([]);
 });
 
+it('direct receipt replay rejects historical lineage in usable and unavailable material', async () => {
+  const root = await area();
+  const result = await signalSearch(input, { root, fetch, runner: runner() });
+  const original = result.claimCheck!.selectedMaterial[0]!;
+  if (original.state !== 'usable') throw new Error('not_usable');
+  const retainedFrom = {
+    runId: randomUUID(),
+    sourceId: `evidence-${digest(`${original.requestedUri}:${original.documentDigest}:${original.snapshotDigest}:${original.normalizer}`).slice(0, 24)}`,
+  };
+  for (const source of [
+    { ...original, scope: 'retained-excerpt' as const, retainedFrom },
+    { ...original, retainedFrom },
+    {
+      sourceIndex: 0,
+      requestedUri: original.requestedUri,
+      state: 'denied' as const,
+      reason: 'source_denied_403',
+      retainedFrom,
+    },
+  ]) {
+    const copy = structuredClone(result);
+    copy.claimCheck!.selectedMaterial = [source];
+    expect(() => validateClaimReceipt(copy)).toThrow('invalid_direct_claim_material');
+    await atomicJson(join(root, '.signals/runs', `${result.runId}.json`), copy);
+    await expect(loadRun(result.runId, root)).rejects.toThrow('invalid_direct_claim_material');
+  }
+});
+
 it('a deferred direct acquisition cannot launch after cancellation or late settlement', async () => {
   const root = await area();
   const controller = new AbortController();

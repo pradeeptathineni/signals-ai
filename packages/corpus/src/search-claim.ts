@@ -135,6 +135,12 @@ export function validateClaimReceipt(result: SearchResult) {
   let length = 0;
   for (const [index, source] of receipt.selectedMaterial.entries()) {
     if (
+      receipt.version === 2 &&
+      ('retainedFrom' in source ||
+        (source.state === 'usable' && source.scope !== 'complete-normalized-document'))
+    )
+      fail('invalid_direct_claim_material');
+    if (
       source.sourceIndex !== index ||
       source.requestedUri !== result.assessmentTargets[index] ||
       safe(source.requestedUri) !== source.requestedUri
