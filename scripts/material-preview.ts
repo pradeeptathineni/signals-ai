@@ -62,14 +62,30 @@ function parse(argv: string[]) {
   const values = parsed.values as Record<string, string | undefined>;
   for (const name of required)
     if (!values[name]) throw new Error(`--${name} is required for ${command}`);
-  const numbers: Record<string, number | undefined> = {};
-  for (const name of ['offset', 'window', 'windows', 'start', 'end']) {
+  // Digits only; range and safe-integer limits are enforced by the preview itself.
+  const number = (name: string) => {
     const value = values[name];
-    if (value === undefined) continue;
+    if (value === undefined) return undefined;
     if (!/^\d+$/.test(value)) throw new Error(`--${name} must be a non-negative integer`);
-    numbers[name] = Number(value);
+    return Number(value);
+  };
+  // Required options were checked above, so the assertions below cannot fail.
+  const snapshot = values.snapshot!;
+  const sourceUri = values['source-uri'];
+  if (command === 'list') {
+    const options = {
+      offset: number('offset'),
+      windowUnits: number('window'),
+      windows: number('windows'),
+    };
+    return { command: 'list' as const, snapshot, sourceUri, options };
   }
-  return { command, values, numbers };
+  const selection = {
+    expectedTextSha256: values.sha256!,
+    start: number('start')!,
+    end: number('end')!,
+  };
+  return { command: 'select' as const, snapshot, sourceUri, selection };
 }
 
 /** One explicitly named snapshot in, one JSON preview returned for stdout; no network or file output. */
@@ -81,21 +97,12 @@ export function materialPreviewCli(argv: string[]) {
     const stderr = `material-preview: ${(error as Error).message}\n${usage}\n`;
     return { code: 2, stdout: '', stderr };
   }
-  const { command, values, numbers } = request;
   try {
-    const snapshot = previewSnapshot(readSnapshot(values.snapshot!), values['source-uri']);
+    const snapshot = previewSnapshot(readSnapshot(request.snapshot), request.sourceUri);
     const result =
-      command === 'list'
-        ? listPreview(snapshot, {
-            offset: numbers.offset,
-            windowUnits: numbers.window,
-            windows: numbers.windows,
-          })
-        : selectPreview(snapshot, {
-            expectedTextSha256: values.sha256!,
-            start: numbers.start!,
-            end: numbers.end!,
-          });
+      request.command === 'list'
+        ? listPreview(snapshot, request.options)
+        : selectPreview(snapshot, request.selection);
     return { code: 0, stdout: `${JSON.stringify(result, null, 2)}\n`, stderr: '' };
   } catch (error) {
     return { code: 1, stdout: '', stderr: `material-preview: ${(error as Error).message}\n` };
