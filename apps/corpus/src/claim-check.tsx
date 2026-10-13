@@ -5,9 +5,11 @@ export function ClaimCheck({ receipt }: { receipt: ClaimReceipt }) {
     <section aria-label="Selected proposition check">
       <h2>Selected proposition</h2>
       <p>
-        {receipt.version === 2
-          ? 'User-specified proposition and primary sources, without an original research answer.'
-          : 'User-specified proposition; it need not be asserted by the original answer.'}
+        {receipt.version === 3
+          ? 'Explicit check from retained incomplete notes. The original prose remains unassessed; this is not a completed-answer assessment.'
+          : receipt.version === 2
+            ? 'User-specified proposition and primary sources, without an original research answer.'
+            : 'User-specified proposition; it need not be asserted by the original answer.'}
       </p>
       <p>
         The snapshot preserves supplied normalized text. Extraction may omit original structure,
@@ -20,9 +22,11 @@ export function ClaimCheck({ receipt }: { receipt: ClaimReceipt }) {
       </p>
       <p>
         {receipt.historySaved
-          ? receipt.version === 2
-            ? 'Saved privately with the original request and primary snapshots.'
-            : 'Saved privately with the original answer link.'
+          ? receipt.version === 3
+            ? 'Saved privately with a copy of the incomplete notes and primary snapshots. Original-run expiry or deletion does not delete this separate copy.'
+            : receipt.version === 2
+              ? 'Saved privately with the original request and primary snapshots.'
+              : 'Saved privately with the original answer link.'
           : 'Not saved to history.'}
       </p>
       <p>{receipt.reason}</p>
@@ -33,6 +37,18 @@ export function ClaimCheck({ receipt }: { receipt: ClaimReceipt }) {
         <p>{receipt.originalContext}</p>
         {receipt.additionalContext && <p>Additional context: {receipt.additionalContext}</p>}
       </details>
+      {receipt.version === 3 && (
+        <details>
+          <summary>Copied incomplete notes</summary>
+          <p>
+            Unassessed original prose. Original context was not retained. This copy does not restore
+            its original run or renew source dates.
+          </p>
+          <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+            {receipt.origin.fullBrief}
+          </pre>
+        </details>
+      )}
       <ol>
         {receipt.selectedMaterial.map((source) => (
           <li key={source.sourceIndex}>

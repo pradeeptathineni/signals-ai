@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState, useRef, type ReactNode } from 'react';
 import { ClaimCheck } from './claim-check.js';
+import type { PartialNoteSelection } from '../../../packages/domain/src/claim-check.js';
+import type { SearchRequest } from '../../../packages/domain/src/search-contract.js';
 import {
   filterSearchItems,
   sourceHost,
@@ -71,6 +73,16 @@ export function Workbench({
     'native',
   );
   const [claimText, setClaimText] = useState('');
+  const [noteParent, setNoteParent] = useState<PartialNoteSelection | null>(null);
+  const [noteParentGap, setNoteParentGap] = useState<string | null>(null);
+  const [noteClaim, setNoteClaim] = useState('');
+  const [noteOriginalAvailable, setNoteOriginalAvailable] = useState<boolean | null>(null);
+  function clearNoteSelection() {
+    setNoteParent(null);
+    setNoteOriginalAvailable(null);
+    setNoteParentGap(null);
+    setNoteClaim('');
+  }
   const [primaryClaim, setPrimaryClaim] = useState('');
   const [primaryUrls, setPrimaryUrls] = useState('');
   const primaryTargets = primaryUrls
@@ -189,6 +201,7 @@ export function Workbench({
   useEffect(() => {
     if (monitorRun) {
       openingEpoch.current++;
+      clearNoteSelection();
       clearDiscussion();
       setRun(monitorRun);
       setBusy(true);
@@ -282,6 +295,9 @@ export function Workbench({
           batch: QueryBatch | null;
           due?: Awaited<ReturnType<typeof runDueOnce>>;
           brief?: SearchResult['brief'] | null;
+          noteOriginalAvailable?: boolean | null;
+          noteParent?: PartialNoteSelection | null;
+          noteParentGap?: string | null;
         }>(`runs/${run}`);
         if (state.error) throw new Error(state.error);
         if (stopped) return;
@@ -307,6 +323,9 @@ export function Workbench({
           void reloadCorpus();
         }
         if (state.result) {
+          setNoteParent(state.noteParent ?? null);
+          setNoteOriginalAvailable(state.noteOriginalAvailable ?? null);
+          setNoteParentGap(state.noteParentGap ?? null);
           if (discussionParent.current !== state.result.runId) clearDiscussion(state.result.runId);
           setResult(state.result);
           if (reopening.current) {
@@ -361,8 +380,10 @@ export function Workbench({
     assessmentOf?: string,
     claim?: string,
     method: 'native' | 'answer-first' | 'primary-check' = 'native',
+    note?: Pick<SearchRequest, 'parentSnapshotDigest' | 'claimCitations'>,
   ) {
-    openingEpoch.current++;
+    const starting = ++openingEpoch.current;
+    clearNoteSelection();
     const direct = method === 'primary-check';
     if (direct && !primaryReady)
       throw new Error('Supply a proposition and one or two primary URLs.');
@@ -370,18 +391,26 @@ export function Workbench({
     reopening.current = false;
     setSourceResult(null);
     setProvisional([]);
-    const started = await api<{ id: string }>(captureUrls || direct ? 'capture' : 'search', {
-      query: question,
-      context,
-      captureUrls: direct ? primaryTargets : captureUrls,
-      method: captureUrls || direct ? 'native' : method,
-      assessmentOf,
-      claimText: direct ? primaryClaim : claim,
-      ...(direct ? { claimOrigin: 'request', review: false } : { supplementalSites }),
-      profile: claim || direct ? 'quick' : (providedProfile ?? settings?.profile ?? 'wide'),
-      save: 'never',
-      cache: 'private',
-    });
+    let started: { id: string };
+    try {
+      started = await api<{ id: string }>(captureUrls || direct ? 'capture' : 'search', {
+        query: question,
+        context,
+        captureUrls: direct ? primaryTargets : captureUrls,
+        method: captureUrls || direct ? 'native' : method,
+        assessmentOf,
+        claimText: direct ? primaryClaim : claim,
+        ...(note ? { ...note, claimOrigin: 'retained-partial', review: false } : {}),
+        ...(direct ? { claimOrigin: 'request', review: false } : note ? {} : { supplementalSites }),
+        profile: claim || direct ? 'quick' : (providedProfile ?? settings?.profile ?? 'wide'),
+        save: 'never',
+        cache: 'private',
+      });
+    } catch (failure) {
+      if (note && starting !== openingEpoch.current) return;
+      throw failure;
+    }
+    if (note && starting !== openingEpoch.current) return;
     setResearchMethod(method);
     setRun(started.id);
     setBusy(true);
@@ -415,6 +444,7 @@ export function Workbench({
   );
   async function openRun(runId: string) {
     const opening = ++openingEpoch.current;
+    clearNoteSelection();
     clearDiscussion();
     let opened: { id: string };
     try {
@@ -1552,7 +1582,11 @@ export function Workbench({
             )}
             {tab === 'Search' && result?.assessmentOf && (
               <section aria-label="Linked citation assessment">
-                <p>This separate evidence check preserves the original answer and its question.</p>
+                <p>
+                  {result.claimCheck?.version === 3
+                    ? 'This separate check preserves the incomplete notes and their question. The original narrative remains unassessed.'
+                    : 'This separate evidence check preserves the original answer and its question.'}
+                </p>
                 <ul>
                   {result.assessmentTargets?.map((uri) => (
                     <li key={uri}>
@@ -1562,11 +1596,24 @@ export function Workbench({
                     </li>
                   ))}
                 </ul>
-                <button onClick={() => void action(() => openRun(result.assessmentOf!))}>
-                  Reopen original answer
+                <button
+                  disabled={result.claimCheck?.version === 3 && noteOriginalAvailable !== true}
+                  onClick={() => void action(() => openRun(result.assessmentOf!))}
+                >
+                  {result.claimCheck?.version === 3
+                    ? 'Reopen original notes'
+                    : 'Reopen original answer'}
                 </button>
               </section>
             )}
+            {tab === 'Search' &&
+              result?.claimCheck?.version === 3 &&
+              noteOriginalAvailable === false && (
+                <p>
+                  Original run no longer retained. Its copied incomplete notes remain part of this
+                  check; the original is not restored.
+                </p>
+              )}
             {tab === 'Search' && result?.claimCheck && <ClaimCheck receipt={result.claimCheck} />}
             {tab === 'Search' && result?.interpretation && (
               <details className="desk-interpretation">
@@ -1589,6 +1636,64 @@ export function Workbench({
               </details>
             )}
             {answerFirstVisible && narrative}
+            {tab === 'Search' && result && noteParent?.parentRunId === result.runId && (
+              <section aria-label="Check retained notes">
+                <h2>Check a claim from these retained notes</h2>
+                <p>
+                  The stopped notes remain incomplete and unassessed. Select an original citation
+                  for fresh source review. Original context was not retained; confidence remains
+                  Unknown. This private check retains a copy of these incomplete notes after
+                  original-run expiry or deletion. Deleting the original does not delete copies in
+                  separately saved checks.
+                </p>
+                <label>
+                  Proposition from retained notes
+                  <input
+                    maxLength={1600}
+                    value={noteClaim}
+                    onChange={(event) => setNoteClaim(event.target.value)}
+                  />
+                </label>
+                <ul>
+                  {noteParent.citations.map((ref) => (
+                    <li key={ref.uri}>
+                      <a href={ref.uri} target="_blank" rel="noreferrer">
+                        {ref.label}
+                      </a>
+                      <button
+                        disabled={busy || !noteClaim.trim()}
+                        onClick={() => {
+                          const selected = noteParent;
+                          void action(() =>
+                            start(
+                              result.query,
+                              undefined,
+                              undefined,
+                              [ref.uri],
+                              selected.parentRunId,
+                              noteClaim,
+                              'native',
+                              {
+                                parentSnapshotDigest: selected.parentSnapshotDigest,
+                                claimCitations: [
+                                  {
+                                    groupIndex: ref.groupIndex,
+                                    occurrenceIndex: ref.occurrenceIndex,
+                                  },
+                                ],
+                              },
+                            ),
+                          );
+                        }}
+                      >
+                        Check this original citation
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+            {tab === 'Search' && noteParentGap && <p>{noteParentGap}</p>}
             {tab === 'Search' && result?.provisionalLeads && result.provisionalLeads.length > 0 && (
               <section aria-label="Leads with metadata gaps">
                 <h2>Leads with metadata gaps</h2>

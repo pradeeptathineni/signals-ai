@@ -109,6 +109,23 @@ export function planResearchRetention(input: ResearchAnswer) {
     !Number.isFinite(Date.parse(input.observedAt))
   )
     throw new Error('invalid_research_answer');
+  return {
+    input,
+    answerSha256: createHash('sha256').update(input.answer).digest('hex'),
+    ...retainedPartialCitationsV1(input.answer),
+    limits: [
+      'Only ordinary inline Markdown citations outside code are recognized; bare URLs, reference-style links and unsupported Markdown remain in the raw answer.',
+      'Inline labels are limited to 200 characters and destination/title segments to 4096; oversized references remain in the raw answer without citation credit.',
+      'Citation destinations preserve fragments; base identity is separate and does not merge distinct navigation targets or entities.',
+      'Citation occurrence validates a reference, not claim truth, source entailment or independent provenance.',
+      'Observation time is receipt time, not source publication or factual freshness.',
+    ],
+  };
+}
+
+/** The existing citation lexer, without creating an answer or receipt. */
+/** retained-partial-citations-v1: preserve this lexer/URI behavior for saved readers when extending grammar. */
+export function retainedPartialCitationsV1(answer: string) {
   const citations = new Map<
     string,
     {
@@ -127,13 +144,13 @@ export function planResearchRetention(input: ResearchAnswer) {
     }
   >();
   const rejectedReferences: { literal: string; reason: string }[] = [];
-  for (const match of inlineLinks(input.answer)) {
+  for (const match of inlineLinks(answer)) {
     try {
       const uri = citationUri(match.destination);
       const start = match.start;
-      const paragraphStart = input.answer.lastIndexOf('\n', start) + 1;
-      const nextLine = input.answer.indexOf('\n', start);
-      const context = input.answer
+      const paragraphStart = answer.lastIndexOf('\n', start) + 1;
+      const nextLine = answer.indexOf('\n', start);
+      const context = answer
         .slice(paragraphStart, nextLine < 0 ? undefined : nextLine)
         .slice(0, 2000);
       const citation = citations.get(uri) ?? {
@@ -145,7 +162,7 @@ export function planResearchRetention(input: ResearchAnswer) {
       };
       citation.assertions.push({
         type: 'citation-reference',
-        literal: input.answer.slice(start, match.end),
+        literal: answer.slice(start, match.end),
         start,
         end: match.end,
         truth: 'unverified',
@@ -154,23 +171,14 @@ export function planResearchRetention(input: ResearchAnswer) {
       citations.set(uri, citation);
     } catch (error) {
       rejectedReferences.push({
-        literal: input.answer.slice(match.start, match.end),
+        literal: answer.slice(match.start, match.end),
         reason: error instanceof Error ? error.message : 'invalid_uri',
       });
     }
   }
   return {
-    input,
-    answerSha256: createHash('sha256').update(input.answer).digest('hex'),
     citations: [...citations.values()],
     rejectedReferences,
-    limits: [
-      'Only ordinary inline Markdown citations outside code are recognized; bare URLs, reference-style links and unsupported Markdown remain in the raw answer.',
-      'Inline labels are limited to 200 characters and destination/title segments to 4096; oversized references remain in the raw answer without citation credit.',
-      'Citation destinations preserve fragments; base identity is separate and does not merge distinct navigation targets or entities.',
-      'Citation occurrence validates a reference, not claim truth, source entailment or independent provenance.',
-      'Observation time is receipt time, not source publication or factual freshness.',
-    ],
   };
 }
 

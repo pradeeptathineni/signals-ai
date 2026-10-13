@@ -18,6 +18,7 @@ const labels = Type.Array(label, { maxItems: 40, uniqueItems: true });
 import { kinds, channels } from './search-vocabulary.js';
 import type { budgets } from './search-vocabulary.js';
 import type { ClaimReceipt } from './claim-check.js';
+import { claimCitationSchema } from './claim-check.js';
 import type { SourceText } from './source-text.js';
 export { channels, budgets } from './search-vocabulary.js';
 const enumOf = <const T extends string>(values: readonly T[]) => Type.Enum<T[]>(values);
@@ -256,7 +257,9 @@ const requestSchema = Type.Object(
     method: Type.Optional(enumOf(['native', 'answer-first'])),
     assessmentOf: Type.Optional(Type.String({ pattern: '^[a-f0-9-]{36}$' })),
     claimText: Type.Optional(Type.String({ minLength: 1, maxLength: 1600 })),
-    claimOrigin: Type.Optional(Type.Literal('request')),
+    claimOrigin: Type.Optional(Type.Enum(['request', 'retained-partial'])),
+    parentSnapshotDigest: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$' })),
+    claimCitations: Type.Optional(Type.Array(claimCitationSchema, { minItems: 1, maxItems: 2 })),
     claimSources: Type.Optional(
       Type.Array(
         Type.Object(
@@ -425,7 +428,30 @@ export type ProvisionalLead = Pick<
 export function parseRequest(input: unknown): SearchRequest {
   if (!Value.Check(requestSchema, input) || !input.query.trim()) throw new Error('invalid_request');
   if (
-    input.claimOrigin &&
+    input.claimOrigin === 'retained-partial' &&
+    (!input.assessmentOf ||
+      !input.parentSnapshotDigest ||
+      !input.claimCitations?.length ||
+      input.claimCitations.length !== input.captureUrls?.length ||
+      !input.claimText?.trim() ||
+      input.claimText.length > 1600 ||
+      !input.claimText.isWellFormed() ||
+      input.claimSources !== undefined ||
+      !input.captureUrls?.length ||
+      input.captureUrls.length > 2 ||
+      input.captureUrls.some((uri) => uri.length > 2048 || !uri.isWellFormed()) ||
+      !input.query.isWellFormed() ||
+      input.context !== undefined ||
+      input.profile !== 'quick' ||
+      input.save !== 'never' ||
+      input.method === 'answer-first' ||
+      input.review === true ||
+      input.sources !== undefined ||
+      input.supplementalSites !== undefined)
+  )
+    throw new Error('invalid_partial_claim_request');
+  if (
+    input.claimOrigin === 'request' &&
     (!input.claimText?.trim() ||
       input.assessmentOf !== undefined ||
       input.claimSources !== undefined ||
@@ -439,6 +465,11 @@ export function parseRequest(input: unknown): SearchRequest {
       input.supplementalSites !== undefined)
   )
     throw new Error('invalid_direct_claim_request');
+  if (
+    input.claimOrigin !== 'retained-partial' &&
+    (input.parentSnapshotDigest !== undefined || input.claimCitations !== undefined)
+  )
+    throw new Error('unexpected_partial_claim_fields');
   if (
     input.claimText !== undefined &&
     (!input.claimText.trim() ||
@@ -465,6 +496,11 @@ export function parseRequest(input: unknown): SearchRequest {
   const captureUrls = input.captureUrls?.map(
     (uri) => normalizeConsiderUrl(uri).normalizedUrl + new URL(uri).hash,
   );
+  if (
+    input.claimOrigin === 'retained-partial' &&
+    captureUrls?.some((uri, index) => uri.length > 2048 || uri !== input.captureUrls![index])
+  )
+    throw new Error('invalid_partial_claim_target');
   return {
     ...input,
     ...(input.claimOrigin ? {} : { supplementalSites: [...new Set(sites)] }),

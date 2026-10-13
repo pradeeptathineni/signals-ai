@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { searchApi } from '../../packages/corpus/src/search-api.js';
+import { digest } from '../../packages/corpus/src/search-fetch.js';
 import { signalSearch } from '../../packages/corpus/src/signal-search.js';
 import { RunnerFailure } from '../../packages/corpus/src/search-runner.js';
 import { loadEntities } from '../../packages/corpus/src/search-store.js';
@@ -28,7 +29,61 @@ for (const record of approved)
   );
 const api = searchApi(root, async (input, dependencies) => {
   const request = parseRequest(input);
-  if (request.query === 'partial timeout fixture')
+  if (request.claimOrigin === 'retained-partial') {
+    const supported = request.claimText === 'The selected guide states the needed prerequisite.';
+    const checked = await signalSearch(request, {
+      ...dependencies,
+      root,
+      fetch: (uri) => {
+        if (!supported) return Promise.reject(new Error('source_denied_403'));
+        return Promise.resolve({
+          uri,
+          text: 'The guide requires an explicit prerequisite. No permission or effectiveness is established.',
+          normalizer: 'text-v2',
+          digest: digest(
+            'The guide requires an explicit prerequisite. No permission or effectiveness is established.',
+          ),
+        });
+      },
+      claimRunner: () => ({
+        readiness: () =>
+          Promise.resolve({
+            available: true,
+            broadSearch: false,
+            runner: 'fixture',
+            reason: 'Scripted review; no native model.',
+          }),
+        discover: () =>
+          Promise.resolve({
+            searches: 0,
+            usage: null,
+            proposal: {
+              verdict: 'supported',
+              reason: 'Scripted prerequisite declaration only.',
+              nextCheck: 'Permission and effectiveness remain unassessed.',
+              findings: [
+                {
+                  sourceIndex: 0,
+                  quote: 'The guide requires an explicit prerequisite.',
+                  status: 'supported',
+                  decisive: true,
+                  reason: 'Fixture wording only.',
+                },
+              ],
+              gaps: [],
+            },
+          }),
+      }),
+    });
+    // Offline expiry fixture: remove only its own synthetic parent after the child is saved.
+    if (request.query === 'partial note fixture expired')
+      await rm(join(root, '.signals/runs', request.assessmentOf! + '.json'));
+    return checked;
+  }
+  if (
+    request.query === 'partial timeout fixture' ||
+    request.query.startsWith('partial note fixture ')
+  )
     return signalSearch(request, {
       ...dependencies,
       root,

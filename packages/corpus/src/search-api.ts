@@ -18,6 +18,7 @@ import { scanSources } from './search-sources.js';
 import { loadPersonal, updatePersonal } from './search-personal.js';
 import { loadInbox, updateInbox, removeInbox } from './search-inbox.js';
 import { loadSettings, saveSettings } from './search-settings.js';
+import { partialNoteSelection } from './search-note.js';
 import {
   loadEntities,
   saveEntities,
@@ -623,6 +624,38 @@ export function searchApi(
         json(202, { id });
       } else if (/^runs\/[a-f0-9]{32}$/.test(route) && !mutation) {
         const run = runs.get(route.split('/')[1]!);
+        let noteOriginalAvailable: boolean | null = null;
+        if (run?.result?.claimCheck?.version === 3) {
+          const origin = run.result.claimCheck.origin;
+          try {
+            const original = await loadRun(origin.parentRunId, root);
+            if (partialNoteSelection(original).parentSnapshotDigest !== origin.parentSnapshotDigest)
+              throw new Error('invalid_partial_claim_parent');
+            noteOriginalAvailable = true;
+          } catch (error) {
+            if (!(error instanceof Error) || error.message !== 'unknown_retained_run') throw error;
+            noteOriginalAvailable = false;
+          }
+        }
+        let noteParent = null;
+        let noteParentGap: string | null = null;
+        if (
+          run?.result &&
+          ['cancelled', 'failed'].includes(run.result.status) &&
+          run.result.brief?.text
+        ) {
+          try {
+            const retained = await loadRun(run.result.runId, root);
+            if (JSON.stringify(retained) !== JSON.stringify(run.result))
+              throw new Error('retained_parent_mismatch');
+            if (process.env.SIGNALS_PARTIAL_CHECKS === '0')
+              throw new Error('partial_checks_disabled');
+            noteParent = partialNoteSelection(retained);
+          } catch {
+            noteParentGap =
+              'Checking these notes requires an eligible retained stopped parent with original safe citations. Memory-only work is not saved implicitly.';
+          }
+        }
         json(
           run ? 200 : 404,
           run
@@ -634,6 +667,9 @@ export function searchApi(
                 batch: run.batch ?? null,
                 due: run.due ?? null,
                 brief: run.brief ?? null,
+                noteOriginalAvailable,
+                noteParent,
+                noteParentGap,
               }
             : { code: 'unknown_run' },
         );

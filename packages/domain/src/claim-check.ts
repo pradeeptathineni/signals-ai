@@ -5,6 +5,27 @@ const closed = { additionalProperties: false };
 const reason = Type.String({ minLength: 1, maxLength: 1200 });
 const verdict = Type.Enum(['supported', 'contradicted', 'uncertain']);
 const sha = Type.String({ pattern: '^[a-f0-9]{64}$' });
+export const claimCitationSchema = Type.Object(
+  {
+    groupIndex: Type.Integer({ minimum: 0, maximum: 59 }),
+    occurrenceIndex: Type.Integer({ minimum: 0, maximum: 23999 }),
+  },
+  closed,
+);
+export interface PartialNoteSelection {
+  parentRunId: string;
+  status: 'cancelled' | 'failed';
+  parentSnapshotDigest: string;
+  citations: {
+    groupIndex: number;
+    occurrenceIndex: number;
+    uri: string;
+    label: string;
+    literal: string;
+    start: number;
+    end: number;
+  }[];
+}
 const uri = Type.String({ minLength: 1, maxLength: 4096 });
 const date = Type.String({ minLength: 1, maxLength: 64 });
 const reference = Type.Object(
@@ -124,6 +145,40 @@ export const claimReceiptSchema = Type.Union([
       ...directFields,
       version: Type.Literal(2),
       origin: Type.Object({ kind: Type.Literal('request'), requestDigest: sha }, closed),
+    },
+    closed,
+  ),
+  Type.Object(
+    {
+      ...directFields,
+      version: Type.Literal(3),
+      origin: Type.Object(
+        {
+          kind: Type.Literal('retained-partial'),
+          parentRunId: Type.String({ pattern: '^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$' }),
+          parentStatus: Type.Enum(['cancelled', 'failed']),
+          fullBrief: Type.String({ minLength: 1, maxLength: 24000 }),
+          contextState: Type.Literal('missing'),
+          citationDecoder: Type.Literal('retained-partial-citations-v1'),
+          parentSnapshotDigest: sha,
+          lineageDigest: sha,
+          selectedCitations: Type.Array(
+            Type.Object(
+              {
+                ...claimCitationSchema.properties,
+                sourceIndex: Type.Integer({ minimum: 0, maximum: 1 }),
+                uri: Type.String({ minLength: 1, maxLength: 2048 }),
+                literal: Type.String({ minLength: 1, maxLength: 4300 }),
+                start: Type.Integer({ minimum: 0, maximum: 24000 }),
+                end: Type.Integer({ minimum: 1, maximum: 24000 }),
+              },
+              closed,
+            ),
+            { minItems: 1, maxItems: 2 },
+          ),
+        },
+        closed,
+      ),
     },
     closed,
   ),

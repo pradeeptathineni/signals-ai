@@ -44,6 +44,7 @@ import {
 } from './signal-search.js';
 import { digest, normalizeText, normalizeSpan } from './search-fetch.js';
 import { validateClaimReceipt } from './search-claim.js';
+import { partialNoteSelection } from './search-note.js';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
 import {
   signalBasisSchema,
@@ -764,6 +765,7 @@ export async function saveEntities(
 export async function retainRun(result: SearchResult, root = process.cwd()) {
   if (!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(result.runId))
     throw new Error('invalid_run_identity');
+  if (result.claimCheck?.version === 3) validateClaimReceipt(result);
   const path = resolve(root, '.signals/runs', `${result.runId}.json`);
   const stat = await lstat(path).catch((failure: NodeJS.ErrnoException) => {
     if (failure.code !== 'ENOENT') throw failure;
@@ -878,6 +880,20 @@ export async function loadRun(
         )
       )
         throw new Error('invalid_claim_parent');
+    }
+    if (receipt.version === 3) {
+      let parent: SearchResult | null;
+      try {
+        parent = await loadRun(receipt.origin.parentRunId, root, threshold, lineage);
+      } catch (error) {
+        if (!(error instanceof Error) || error.message !== 'unknown_retained_run') throw error;
+        parent = null;
+      }
+      if (
+        parent &&
+        partialNoteSelection(parent).parentSnapshotDigest !== receipt.origin.parentSnapshotDigest
+      )
+        throw new Error('invalid_partial_claim_parent');
     }
   }
   if (
