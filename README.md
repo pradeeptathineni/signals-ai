@@ -40,6 +40,15 @@ Research preserves the original answer even when individual record metadata fail
 
 HTML source text is an inert DOM projection. Hidden or accessibility-marked content and inert script data can contain terms or conditions omitted from it. Results and frozen checks disclose that scope, including measured excluded-text counts where available. A complete normalized snapshot or a zero exclusion count does not prove complete source coverage. Historical material without these counters remains unmeasured. No scripts or interactions run to recover excluded content.
 
+For offline inspection of an explicitly supplied `DocumentMaterial` JSON snapshot, use:
+
+```sh
+npm run material-preview -- list --snapshot material.json --offset 0 --windows 4
+npm run material-preview -- select --snapshot material.json --sha256 TEXT_SHA256 --start START --end END
+```
+
+Replace the digest and range placeholders with values from the list output. Navigation windows are mechanical aids, not complete prose sections. Ranges use zero-based UTF16 positions in the exact normalized text, with start included and end excluded. Selections preserve the exact slice and report the full normalized digest, input-file digest, outside-range scope and extraction warnings. A stale digest, split surrogate pair or selection over48,000 units is refused. `--source-uri HTTPS_URL` adds only a validated caller label; it does not establish transport identity or freshness. Table coordinates stay original and cell geometry is omitted. The command fetches nothing and writes only stdout. Previews remain separate from claim checks and do not establish whole-source coverage, factual support or Signal.
+
 `--profile quick` selects a smaller acquisition budget; `wide` selects the larger one. `--model` and `--effort` override runner references. Repeat `--source` to constrain source families or `--site HTTPS_URL` to add website/path scopes. Global and per-interest supplemental sites share a twenty-scope effective limit and the existing research budget. Access denial remains a gap.
 
 `--save never --cache memory` requires no existing Corpus and creates no repository state; the AI host may retain its own logs. `--cache private` retains run history locally. `--context` exports frozen schema-v1 interchange with separate native assessment extensions. Explicit `--review` requests a bounded no-web reassessment over fetched material; ordinary research uses one native task. See [optional providers](docs/providers.md) for acquisition and extraction settings.

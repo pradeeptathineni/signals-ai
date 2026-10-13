@@ -45,6 +45,7 @@
     "test:built": "playwright test --config playwright.built.config.ts",
     "library:coverage": "node --import tsx scripts/library-coverage.ts",
     "signal-search": "node --import tsx scripts/signal-search.ts",
+    "material-preview": "node --import tsx scripts/material-preview.ts",
     "start": "node --import tsx scripts/workbench.ts",
     "discovery": "node --import tsx scripts/discovery.ts"
   },
