@@ -256,6 +256,7 @@ const requestSchema = Type.Object(
     method: Type.Optional(enumOf(['native', 'answer-first'])),
     assessmentOf: Type.Optional(Type.String({ pattern: '^[a-f0-9-]{36}$' })),
     claimText: Type.Optional(Type.String({ minLength: 1, maxLength: 1600 })),
+    claimOrigin: Type.Optional(Type.Literal('request')),
     claimSources: Type.Optional(
       Type.Array(
         Type.Object(
@@ -424,9 +425,24 @@ export type ProvisionalLead = Pick<
 export function parseRequest(input: unknown): SearchRequest {
   if (!Value.Check(requestSchema, input) || !input.query.trim()) throw new Error('invalid_request');
   if (
+    input.claimOrigin &&
+    (!input.claimText?.trim() ||
+      input.assessmentOf !== undefined ||
+      input.claimSources !== undefined ||
+      !input.captureUrls?.length ||
+      input.captureUrls.length > 2 ||
+      input.profile !== 'quick' ||
+      input.save !== 'never' ||
+      input.method === 'answer-first' ||
+      input.review === true ||
+      input.sources !== undefined ||
+      input.supplementalSites !== undefined)
+  )
+    throw new Error('invalid_direct_claim_request');
+  if (
     input.claimText !== undefined &&
     (!input.claimText.trim() ||
-      !input.assessmentOf ||
+      (!input.assessmentOf && !input.claimOrigin) ||
       !input.captureUrls?.length ||
       input.captureUrls.length > 2 ||
       input.method === 'answer-first' ||
@@ -451,7 +467,7 @@ export function parseRequest(input: unknown): SearchRequest {
   );
   return {
     ...input,
-    supplementalSites: [...new Set(sites)],
+    ...(input.claimOrigin ? {} : { supplementalSites: [...new Set(sites)] }),
     ...(captureUrls ? { captureUrls: [...new Set(captureUrls)] } : {}),
   };
 }

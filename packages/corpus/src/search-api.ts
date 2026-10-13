@@ -473,25 +473,29 @@ export function searchApi(
         const rawQuery = parseRequest(input);
         if (route === 'capture' && !rawQuery.captureUrls?.length)
           throw new Error('capture_url_required');
-        const query = parseRequest({
-          ...rawQuery,
-          supplementalSites: [
-            ...new Set([
-              ...(settings.supplementalSites ?? []),
-              ...(rawQuery.supplementalSites ?? []),
-            ]),
-          ],
-        });
+        const query = rawQuery.claimOrigin
+          ? rawQuery
+          : parseRequest({
+              ...rawQuery,
+              supplementalSites: [
+                ...new Set([
+                  ...(settings.supplementalSites ?? []),
+                  ...(rawQuery.supplementalSites ?? []),
+                ]),
+              ],
+            });
         if (query.save === 'eligible') throw new Error('interactive_review_first');
-        const effectiveQuery = parseRequest({
-          ...query,
-          profile: query.profile ?? settings.profile,
-          route: query.route ?? settings.route,
-          review: query.review ?? settings.groundedReview ?? false,
-          threshold: query.threshold ?? settings.threshold,
-          sources: settings.sources,
-          save: 'never',
-        });
+        const effectiveQuery = query.claimOrigin
+          ? query
+          : parseRequest({
+              ...query,
+              profile: query.profile ?? settings.profile,
+              route: query.route ?? settings.route,
+              review: query.review ?? settings.groundedReview ?? false,
+              threshold: query.threshold ?? settings.threshold,
+              sources: settings.sources,
+              save: 'never',
+            });
         const controller = new AbortController(),
           id = randomBytes(16).toString('hex');
         const run: ActiveRun = { controller, events: ['Starting research…'] };
@@ -507,13 +511,17 @@ export function searchApi(
               live: false,
               maxResponseBytes: 65536,
             }),
-          runner: codexRunner(settings.model || undefined, settings.effort || undefined, {
-            root,
-            acquisition: await loadAcquisitionConfig(root),
-            extractionModel: settings.extractionModel || undefined,
-            extractionEffort: settings.extractionEffort || undefined,
-            ...answerFirstOperation(effectiveQuery),
-          }),
+          ...(query.claimText
+            ? {}
+            : {
+                runner: codexRunner(settings.model || undefined, settings.effort || undefined, {
+                  root,
+                  acquisition: await loadAcquisitionConfig(root),
+                  extractionModel: settings.extractionModel || undefined,
+                  extractionEffort: settings.extractionEffort || undefined,
+                  ...answerFirstOperation(effectiveQuery),
+                }),
+              }),
           signal: controller.signal,
           provisional: (leads) => {
             run.provisional = leads;

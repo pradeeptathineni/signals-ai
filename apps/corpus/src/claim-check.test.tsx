@@ -2,6 +2,7 @@ import { expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ClaimCheck } from './claim-check.js';
 import type { ClaimReceipt } from '../../../packages/domain/src/claim-check.js';
+import { signalSearch } from '../../../packages/corpus/src/signal-search.js';
 it('shows denial, Unknown, memory authority and original scope without inventing a verdict', () => {
   const receipt: ClaimReceipt = {
     version: 1,
@@ -54,4 +55,34 @@ it('shows denial, Unknown, memory authority and original scope without inventing
   expect(diagnostic).toContain('unclassified text omitted');
   expect(diagnostic).toContain('100000 captured bytes omitted');
   expect(diagnostic).toContain('incomplete');
+});
+
+it('renders a direct request and an unavailable verdict without an invented original answer', async () => {
+  const result = await signalSearch(
+    {
+      query: 'Does the primary source establish this outcome?',
+      context: 'Keep the scope explicit.',
+      claimOrigin: 'request',
+      claimText: 'The source establishes an outcome.',
+      captureUrls: ['https://example.org/study'],
+      profile: 'quick',
+      save: 'never',
+      cache: 'memory',
+    },
+    {
+      fetch: async () => {
+        throw new Error('source_denied_403');
+      },
+    },
+  );
+  const receipt = result.claimCheck!;
+  const html = renderToStaticMarkup(<ClaimCheck receipt={receipt} />);
+  expect(html).toContain('without an original research answer');
+  expect(html).toContain('Not available');
+  expect(html).toContain('Confidence Unknown');
+  expect(html).not.toContain('Saved privately with the original answer link');
+  receipt.historySaved = true;
+  expect(renderToStaticMarkup(<ClaimCheck receipt={receipt} />)).toContain(
+    'Saved privately with the original request and primary snapshots',
+  );
 });

@@ -48,6 +48,7 @@ const { values } = parseArgs({
     method: { type: 'string' },
     'assessment-of': { type: 'string' },
     claim: { type: 'string' },
+    'claim-origin': { type: 'string' },
     'sources-only': { type: 'boolean' },
     'github-plan': { type: 'string' },
     'corpus-only': { type: 'boolean' },
@@ -59,7 +60,7 @@ const { values } = parseArgs({
 });
 try {
   if (
-    values.claim &&
+    (values.claim !== undefined || values['claim-origin'] !== undefined) &&
     (values.accept ||
       values['sources-only'] ||
       values['corpus-only'] ||
@@ -68,7 +69,9 @@ try {
       values.schema ||
       values.capability)
   )
-    throw new Error('claim_requires_linked_check_route');
+    throw new Error(
+      values['claim-origin'] ? 'claim_requires_check_route' : 'claim_requires_linked_check_route',
+    );
   if (values.schema) process.stdout.write(`${JSON.stringify(nativeBriefSchema)}\n`);
   else if (values.capability)
     process.stdout.write(
@@ -77,11 +80,12 @@ try {
   else {
     const request = parseRequest({
       query: values.query ?? (values['check-primary'] ? 'Check saved primary source' : undefined),
-      profile: values.profile ?? 'wide',
+      profile: values.profile ?? (values['claim-origin'] === 'request' ? 'quick' : 'wide'),
       route: 'native',
       method: values.method,
       assessmentOf: values['assessment-of'],
       claimText: values.claim,
+      claimOrigin: values['claim-origin'],
       save: values.save ?? 'never',
       cache: values.cache ?? 'memory',
       supplementalSites: values.site,
@@ -162,14 +166,18 @@ try {
               root: process.cwd(),
               maxResponseBytes: 65536,
             }),
-          runner: codexRunner(values.model ?? 'gpt-6.1-sol', values.effort ?? 'low', {
-            githubPlans,
-            root: process.cwd(),
-            acquisition: await loadAcquisitionConfig(process.cwd()),
-            extractionModel: values['extract-model'],
-            extractionEffort: values['extract-effort'],
-            ...answerFirstOperation(request),
-          }),
+          ...(request.claimText
+            ? {}
+            : {
+                runner: codexRunner(values.model ?? 'gpt-6.1-sol', values.effort ?? 'low', {
+                  githubPlans,
+                  root: process.cwd(),
+                  acquisition: await loadAcquisitionConfig(process.cwd()),
+                  extractionModel: values['extract-model'],
+                  extractionEffort: values['extract-effort'],
+                  ...answerFirstOperation(request),
+                }),
+              }),
           signal: controller.signal,
           progress: (event) => process.stderr.write(`${event}\n`),
         });

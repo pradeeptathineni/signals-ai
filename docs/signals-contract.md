@@ -85,6 +85,10 @@ Frozen schema-v1 interchange preserves original evidence and legacy confidence/f
 
 Configured-live research is `model-led`; invoking-host research is `agent-assisted`. Fixtures remain fixture-labelled and cannot enter real evidence admission. Re-export changes export time/code revision, not original observations or discovery time. Requested frozen review may correct interpretation without hiding acquisition failures or original private receipts.
 
+## Direct primary-source checks
+
+A caller can explicitly request one proposition check against one or two selected fresh primary URLs without supplying a research-answer parent. The request-origin receipt preserves the question, context, proposition and source order. Existing linked checks still require the immutable original answer and selected citation membership. Both origins use the same safe acquisition, material bounds and one frozen native judgment. Acquisition failure is not contradiction, matched text is not entailment, and Unknown confidence does not become a probability. A direct verdict creates no scored entity and grants no installation or execution authority. Its private negative and incomplete outcomes remain recoverable through ordinary temporary-run cleanup. Memory mode writes no history or source cache.
+
 ## Frozen policy readers
 
 Declared policies replay unchanged. Native brief v4 selects v7; native v1–v3 and full proposals keep their original readers. The reducers in `packages/domain/src/search-score.ts` and `search-assessment.ts` define exact arithmetic and normalizers.

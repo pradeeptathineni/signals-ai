@@ -833,7 +833,7 @@ export async function loadRun(
     throw new Error('invalid_assessment_parent');
   if (result.assessmentTargets) {
     if (
-      !result.assessmentOf ||
+      (!result.assessmentOf && result.claimCheck?.version !== 2) ||
       !Array.isArray(result.assessmentTargets) ||
       result.assessmentTargets.length > 10
     )
@@ -866,17 +866,19 @@ export async function loadRun(
   }
   if (result.claimCheck) {
     const receipt = validateClaimReceipt(result);
-    const parent = await loadRun(receipt.parentRunId, root, threshold, lineage);
-    if (
-      !parent.answerReceipt ||
-      parent.answerReceipt.sha256 !== receipt.parentAnswerDigest ||
-      parent.query !== receipt.originalNeed ||
-      (parent.answerReceipt.context ?? '') !== receipt.originalContext ||
-      result.assessmentTargets!.some(
-        (uri) => !parent.provisionalLeads?.some((lead) => lead.uri === uri),
+    if (receipt.version === 1) {
+      const parent = await loadRun(receipt.parentRunId, root, threshold, lineage);
+      if (
+        !parent.answerReceipt ||
+        parent.answerReceipt.sha256 !== receipt.parentAnswerDigest ||
+        parent.query !== receipt.originalNeed ||
+        (parent.answerReceipt.context ?? '') !== receipt.originalContext ||
+        result.assessmentTargets!.some(
+          (uri) => !parent.provisionalLeads?.some((lead) => lead.uri === uri),
+        )
       )
-    )
-      throw new Error('invalid_claim_parent');
+        throw new Error('invalid_claim_parent');
+    }
   }
   if (
     result.provisionalLeads &&
@@ -993,7 +995,7 @@ export async function cleanRuns(root = process.cwd(), days = 7) {
     const stat = await lstat(path);
     if (!stat.isSymbolicLink() && stat.mtimeMs < Date.now() - days * 86400000) {
       const run = await loadRun(name.slice(0, -5), root);
-      if (!run.answerReceipt && !run.assessmentOf) await rm(path);
+      if (!run.answerReceipt && !run.assessmentOf && !run.claimCheck) await rm(path);
     }
   }
   const acquisitions = resolve(root, '.signals/acquisitions');

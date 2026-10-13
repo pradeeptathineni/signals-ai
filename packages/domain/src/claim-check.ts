@@ -69,7 +69,7 @@ const claimMaterialSchema = Type.Union([
     closed,
   ),
 ]);
-export const claimReceiptSchema = Type.Object(
+export const linkedClaimReceiptSchema = Type.Object(
   {
     version: Type.Literal(1),
     claimText: Type.String({ minLength: 1, maxLength: 1600 }),
@@ -113,6 +113,21 @@ export const claimReceiptSchema = Type.Object(
   },
   closed,
 );
+const directFields = Type.Omit(linkedClaimReceiptSchema, [
+  'parentRunId',
+  'parentAnswerDigest',
+]).properties;
+export const claimReceiptSchema = Type.Union([
+  linkedClaimReceiptSchema,
+  Type.Object(
+    {
+      ...directFields,
+      version: Type.Literal(2),
+      origin: Type.Object({ kind: Type.Literal('request'), requestDigest: sha }, closed),
+    },
+    closed,
+  ),
+]);
 export type ClaimReceipt = Static<typeof claimReceiptSchema>;
 export type ClaimMaterial = ClaimReceipt['selectedMaterial'][number];
 export type ClaimResponse = Static<typeof claimResponseSchema>;

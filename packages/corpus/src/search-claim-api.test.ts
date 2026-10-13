@@ -55,14 +55,21 @@ async function files(root: string, prefix = ''): Promise<Record<string, string>>
   }
   return output;
 }
-it.each(['memory', 'private'])(
-  'real HTTP %s claim respects history authority even with automatic saving enabled',
-  async (cache) => {
+it.each([
+  ['memory', false],
+  ['private', false],
+  ['memory', true],
+  ['private', true],
+] as const)(
+  'real HTTP %s claim (direct=%s) respects history authority even with automatic saving enabled',
+  async (cache, direct) => {
     const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-claim-api-')));
-    const parent = await signalSearch(
-      { query: 'Public original need.', method: 'answer-first', cache: 'private' },
-      { root },
-    );
+    const parent = direct
+      ? null
+      : await signalSearch(
+          { query: 'Public original need.', method: 'answer-first', cache: 'private' },
+          { root },
+        );
     await libraryPreferences(root, {
       meaningMatching: false,
       automaticSaving: { enabled: true, signalThreshold: 75, relevanceThreshold: 75 },
@@ -90,8 +97,10 @@ it.each(['memory', 'private'])(
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-signals-token': token },
         body: JSON.stringify({
-          query: parent.query,
-          assessmentOf: parent.runId,
+          query: parent?.query ?? 'Direct public original need.',
+          ...(parent
+            ? { assessmentOf: parent.runId }
+            : { claimOrigin: 'request', profile: 'quick' }),
           captureUrls: [uri],
           claimText: 'Allows metadata reuse.',
           cache,
@@ -105,7 +114,7 @@ it.each(['memory', 'private'])(
         const state = (await (await fetch(`${base}runs/${id}`)).json()) as {
           result: SearchResult | null;
         };
-        expect(state.result).toBeTruthy();
+        expect(state.result, JSON.stringify(state)).toBeTruthy();
         result = state.result!;
       });
       expect(result.gaps.join(' ')).not.toContain('Local persistence failed');
@@ -114,6 +123,7 @@ it.each(['memory', 'private'])(
       if (cache === 'memory') expect(after).toEqual(before);
       else
         expect(Object.keys(after).filter((path) => !Object.hasOwn(before, path))).toEqual([
+          ...(direct ? [join('.signals/runs') + '/'] : []),
           join('.signals/runs', `${result.runId}.json`),
         ]);
     } finally {

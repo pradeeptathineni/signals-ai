@@ -4,7 +4,11 @@ export function ClaimCheck({ receipt }: { receipt: ClaimReceipt }) {
   return (
     <section aria-label="Selected proposition check">
       <h2>Selected proposition</h2>
-      <p>User-specified proposition; it need not be asserted by the original answer.</p>
+      <p>
+        {receipt.version === 2
+          ? 'User-specified proposition and primary sources, without an original research answer.'
+          : 'User-specified proposition; it need not be asserted by the original answer.'}
+      </p>
       <p>
         The snapshot preserves supplied normalized text; extraction may lose original page
         structure.
@@ -16,7 +20,9 @@ export function ClaimCheck({ receipt }: { receipt: ClaimReceipt }) {
       </p>
       <p>
         {receipt.historySaved
-          ? 'Saved privately with the original answer link.'
+          ? receipt.version === 2
+            ? 'Saved privately with the original request and primary snapshots.'
+            : 'Saved privately with the original answer link.'
           : 'Not saved to history.'}
       </p>
       <p>{receipt.reason}</p>
