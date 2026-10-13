@@ -92,3 +92,39 @@ test('primary acquisition denial remains unreviewed and can be reopened from pri
   await expect(receipt).toContainText('source_denied_403');
   await expectAccessibleViewport(page, 390);
 });
+
+test('saved-question research cannot inherit unrelated primary drafts or lose its source scopes', async ({
+  page,
+}) => {
+  await primaryCheck(page, 'An unrelated primary-source question.');
+  await page
+    .getByRole('textbox', { name: 'Proposition to check against primary sources', exact: true })
+    .fill('An unrelated accessory permits reuse.');
+  await page
+    .getByRole('textbox', { name: 'Primary source URLs', exact: true })
+    .fill('https://example.org/unrelated-accessory');
+  await page
+    .getByRole('complementary')
+    .getByRole('button', { name: 'Following', exact: true })
+    .click();
+  await page.getByRole('button', { name: 'Add question', exact: true }).click();
+  const question = 'Find public ecology learning resources.';
+  await page.getByRole('textbox', { name: 'Question', exact: true }).fill(question);
+  const sources = page.getByRole('textbox', { name: /Supplemental paths for query-/ });
+  await sources.fill('https://example.org/ecology/');
+  await sources.blur();
+  let submitted: unknown;
+  await page.route('**/__signals/api/search', async (route) => {
+    submitted = route.request().postDataJSON();
+    await route.fulfill({ status: 400, json: { code: 'saved_question_fixture_stopped' } });
+  });
+  await page.getByRole('button', { name: /^Search query-.* now$/ }).click();
+  await expect(page.getByText('saved_question_fixture_stopped', { exact: true })).toBeVisible();
+  expect(submitted).toMatchObject({
+    query: question,
+    method: 'native',
+    supplementalSites: ['https://example.org/ecology/'],
+  });
+  for (const field of ['claimOrigin', 'claimText', 'captureUrls', 'assessmentOf'])
+    expect(submitted).not.toHaveProperty(field);
+});

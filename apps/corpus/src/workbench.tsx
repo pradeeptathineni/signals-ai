@@ -343,8 +343,9 @@ export function Workbench({
     captureUrls?: string[],
     assessmentOf?: string,
     claim?: string,
+    method: 'native' | 'answer-first' | 'primary-check' = 'native',
   ) {
-    const direct = researchMethod === 'primary-check' && !captureUrls;
+    const direct = method === 'primary-check';
     if (direct && !primaryReady)
       throw new Error('Supply a proposition and one or two primary URLs.');
     reopening.current = false;
@@ -354,7 +355,7 @@ export function Workbench({
       query: question,
       context,
       captureUrls: direct ? primaryTargets : captureUrls,
-      method: captureUrls || direct ? 'native' : researchMethod,
+      method: captureUrls || direct ? 'native' : method,
       assessmentOf,
       claimText: direct ? primaryClaim : claim,
       ...(direct ? { claimOrigin: 'request', review: false } : { supplementalSites }),
@@ -362,6 +363,7 @@ export function Workbench({
       save: 'never',
       cache: 'private',
     });
+    setResearchMethod(method);
     setRun(started.id);
     setBusy(true);
     setResult(null);
@@ -371,6 +373,9 @@ export function Workbench({
     setEvents(['Starting research…']);
     setTab('Search');
     setQuery(question);
+  }
+  function startFormResearch() {
+    return start(query, undefined, context, undefined, undefined, undefined, researchMethod);
   }
   async function save(ids: string[], mode: 'manual' | 'eligible') {
     if (!result) return;
@@ -1281,7 +1286,7 @@ export function Workbench({
                 <form
                   onSubmit={(event) => {
                     event.preventDefault();
-                    void action(() => start(query, undefined, context));
+                    void action(startFormResearch);
                   }}
                 >
                   <details>
@@ -1432,7 +1437,7 @@ export function Workbench({
                       }
                       type="button"
                       onClick={() => {
-                        void action(() => start(query, undefined, context));
+                        void action(startFormResearch);
                       }}
                     >
                       {researchMethod === 'primary-check' ? 'Check again' : 'Search further'}
