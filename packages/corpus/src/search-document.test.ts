@@ -62,6 +62,9 @@ it('preserves visible negatives, reports measured zero cautiously and keeps lega
   expect(() =>
     cachedMaterial({ ...doc, scope: { ...doc.scope, excludedContentTextUnits: -1 } }),
   ).toThrow('invalid_cached_document');
+  expect(() =>
+    cachedMaterial({ ...doc, scope: { ...doc.scope, excludedTextCountOverflow: true } }),
+  ).toThrow('invalid_document_omission_scope');
 });
 
 it('bounds reported UTF16 exclusion counts and reports overflow explicitly', () => {

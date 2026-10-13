@@ -89,6 +89,12 @@ export function cachedMaterial(value: unknown): DocumentMaterial | undefined {
       counters.some((counter) => counter === undefined)
     )
       throw new Error('invalid_document_omission_scope');
+    if (
+      value.scope.excludedTextCountOverflow &&
+      value.scope.excludedContentTextUnits !== 2000000 &&
+      value.scope.excludedStructuredDataTextUnits !== 2000000
+    )
+      throw new Error('invalid_document_omission_scope');
     if (value.scope.projectionDigest !== layoutProjectionDigest(value.sections))
       throw new Error('invalid_document_projection_digest');
     validateLayoutProjection(value.text, value.sections);
