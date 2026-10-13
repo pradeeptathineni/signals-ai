@@ -67,8 +67,18 @@ export function Workbench({
   const [query, setQuery] = useState(''),
     [result, setResult] = useState<SearchResult | null>(null);
   const [earlyBrief, setEarlyBrief] = useState<SearchResult['brief']>();
-  const [researchMethod, setResearchMethod] = useState<'native' | 'answer-first'>('native');
+  const [researchMethod, setResearchMethod] = useState<'native' | 'answer-first' | 'primary-check'>(
+    'native',
+  );
   const [claimText, setClaimText] = useState('');
+  const [primaryClaim, setPrimaryClaim] = useState('');
+  const [primaryUrls, setPrimaryUrls] = useState('');
+  const primaryTargets = primaryUrls
+    .split(/\r?\n/)
+    .map((uri) => uri.trim())
+    .filter(Boolean);
+  const primaryReady =
+    Boolean(primaryClaim.trim()) && primaryTargets.length >= 1 && primaryTargets.length <= 2;
   const [captureUrl, setCaptureUrl] = useState('');
   const [manualContext, setManualContext] = useState('');
   const [editedContext, setEditedContext] = useState<{
@@ -334,18 +344,21 @@ export function Workbench({
     assessmentOf?: string,
     claim?: string,
   ) {
+    const direct = researchMethod === 'primary-check' && !captureUrls;
+    if (direct && !primaryReady)
+      throw new Error('Supply a proposition and one or two primary URLs.');
     reopening.current = false;
     setSourceResult(null);
     setProvisional([]);
-    const started = await api<{ id: string }>(captureUrls ? 'capture' : 'search', {
+    const started = await api<{ id: string }>(captureUrls || direct ? 'capture' : 'search', {
       query: question,
       context,
-      captureUrls,
-      method: captureUrls ? 'native' : researchMethod,
+      captureUrls: direct ? primaryTargets : captureUrls,
+      method: captureUrls || direct ? 'native' : researchMethod,
       assessmentOf,
-      claimText: claim,
-      supplementalSites,
-      profile: claim ? 'quick' : (providedProfile ?? settings?.profile ?? 'wide'),
+      claimText: direct ? primaryClaim : claim,
+      ...(direct ? { claimOrigin: 'request', review: false } : { supplementalSites }),
+      profile: claim || direct ? 'quick' : (providedProfile ?? settings?.profile ?? 'wide'),
       save: 'never',
       cache: 'private',
     });
@@ -1307,63 +1320,122 @@ export function Workbench({
                       <select
                         value={researchMethod}
                         onChange={(event) =>
-                          setResearchMethod(event.target.value as 'native' | 'answer-first')
+                          setResearchMethod(event.target.value as typeof researchMethod)
                         }
                       >
                         <option value="native">Research with evidence assessment</option>
                         <option value="answer-first">
                           Answer first; assess selected citations later
                         </option>
+                        <option value="primary-check">
+                          Check a proposition against primary sources
+                        </option>
                       </select>
                     </label>
+                    {researchMethod === 'primary-check' ? (
+                      <>
+                        <label>
+                          Proposition to check against primary sources
+                          <textarea
+                            maxLength={1600}
+                            value={primaryClaim}
+                            onChange={(event) => setPrimaryClaim(event.target.value)}
+                            placeholder="State the exact proposition whose support you want to inspect."
+                          />
+                        </label>
+                        <label>
+                          Primary source URLs
+                          <textarea
+                            maxLength={4097}
+                            value={primaryUrls}
+                            onChange={(event) => setPrimaryUrls(event.target.value)}
+                            placeholder="One or two public HTTPS URLs, one per line."
+                          />
+                        </label>
+                        <p>
+                          Select one or two primary URLs. Their text is acquired before one bounded
+                          review. Unusable text means no review and no verdict. Confidence stays
+                          Unknown; this creates no entity or numeric Signal. The request and its
+                          outcome are retained privately, without an original answer parent.
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p>
+                          Answer first retains the complete narrative privately. Citation occurrence
+                          is not verification; confidence remains Unknown.
+                        </p>
+                        <label>
+                          Capture a public URL
+                          <input
+                            type="url"
+                            value={captureUrl}
+                            onChange={(event) => setCaptureUrl(event.target.value)}
+                            placeholder="https://…"
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          disabled={busy || sourceBusy || !token || !captureUrl.trim()}
+                          onClick={() =>
+                            void action(() =>
+                              start(
+                                query.trim() ||
+                                  'Capture this resource and describe its supported uses and limits.',
+                                undefined,
+                                context,
+                                [captureUrl],
+                              ),
+                            )
+                          }
+                        >
+                          Capture URL
+                        </button>
+                      </>
+                    )}
                     <p>
-                      Answer first retains the complete narrative privately. Citation occurrence is
-                      not verification; confidence remains Unknown.
-                    </p>
-                    <label>
-                      Capture a public URL
-                      <input
-                        type="url"
-                        value={captureUrl}
-                        onChange={(event) => setCaptureUrl(event.target.value)}
-                        placeholder="https://…"
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      disabled={busy || sourceBusy || !token || !captureUrl.trim()}
-                      onClick={() =>
-                        void action(() =>
-                          start(
-                            query.trim() ||
-                              'Capture this resource and describe its supported uses and limits.',
-                            undefined,
-                            context,
-                            [captureUrl],
-                          ),
-                        )
-                      }
-                    >
-                      Capture URL
-                    </button>
-                    <p>
-                      {providedProfile ?? settings?.profile ?? 'wide'} budget:{' '}
-                      {JSON.stringify(budgets[providedProfile ?? settings?.profile ?? 'wide'])}.
-                      Review before saving; results retained privately.
+                      {researchMethod === 'primary-check'
+                        ? 'quick'
+                        : (providedProfile ?? settings?.profile ?? 'wide')}{' '}
+                      budget:{' '}
+                      {JSON.stringify(
+                        budgets[
+                          researchMethod === 'primary-check'
+                            ? 'quick'
+                            : (providedProfile ?? settings?.profile ?? 'wide')
+                        ],
+                      )}
+                      . Review before saving; results retained privately.
                     </p>
                   </details>
                   <div className="actions">
-                    <button disabled={busy || sourceBusy || !token || !query.trim()} type="submit">
-                      Start online research
+                    <button
+                      disabled={
+                        busy ||
+                        sourceBusy ||
+                        !token ||
+                        !query.trim() ||
+                        (researchMethod === 'primary-check' && !primaryReady)
+                      }
+                      type="submit"
+                    >
+                      {researchMethod === 'primary-check'
+                        ? 'Check primary sources'
+                        : 'Start online research'}
                     </button>
                     <button
-                      disabled={busy || sourceBusy || !result}
+                      disabled={
+                        busy ||
+                        sourceBusy ||
+                        !result ||
+                        (researchMethod === 'primary-check' && !primaryReady)
+                      }
                       type="button"
                       onClick={() => {
                         void action(() => start(query, undefined, context));
                       }}
                     >
-                      Search further
+                      {researchMethod === 'primary-check' ? 'Check again' : 'Search further'}
                     </button>
                     <button
                       disabled={busy || sourceBusy || !token || !query.trim()}

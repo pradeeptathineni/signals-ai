@@ -81,6 +81,11 @@ export function searchEvidenceBundle(result: SearchResult, commit: string): Evid
     })),
     limitations: [
       ...result.gaps,
+      ...(result.claimCheck
+        ? [
+            'This entity-evidence bundle omits the selected proposition verdict and primary snapshots. Inspect the original private claim-check receipt for their scope and evidence; this bundle supplies no claim-check adoption evidence.',
+          ]
+        : []),
       'Native signal strength is an evidence policy index. Legacy confidence/fit ratings are unmeasured. Only precise publication timestamps populate legacy observed_at; original partial dates and fetch times remain distinct in extensions. No adoption or execution authority.',
     ],
     extensions: {

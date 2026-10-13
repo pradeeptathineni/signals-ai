@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { ClaimCheck } from './claim-check.js';
 import type { ClaimReceipt } from '../../../packages/domain/src/claim-check.js';
 import { signalSearch } from '../../../packages/corpus/src/signal-search.js';
+import { searchEvidenceBundle } from '../../../packages/corpus/src/search-exchange.js';
 it('shows denial, Unknown, memory authority and original scope without inventing a verdict', () => {
   const receipt: ClaimReceipt = {
     version: 1,
@@ -85,4 +86,12 @@ it('renders a direct request and an unavailable verdict without an invented orig
   expect(renderToStaticMarkup(<ClaimCheck receipt={receipt} />)).toContain(
     'Saved privately with the original request and primary snapshots',
   );
+  const bundle = searchEvidenceBundle(result, 'a'.repeat(40));
+  expect(bundle.claims).toEqual([]);
+  expect(bundle.sources).toEqual([]);
+  expect(bundle.candidates).toEqual([]);
+  expect(bundle.limitations.join(' ')).toContain(
+    'omits the selected proposition verdict and primary snapshots',
+  );
+  expect(bundle.limitations.join(' ')).toContain('no claim-check adoption evidence');
 });

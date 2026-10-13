@@ -33,3 +33,10 @@ are distinct; findings grant no publication or installation authority. Explicit
 Stored earlier brief versions retain their declared decoding and policy meanings.
 Other hosts use the same protocol with their permitted tools; a host without acquisition
 reports live search unavailable.
+
+For an explicitly supplied proposition and one or two public primary URLs, the local
+workbench's primary-source check and the [documented direct CLI command](../../../../README.md#keep-a-native-research-answer)
+use the existing bounded claim kernel. That headless command invokes the authenticated
+host and is a separate user-selected operation, not an extra inference pass inside this
+invoking-host skill. A private claim receipt is not the schema-v1 Context entity bundle.
+Its scoped verdict creates no entity, numeric Signal, adoption or execution authority.

@@ -1,0 +1,94 @@
+import { test, expect, type Page } from '@playwright/test';
+import { expectAccessibleViewport } from './accessibility.js';
+import { openResearchOptions } from './research.js';
+
+async function primaryCheck(page: Page, question: string) {
+  await openResearchOptions(page, question);
+  await page
+    .getByRole('combobox', { name: 'Research method', exact: true })
+    .selectOption('primary-check');
+}
+
+test('primary check sends ordered selected URLs and explicit request authority without an answer parent', async ({
+  page,
+}) => {
+  let submitted: unknown;
+  await page.route('**/__signals/api/capture', async (route) => {
+    submitted = route.request().postDataJSON();
+    await route.fulfill({ status: 400, json: { code: 'primary_payload_fixture_stopped' } });
+  });
+  const question = 'Does the policy cover transfer, rather than only display?';
+  await primaryCheck(page, question);
+  const start = page.getByRole('button', { name: 'Check primary sources', exact: true });
+  await expect(start).toBeDisabled();
+  await page
+    .getByRole('textbox', { name: 'Proposition to check against primary sources', exact: true })
+    .fill('The policy permits transfer.');
+  await page
+    .getByRole('textbox', { name: 'Primary source URLs', exact: true })
+    .fill('https://example.org/policy\nhttps://example.com/limitations');
+  await page.getByText('Project context and constraints', { exact: true }).click();
+  await page
+    .getByLabel('Context for this question')
+    .fill('No private records or account operations.');
+  await start.click();
+  await expect(page.getByText('primary_payload_fixture_stopped', { exact: true })).toBeVisible();
+  expect(submitted).toEqual({
+    query: question,
+    context: 'No private records or account operations.',
+    method: 'native',
+    claimOrigin: 'request',
+    claimText: 'The policy permits transfer.',
+    captureUrls: ['https://example.org/policy', 'https://example.com/limitations'],
+    profile: 'quick',
+    review: false,
+    cache: 'private',
+    save: 'never',
+  });
+  await page
+    .getByRole('textbox', { name: 'Primary source URLs', exact: true })
+    .fill('https://example.org/a\nhttps://example.org/b\nhttps://example.org/c');
+  await expect(start).toBeDisabled();
+  await page.getByRole('combobox', { name: 'Research method', exact: true }).selectOption('native');
+  await expect(
+    page.getByRole('button', { name: 'Start online research', exact: true }),
+  ).toBeEnabled();
+  await expect(page.getByRole('textbox', { name: 'Primary source URLs', exact: true })).toHaveCount(
+    0,
+  );
+});
+
+test('primary acquisition denial remains unreviewed and can be reopened from private Activity', async ({
+  page,
+}) => {
+  const question = 'Primary browser denial fixture: does the policy establish an outcome?';
+  await primaryCheck(page, question);
+  await page
+    .getByRole('textbox', { name: 'Proposition to check against primary sources', exact: true })
+    .fill('The policy establishes an outcome.');
+  await page
+    .getByRole('textbox', { name: 'Primary source URLs', exact: true })
+    .fill('https://example.org/policy');
+  await expectAccessibleViewport(page, 390);
+  await page.getByRole('button', { name: 'Check primary sources', exact: true }).click();
+  const receipt = page.getByRole('region', { name: 'Selected proposition check', exact: true });
+  await expect(receipt).toContainText('without an original research answer');
+  await expect(receipt).toContainText('not-reviewed');
+  await expect(receipt).toContainText('Not available');
+  await expect(receipt).toContainText('Confidence Unknown');
+  await expect(receipt).toContainText('No numeric Signal');
+  await expect(receipt).toContainText('source_denied_403');
+  await expect(receipt).toContainText('Saved privately with the original request');
+  await page
+    .getByRole('complementary')
+    .getByRole('button', { name: 'Activity', exact: true })
+    .click();
+  const retained = page
+    .getByRole('region', { name: 'Recent research', exact: true })
+    .locator('article')
+    .filter({ hasText: question });
+  await retained.getByRole('button', { name: 'Open result', exact: true }).click();
+  await expect(receipt).toContainText('The policy establishes an outcome.');
+  await expect(receipt).toContainText('source_denied_403');
+  await expectAccessibleViewport(page, 390);
+});

@@ -27,6 +27,12 @@ for (const record of approved)
   );
 const api = searchApi(root, async (input, dependencies) => {
   const request = parseRequest(input);
+  if (request.claimOrigin === 'request')
+    return signalSearch(request, {
+      ...dependencies,
+      root,
+      fetch: () => Promise.reject(new Error('source_denied_403')),
+    });
   if (request.method === 'answer-first')
     return signalSearch(request, {
       ...dependencies,
