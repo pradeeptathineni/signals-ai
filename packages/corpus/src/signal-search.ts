@@ -15,11 +15,13 @@ import {
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
 import { assessEntity, filterSearchItems, saveDecision } from '../../domain/src/search-score.js';
 import { digest, fetchEvidence, normalizeText, normalizeSpan } from './search-fetch.js';
+import { materialOmissions } from './search-document.js';
 import {
   codexRunner,
   answerFirstOperation,
   RunnerFailure,
   type SearchRunner,
+  type EnrichmentMaterial,
 } from './search-runner.js';
 import { privateCacheFetch } from './search-cache.js';
 import { runClaimCheck } from './search-claim.js';
@@ -141,10 +143,7 @@ export async function acceptDiscovery(
     evidenceClass?: Entity['acquisition'];
     followedSources?: string[];
     progress?: (event: string) => void;
-    enrich?: (
-      proposal: Proposal,
-      material: { index: number; uri: string; text: string }[],
-    ) => Promise<Proposal>;
+    enrich?: (proposal: Proposal, material: EnrichmentMaterial[]) => Promise<Proposal>;
   } = {},
 ) {
   const research = decodeNativeResearch(input);
@@ -285,6 +284,9 @@ export async function acceptDiscovery(
         gaps.push(`${source.title}: provider final source identity unverified`);
       }
       if (fetched.truncated) gaps.push(`${source.title}: provider document truncated`);
+      gaps.push(
+        ...materialOmissions(fetched.material).map((omission) => `${source.title}: ${omission}`),
+      );
       const accessFailure =
         /retrieval (?:failed|errors?)|could not be retrieved|inaccessible|could not (?:fetch|access)|not accessible/i;
       const stale =
@@ -323,9 +325,12 @@ export async function acceptDiscovery(
   if (dependencies.enrich && !dependencies.signal?.aborted) {
     const allowance = Math.floor(48000 / Math.max(1, documents.size));
     const material = sources.flatMap((source, index) => {
-      const text = documents.get(source.uri)?.text;
+      const document = documents.get(source.uri);
+      const text = document?.text;
+      const omissions = materialOmissions(document?.material);
       if (!text) return [];
-      if (text.length <= allowance) return [{ index, uri: source.uri, text }];
+      if (text.length <= allowance)
+        return [{ index, uri: source.uri, text, ...(omissions.length ? { omissions } : {}) }];
       const mentions = proposal.candidates.filter(
         (candidate) =>
           candidate.match.sources.includes(index) ||
@@ -355,7 +360,9 @@ export async function acceptDiscovery(
         return text.slice(start, start + width);
       });
       const excerpts = [anchored, ...windows].filter(Boolean).join(' … ').slice(0, allowance);
-      return [{ index, uri: source.uri, text: excerpts }];
+      const windowGap = `${source.title}: frozen review receives selected passages, not the whole normalized document.`;
+      gaps.push(windowGap);
+      return [{ index, uri: source.uri, text: excerpts, omissions: [...omissions, windowGap] }];
     });
     try {
       const key = (candidate: Proposal['candidates'][number]) => {

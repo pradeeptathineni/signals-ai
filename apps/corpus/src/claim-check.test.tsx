@@ -42,6 +42,7 @@ it('shows denial, Unknown, memory authority and original scope without inventing
     'never upload originals',
     'permission remains unresolved',
     'No numeric Signal',
+    'complete normalization does not mean complete source coverage',
   ])
     expect(html).toContain(value);
   receipt.rejectedOutput = {

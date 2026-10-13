@@ -10,6 +10,7 @@ const blocks = new Set(
 );
 const excluded =
   'nav,[role="navigation"],script,style,iframe,object,embed,[hidden],[aria-hidden="true"]';
+const noise = 'nav,[role="navigation"],script,style,iframe,object,embed';
 export const explicitlyHidden = (element: Element) => {
   for (let node: Element | null = element; node; node = node.parentElement)
     if (
@@ -154,6 +155,22 @@ export function htmlLayout(raw: string, title: string) {
   const { document } = parseHTML(raw);
   const all = [...document.querySelectorAll('*')];
   const removals = new Set(all.filter((node) => node.matches(excluded) || explicitlyHidden(node)));
+  // Accessibility-marked content may still be displayed. These count exclusions,
+  // not browser visibility or the semantic importance of omitted text.
+  let excludedContentTextUnits = 0;
+  for (const node of removals) {
+    if (node.closest(noise) || (node.parentElement && removals.has(node.parentElement))) continue;
+    const copy = node.cloneNode(true) as Element;
+    for (const child of copy.querySelectorAll(noise)) child.remove();
+    excludedContentTextUnits += normalizeSpan(copy.textContent ?? '').length;
+  }
+  let excludedStructuredDataTextUnits = 0;
+  for (const node of document.querySelectorAll('script')) {
+    if (!/^application\/(?:ld\+)?json$/i.test((node.getAttribute('type') ?? '').trim())) continue;
+    excludedStructuredDataTextUnits += normalizeSpan(node.textContent ?? '').length;
+  }
+  const excludedTextCountOverflow =
+    excludedContentTextUnits > 2000000 || excludedStructuredDataTextUnits > 2000000;
   for (const node of removals) node.remove();
   const parts: { text: string; locator?: string; table?: Table }[] = [];
   if (title) parts.push({ text: title });
@@ -363,6 +380,9 @@ export function htmlLayout(raw: string, title: string) {
       textDigest,
       projectionDigest: layoutProjectionDigest(sections),
       excludedNodes: removals.size,
+      excludedContentTextUnits: Math.min(excludedContentTextUnits, 2000000),
+      excludedStructuredDataTextUnits: Math.min(excludedStructuredDataTextUnits, 2000000),
+      excludedTextCountOverflow,
       tables: tableNumber,
       omittedTables,
       omittedDepth,

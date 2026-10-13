@@ -12,6 +12,7 @@ import { digest, boundedTextReceipt } from './search-fetch.js';
 import { loadRun, cleanRuns, atomicJson, retainRun } from './search-store.js';
 import { claimReceiptReserve, validateClaimReceipt } from './search-claim.js';
 import type { SearchRunner } from './search-runner.js';
+import { extractHtml } from './search-document.js';
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -66,6 +67,82 @@ const fetch = async (uri: string) => ({
   text,
   digest: digest(text),
   normalizer: 'text-v2' as const,
+});
+
+it('supplies excluded source-text scope before native review and retains it in private history and gaps', async () => {
+  const root = await area();
+  const raw =
+    '<html><body><p>Metadata reuse is permitted.</p><div hidden>Except photographs with separate ownership.</div></body></html>';
+  const material = extractHtml(raw, input.captureUrls![0]!);
+  let reviewedTask = '';
+  const result = await signalSearch(input, {
+    root,
+    fetch: async (uri) => ({
+      uri,
+      text: material.text,
+      digest: digest(raw),
+      normalizer: 'text-v3',
+      material,
+    }),
+    claimRunner: (task) => {
+      reviewedTask = task;
+      return runner();
+    },
+  });
+  expect(reviewedTask).toContain('not complete source coverage');
+  expect(reviewedTask).toContain('Excluded DOM content: 43');
+  expect(result.claimCheck?.selectedMaterial[0]).toMatchObject({
+    state: 'usable',
+    scope: 'complete-normalized-document',
+    omissions: expect.arrayContaining([expect.stringContaining('not complete source coverage')]),
+  });
+  expect(result.gaps.join(' ')).toContain('not complete source coverage');
+  expect(result.status).toBe('partial');
+  expect(await loadRun(result.runId, root)).toEqual(result);
+});
+
+it('fits two HTML scope disclosures alongside the maximum native gaps without changing receipt bounds', async () => {
+  const root = await area();
+  const native: SearchRunner = runner();
+  native.discover = vi.fn(async () => ({
+    searches: 0,
+    usage: null,
+    proposal: {
+      verdict: 'supported',
+      reason: 'Scoped visible fact.',
+      nextCheck: 'Check omitted conditions.',
+      findings: [
+        {
+          sourceIndex: 0,
+          quote: 'Metadata reuse is permitted.',
+          status: 'supported',
+          decisive: true,
+          reason: 'Retained occurrence.',
+        },
+      ],
+      gaps: Array.from({ length: 10 }, (_, index) => ({
+        reason: `Unassessed scope ${index}.`,
+        decisive: false,
+      })),
+    },
+  }));
+  const result = await signalSearch(
+    { ...input, captureUrls: ['https://example.org/one', 'https://example.org/two'] },
+    {
+      root,
+      fetch: async (uri) => {
+        const raw =
+          '<html><body><p>Metadata reuse is permitted.</p><p hidden>Except a separate object.</p></body></html>';
+        const material = extractHtml(raw, uri);
+        return { uri, text: material.text, digest: digest(raw), normalizer: 'text-v3', material };
+      },
+      runner: native,
+    },
+  );
+  expect(result.claimCheck?.reviewState).toBe('completed');
+  expect(result.claimCheck?.gaps).toHaveLength(12);
+  expect(() => validateClaimReceipt(result)).not.toThrow();
+  expect(await loadRun(result.runId, root)).toEqual(result);
 });
 
 it('requires explicit direct authority and rejects linked, historical and broader acquisition mixtures', () => {

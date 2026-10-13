@@ -18,6 +18,7 @@ import {
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
 import { supportedSourceText } from '../../domain/src/source-text.js';
 import { digest, normalizeSpan, fetchEvidence, boundedTextReceipt } from './search-fetch.js';
+import { materialOmissions } from './search-document.js';
 import { loadRun, retainRun } from './search-store.js';
 import { codexRunner, RunnerFailure, type SearchRunner } from './search-runner.js';
 
@@ -276,6 +277,7 @@ function historicalSource(
     scope: 'retained-excerpt',
     omissions: [
       'Historical selected excerpt only; the full document and current status were not inspected.',
+      ...materialOmissions(source.extractor ? { extractor: source.extractor } : undefined),
     ],
     retainedFrom: { runId: ref.runId, sourceId: ref.sourceId },
   };
@@ -463,11 +465,14 @@ export async function runClaimCheck(
               ? { publishedAt: document.material.publishedAt }
               : {}),
             scope: 'complete-normalized-document',
-            omissions: document.material?.scope
-              ? [
-                  `HTML layout v1: ${document.material.scope.excludedNodes} explicit noise nodes excluded. Generated table coordinates/separators are not original wording. Computed CSS was not evaluated.`,
-                ]
-              : [],
+            omissions: [
+              ...materialOmissions(document.material),
+              ...(document.material?.scope
+                ? [
+                    `HTML layout v1: ${document.material.scope.excludedNodes} DOM nodes excluded. Generated table coordinates/separators are not original wording. Computed CSS was not evaluated.`,
+                  ]
+                : []),
+            ],
           };
         } catch (failure) {
           return {
@@ -512,6 +517,17 @@ export async function runClaimCheck(
         ),
         decisive: true,
       }));
+    for (const source of receipt.selectedMaterial)
+      if (source.state === 'usable') {
+        const omissions = source.omissions.filter((omission) =>
+          /^(HTML extraction|Excluded source-text|Excluded DOM content)/.test(omission),
+        );
+        if (omissions.length)
+          hostGaps.push({
+            reason: `Selected source ${source.sourceIndex}: ${omissions.join(' ')}`.slice(0, 1200),
+            decisive: false,
+          });
+      }
     receipt.gaps = hostGaps;
     validateClaimReceipt(result);
     controller.signal.throwIfAborted();

@@ -10,8 +10,8 @@ export function ClaimCheck({ receipt }: { receipt: ClaimReceipt }) {
           : 'User-specified proposition; it need not be asserted by the original answer.'}
       </p>
       <p>
-        The snapshot preserves supplied normalized text; extraction may lose original page
-        structure.
+        The snapshot preserves supplied normalized text. Extraction may omit original structure,
+        terms or conditions; complete normalization does not mean complete source coverage.
       </p>
       <p>{receipt.claimText}</p>
       <p>

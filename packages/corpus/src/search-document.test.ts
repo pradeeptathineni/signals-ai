@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { extractHtml, extractFeed } from './search-document.js';
+import { extractHtml, extractFeed, materialOmissions, cachedMaterial } from './search-document.js';
 
 it('preserves curated outlinks before readability removes navigation and never runs resources', () => {
   const doc = extractHtml(
@@ -11,6 +11,69 @@ it('preserves curated outlinks before readability removes navigation and never r
   expect(doc.sections).toContainEqual({ locator: '#scope', text: 'Scope' });
   expect(doc.sections.some((x) => x.text.includes('No network'))).toBe(true);
   expect('compromised' in globalThis).toBe(false);
+});
+
+it('discloses excluded qualifiers separately from navigation and executable noise without admitting them', () => {
+  const qualifier = 'Not permitted unless the supporting component is installed.';
+  const json = JSON.stringify({ terms: 'Permission excludes redistributed assets.' });
+  const doc = extractHtml(
+    `<html><body><p>Permission is conditional.</p><div style="display:none"><span aria-hidden="true">${qualifier}</span></div><nav hidden>Navigation only.</nav><script>globalThis.omissionExecuted=true</script><script type="application/json">${json}</script></body></html>`,
+    'https://example.org/any-subject',
+  );
+  expect(doc.scope).toMatchObject({
+    excludedContentTextUnits: qualifier.length,
+    excludedStructuredDataTextUnits: json.length,
+    excludedTextCountOverflow: false,
+  });
+  expect(doc.text).toContain('Permission is conditional.');
+  expect(doc.text).not.toContain(qualifier);
+  expect(doc.text).not.toContain('redistributed');
+  expect(doc.text).not.toContain('Navigation only');
+  expect('omissionExecuted' in globalThis).toBe(false);
+  expect(materialOmissions(doc).join(' ')).toContain('not complete source coverage');
+  expect(cachedMaterial(doc)).toEqual(doc);
+});
+
+it('preserves visible negatives, reports measured zero cautiously and keeps legacy counters unmeasured', () => {
+  const raw = '<html><body><p>Not safe unless the tested condition holds.</p></body></html>';
+  const doc = extractHtml(raw, 'https://example.org/conditions');
+  expect(doc.text).toContain('Not safe unless');
+  expect(doc.scope?.excludedContentTextUnits).toBe(0);
+  expect(materialOmissions(doc).join(' ')).toContain(
+    'Measured zero does not prove semantic completeness',
+  );
+  const historical = structuredClone(doc);
+  delete historical.scope!.excludedContentTextUnits;
+  delete historical.scope!.excludedStructuredDataTextUnits;
+  delete historical.scope!.excludedTextCountOverflow;
+  const bytes = JSON.stringify(historical);
+  expect(cachedMaterial(historical)).toEqual(historical);
+  expect(JSON.stringify(historical)).toBe(bytes);
+  expect(materialOmissions(historical).join(' ')).toContain('was not measured');
+  expect(
+    materialOmissions(extractHtml(raw, 'https://example.org/conditions', 'text-v2')).join(' '),
+  ).toContain('was not measured');
+  expect(materialOmissions({ ...historical, scope: undefined, extractor: 'plain-text' })).toEqual(
+    [],
+  );
+  expect(() =>
+    cachedMaterial({ ...doc, scope: { ...doc.scope, excludedTextCountOverflow: undefined } }),
+  ).toThrow('invalid_document_omission_scope');
+  expect(() =>
+    cachedMaterial({ ...doc, scope: { ...doc.scope, excludedContentTextUnits: -1 } }),
+  ).toThrow('invalid_cached_document');
+});
+
+it('bounds reported UTF16 exclusion counts and reports overflow explicitly', () => {
+  const doc = extractHtml(
+    `<html><body><div hidden>${'🧪'.repeat(1000001)}</div></body></html>`,
+    'https://example.org/bounded',
+  );
+  expect(doc.scope).toMatchObject({
+    excludedContentTextUnits: 2000000,
+    excludedTextCountOverflow: true,
+  });
+  expect(materialOmissions(doc).join(' ')).toContain('further excluded text is unmeasured');
 });
 it('parses RSS and Atom strings with dates and absolute links, rejecting entity declarations', async () => {
   for (const raw of [

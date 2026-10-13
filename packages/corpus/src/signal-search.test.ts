@@ -28,8 +28,39 @@ import { parseEvidenceBundle } from '../../domain/src/evidence-exchange.js';
 import { RunnerFailure, type SearchRunner } from './search-runner.js';
 import { searchEvidenceBundle } from './search-exchange.js';
 import { checkPrimaryMaterial } from './search-reuse.js';
+import { extractHtml } from './search-document.js';
 
 const date = '2026-10-05T00:00:00.000Z';
+
+it('keeps source exclusion scope in acquisition gaps and the frozen enrichment input', async () => {
+  const input = proposal();
+  const raw =
+    '<html><body><p>portable research tool</p><div aria-hidden="true">Except under the excluded configuration.</div><script type="application/ld+json">{"restriction":"supporting condition required"}</script></body></html>';
+  const material = extractHtml(raw, input.sources[0]!.uri);
+  let seen: string[] | undefined;
+  const result = await acceptDiscovery(
+    input,
+    { query: 'research', profile: 'quick' },
+    {
+      asOf: date,
+      fetch: async (uri) => ({
+        uri,
+        text: material.text,
+        digest: digest(raw),
+        normalizer: 'text-v3',
+        material,
+      }),
+      enrich: async (proposal, sources) => {
+        seen = sources[0]!.omissions;
+        return proposal;
+      },
+    },
+  );
+  expect(seen?.join(' ')).toContain('not complete source coverage');
+  expect(seen?.join(' ')).toContain('Excluded inert JSON-script text');
+  expect(result.gaps.join(' ')).toContain('not complete source coverage');
+  expect(material.text).not.toContain('supporting condition');
+});
 function proposal(): Proposal {
   return {
     sources: [

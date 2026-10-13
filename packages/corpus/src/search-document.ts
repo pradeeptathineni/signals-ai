@@ -21,7 +21,16 @@ export interface DocumentMaterial {
   links: { uri: string; title: string }[];
   sections: { locator: string; text: string; provenance?: unknown[] }[];
   extractor: string;
-  scope?: ReturnType<typeof htmlLayout>['scope'];
+  scope?: Omit<
+    ReturnType<typeof htmlLayout>['scope'],
+    'excludedContentTextUnits' | 'excludedStructuredDataTextUnits' | 'excludedTextCountOverflow'
+  > &
+    Partial<
+      Pick<
+        ReturnType<typeof htmlLayout>['scope'],
+        'excludedContentTextUnits' | 'excludedStructuredDataTextUnits' | 'excludedTextCountOverflow'
+      >
+    >;
 }
 const bounded = Type.String({ maxLength: 2000000 });
 const materialSchema = Type.Object(
@@ -47,6 +56,11 @@ const materialSchema = Type.Object(
           textDigest: Type.String({ pattern: '^[a-f0-9]{64}$' }),
           projectionDigest: Type.String({ pattern: '^[a-f0-9]{64}$' }),
           excludedNodes: Type.Integer({ minimum: 0 }),
+          excludedContentTextUnits: Type.Optional(Type.Integer({ minimum: 0, maximum: 2000000 })),
+          excludedStructuredDataTextUnits: Type.Optional(
+            Type.Integer({ minimum: 0, maximum: 2000000 }),
+          ),
+          excludedTextCountOverflow: Type.Optional(Type.Boolean()),
           tables: Type.Integer({ minimum: 0 }),
           omittedTables: Type.Integer({ minimum: 0 }),
           omittedDepth: Type.Integer({ minimum: 0 }),
@@ -65,11 +79,41 @@ export function cachedMaterial(value: unknown): DocumentMaterial | undefined {
   if (value.scope && value.scope.textDigest !== digest(value.text))
     throw new Error('invalid_document_layout_digest');
   if (value.scope) {
+    const counters = [
+      value.scope.excludedContentTextUnits,
+      value.scope.excludedStructuredDataTextUnits,
+      value.scope.excludedTextCountOverflow,
+    ];
+    if (
+      counters.some((counter) => counter !== undefined) &&
+      counters.some((counter) => counter === undefined)
+    )
+      throw new Error('invalid_document_omission_scope');
     if (value.scope.projectionDigest !== layoutProjectionDigest(value.sections))
       throw new Error('invalid_document_projection_digest');
     validateLayoutProjection(value.text, value.sections);
   }
   return value;
+}
+
+/** Disclosure only: neither measured zero nor complete normalization proves source completeness. */
+export function materialOmissions(
+  material?: Pick<DocumentMaterial, 'extractor' | 'scope'>,
+): string[] {
+  if (
+    !material ||
+    (!material.scope && !/^readability-0\.6\.0(?:\+html-layout-v1)?$/.test(material.extractor))
+  )
+    return [];
+  const scope = material.scope;
+  const count = scope?.excludedContentTextUnits;
+  const structured = scope?.excludedStructuredDataTextUnits;
+  return [
+    'HTML extraction is a retained DOM projection, not complete source coverage. Hidden or accessibility-marked content and script data can contain omitted terms, conditions or exceptions. Computed CSS and interactions were not evaluated.',
+    count === undefined || structured === undefined
+      ? 'Excluded source-text coverage was not measured in this historical material; missing counters do not mean zero omissions.'
+      : `Excluded DOM content: ${count} normalized UTF16 units. Excluded inert JSON-script text: ${structured} normalized UTF16 units.${scope?.excludedTextCountOverflow ? ' Counts reached the reporting bound; further excluded text is unmeasured.' : ''} Measured zero does not prove semantic completeness.`,
+  ];
 }
 const date = (value?: string | null) =>
   value && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : null;

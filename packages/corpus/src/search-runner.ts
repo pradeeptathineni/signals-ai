@@ -108,6 +108,7 @@ export function decodeNativeOutput(final: string): unknown {
     };
   }
 }
+export type EnrichmentMaterial = { index: number; uri: string; text: string; omissions?: string[] };
 export interface SearchRunner {
   evidenceClass?: 'configured-live' | 'fixture';
   readiness(): Promise<{
@@ -124,7 +125,7 @@ export interface SearchRunner {
   ): Promise<{ proposal: unknown; usage: unknown; searches: number }>;
   enrich?(
     proposal: Proposal,
-    material: { index: number; uri: string; text: string }[],
+    material: EnrichmentMaterial[],
     request: SearchRequest,
     signal: AbortSignal,
     progress: (event: string) => void,
@@ -643,7 +644,7 @@ export function codexRunner(
       : {
           async enrich(
             proposal: Proposal,
-            material: { index: number; uri: string; text: string }[],
+            material: EnrichmentMaterial[],
             request: SearchRequest,
             signal: AbortSignal,
             progress: (event: string) => void,
