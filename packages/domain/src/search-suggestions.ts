@@ -45,8 +45,14 @@ export function checkSuggestions(input: unknown, answerDigest: string, citations
   if (!Value.Check(receiptSchema, input) || input.answerDigest !== answerDigest)
     throw new Error('invalid_check_suggestions');
   for (const offered of input.offered) {
-    if (![offered.claim, offered.basis, offered.why].every((text) => text.trim()))
-      throw new Error('empty_check_suggestion');
+    // JSON Schema counts code points; retained metadata budgets count JS UTF-16 units.
+    if (
+      ![offered.claim, offered.basis, offered.why].every((text) => text.trim()) ||
+      offered.claim.length > 1600 ||
+      offered.basis.length > 400 ||
+      offered.why.length > 400
+    )
+      throw new Error('invalid_check_suggestion_text');
     for (const uri of offered.urls) {
       const normalized = normalizeConsiderUrl(uri).normalizedUrl + new URL(uri).hash;
       if (normalized !== uri || !citations.includes(uri))

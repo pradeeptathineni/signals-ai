@@ -588,6 +588,7 @@ export function parseRequest(input: unknown): SearchRequest {
   if (
     input.claimText !== undefined &&
     (!input.claimText.trim() ||
+      input.claimText.length > 1600 ||
       (!input.assessmentOf && !input.claimOrigin) ||
       !input.captureUrls?.length ||
       input.captureUrls.length > 2 ||

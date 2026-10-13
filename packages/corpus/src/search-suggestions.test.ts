@@ -73,6 +73,9 @@ it('malformed, unsafe, uncited and oversized suggestions retain exact answer wit
       [{ ...offered[0], urls: ['https://localhost/private'] }],
       [{ ...offered[0], urls: ['https://example.com/uncited'] }],
       [{ ...offered[0], basis: 'x'.repeat(401) }],
+      [{ ...offered[0], why: '🧪'.repeat(201) }],
+      [{ ...offered[0], basis: '🧪'.repeat(201) }],
+      [{ ...offered[0], claim: '🧪'.repeat(801) }],
       [{ ...offered[0], claim: ' ' }],
       [{ ...offered[0], confidence: 100 }],
     ]) {
@@ -126,6 +129,20 @@ it('empty offers are valid abstention and memory discovery is never silently ret
   }
 });
 
+it('exact UTF16 text boundaries remain valid with supplementary Unicode', async () => {
+  const area = await root();
+  try {
+    const boundary = [
+      { ...offered[0]!, claim: '🧪'.repeat(800), basis: '🧪'.repeat(200), why: '🧪'.repeat(200) },
+    ];
+    const parent = await signalSearch(request, { root: area, runner: runner(boundary) });
+    expect(parent.checkSuggestions?.offered).toEqual(boundary);
+    expect((await loadRun(parent.runId, area)).checkSuggestions?.offered).toEqual(boundary);
+  } finally {
+    await rm(area, { recursive: true, force: true });
+  }
+});
+
 it('edited selections retain offered order and actual claim while invalid index/digest fails before acquisition', async () => {
   const area = await root();
   try {
@@ -152,6 +169,9 @@ it('edited selections retain offered order and actual claim while invalid index/
     await expect(
       signalSearch({ ...selected, offeredDigest: '0'.repeat(64) }, { root: area, fetch }),
     ).rejects.toThrow('unknown_check_suggestion');
+    await expect(
+      signalSearch({ ...selected, claimText: '🧪'.repeat(801) }, { root: area, fetch }),
+    ).rejects.toThrow('invalid_claim_request');
     expect(acquisitions).toBe(0);
     const checked = await signalSearch(selected, { root: area, fetch });
     expect(acquisitions).toBe(1);
