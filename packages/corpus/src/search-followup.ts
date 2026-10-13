@@ -44,7 +44,15 @@ export function frozenFollowupMaterial(result: SearchResult, ids: string[]) {
     context,
     // A selected subset must not inherit synthesis about unselected records.
     priorSynthesis: selected.length === result.items.length ? result.brief?.text : undefined,
-    gaps: selected.length === result.items.length ? result.gaps.slice(0, 10) : [],
+    gaps: [
+      'Frozen retained work only: no source was fetched again, and source dates, currentness and contradictions have not been renewed.',
+      ...(['cancelled', 'failed', 'not_configured'].includes(result.status)
+        ? [
+            'The original research stopped before completion. Its narrative is incomplete, unassessed context, not a completed or verified answer.',
+          ]
+        : []),
+      ...(selected.length === result.items.length ? result.gaps.slice(0, 10) : []),
+    ],
   };
 }
 

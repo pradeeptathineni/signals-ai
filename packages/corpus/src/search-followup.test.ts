@@ -30,7 +30,10 @@ it('keeps prior hypothetical synthesis distinct from verified observations', () 
   const frozen = frozenFollowupMaterial(result, []);
   expect(frozen.priorSynthesis).toContain('it was not executed');
   expect(frozen.material).toEqual([]);
-  expect(frozen.gaps).toEqual(result.gaps);
+  expect(frozen.gaps).toEqual(expect.arrayContaining(result.gaps));
+  expect(frozen.gaps.join(' ')).toContain(
+    'source dates, currentness and contradictions have not been renewed',
+  );
 });
 
 it('never adds unselected records or their prior synthesis to a scoped follow-up', () => {

@@ -149,6 +149,14 @@ export function Workbench({
     [answer, setAnswer] = useState<FrozenAnswer | null>(null);
   const [history, setHistory] = useState('');
   const [answerBusy, setAnswerBusy] = useState(false);
+  const discussionEpoch = useRef(0);
+  const discussionParent = useRef<string | null>(null);
+  function clearDiscussion(parent: string | null = null) {
+    discussionParent.current = parent;
+    discussionEpoch.current++;
+    setAnswer(null);
+    setAnswerBusy(false);
+  }
   const [recentRuns, setRecentRuns] = useState<
     { runId: string; query: string; status: string; candidates: number }[]
   >([]);
@@ -175,6 +183,7 @@ export function Workbench({
   }, [reopenRun]);
   useEffect(() => {
     if (monitorRun) {
+      clearDiscussion();
       setRun(monitorRun);
       setBusy(true);
       setTab('Search');
@@ -292,6 +301,7 @@ export function Workbench({
           void reloadCorpus();
         }
         if (state.result) {
+          if (discussionParent.current !== state.result.runId) clearDiscussion(state.result.runId);
           setResult(state.result);
           if (reopening.current) {
             setQuery(state.result.query);
@@ -324,6 +334,7 @@ export function Workbench({
     setFilters((current) => ({ ...current, [key]: value }));
   }
   function toggle(id: string) {
+    clearDiscussion(result?.runId ?? null);
     setSelected((current) =>
       current.includes(id) ? current.filter((value) => value !== id) : [...current, id],
     );
@@ -348,6 +359,7 @@ export function Workbench({
     const direct = method === 'primary-check';
     if (direct && !primaryReady)
       throw new Error('Supply a proposition and one or two primary URLs.');
+    clearDiscussion();
     reopening.current = false;
     setSourceResult(null);
     setProvisional([]);
@@ -395,6 +407,7 @@ export function Workbench({
       !saved.has(item.entity.id),
   );
   async function openRun(runId: string) {
+    clearDiscussion();
     const opened = await api<{ id: string }>('history/open', { runId });
     onOpenResult?.(runId);
     setRun(opened.id);
@@ -419,13 +432,19 @@ export function Workbench({
     setHistory(JSON.stringify(recent.discovery, null, 2));
   }
   async function askEvidence(question = followup) {
+    if (!result) return;
+    const parent = result.runId;
+    const operation = ++discussionEpoch.current;
+    discussionParent.current = parent;
     setAnswerBusy(true);
     try {
-      if (result) {
-        setAnswer(await api('followup', { runId: result.runId, ids: selected, question }));
-      }
+      const reply = await api<FrozenAnswer>('followup', { runId: parent, ids: selected, question });
+      if (operation === discussionEpoch.current && parent === discussionParent.current)
+        setAnswer(reply);
+    } catch (failure) {
+      if (operation === discussionEpoch.current) throw failure;
     } finally {
-      setAnswerBusy(false);
+      if (operation === discussionEpoch.current) setAnswerBusy(false);
     }
   }
   const answerFirstVisible = !!result?.answerReceipt || (busy && researchMethod === 'answer-first');
@@ -434,20 +453,18 @@ export function Workbench({
       <section className="research-brief" aria-label="Research brief">
         <details open={!items.length}>
           <summary>Research explanation and next steps</summary>
-          {answerFirstVisible && (
-            <p>
-              Unassessed answer · Confidence: Unknown. Support has not been independently checked.
-              Missing or contradictory requirements need an explicit assessment before a full-fit
-              decision.
-            </p>
-          )}
+          <p>
+            {result?.answerReceipt ? 'Unassessed answer' : 'Unassessed research narrative'} ·
+            Confidence: Unknown. Support has not been independently checked. Missing or
+            contradictory requirements need an explicit assessment before a full-fit decision.
+          </p>
           <Brief text={(result?.brief ?? earlyBrief)!.text} />
           <p>
             {busy
-              ? answerFirstVisible
-                ? 'Original answer ready; session completion is pending. '
-                : 'Original answer ready; source checks and saved-record preparation are pending. '
-              : 'Retained from this research session. '}
+              ? 'Partial output; research and evidence checks are still pending. '
+              : result && ['cancelled', 'failed'].includes(result.status)
+                ? 'Research stopped before completion. This retained work may be incomplete. '
+                : 'Retained from this research session. '}
             Inspect supporting evidence and limitations before acting.
           </p>
           {result?.assessmentOf && (
@@ -2241,7 +2258,7 @@ export function Workbench({
                   }}
                 >
                   <label>
-                    Ask the frozen evidence
+                    Continue from retained work
                     <textarea
                       value={followup}
                       required
@@ -2249,12 +2266,13 @@ export function Workbench({
                     />
                   </label>
                   <button disabled={answerBusy || busy}>
-                    {answerBusy ? 'Reading frozen evidence…' : 'Answer from evidence'}
+                    {answerBusy ? 'Reading retained work…' : 'Discuss retained work'}
                   </button>
                   <p>
                     A bounded no-web AI call uses this retained run and selected material, including
-                    its complete answer when in scope. Search further explicitly to acquire new
-                    evidence.
+                    its narrative when in scope. Incomplete research stays incomplete; this does not
+                    fetch changed sources or renew their currentness. Search further explicitly to
+                    acquire new evidence.
                   </p>
                 </form>
                 {answer && (

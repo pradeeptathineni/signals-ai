@@ -2,6 +2,14 @@
 
 A finding has intrinsic evidence strength. A question has relevance. Contextual priority suggests a next action. Retrieval rank locates retained knowledge. None establishes personal novelty, usefulness or permission to execute a candidate.
 
+## Interrupted research
+
+Completed user-facing research notes can appear before the native turn finishes. They are bounded, provisional narrative, not admitted evidence, scored entities or a completed answer receipt. Reasoning and tool payloads do not become notes. Notes retain their order, so later progress or unfinished records do not erase earlier source pointers and qualifications. The partial-output limit is 24,000 UTF16 units or 64 notes; omitted notes are disclosed. Callbacks close when discovery ends, before final answer retention.
+
+On timeout or cancellation, private mode retains the available narrative, provisional pointers, status and evidence gaps in the existing immutable run. Memory mode does not save it. If no usable narrative was produced, the result says so instead of inventing an answer. An interrupted verification can retain previously returned evidence with its actual state; it cannot declare unchecked sources verified or automatically save an eligible entity.
+
+Reopen the retained run to discuss its frozen work explicitly. This is a separate bounded no-web follow-up, not resumption of the native process. It does not refresh changed sources, renew currentness, resolve missing or contradictory evidence, rewrite the original narrative or turn a partial note into a completed answer. Acquiring or assessing evidence further remains an explicit action.
+
 ## Assessment confidence and generalization
 
 These meanings stay separate:

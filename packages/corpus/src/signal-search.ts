@@ -823,6 +823,7 @@ export async function signalSearch(
     counts: { leads: 0, distinct: 0, duplicates: 0, omitted: 0 },
     limits,
   };
+  let receivingBrief = true;
   try {
     const acquisitionConfig = await loadAcquisitionConfig(dependencies.root ?? process.cwd());
     const runner =
@@ -847,7 +848,20 @@ export async function signalSearch(
       controller.signal,
       dependencies.progress ?? (() => {}),
       dependencies.acquisitionHints,
+      (brief) => {
+        if (
+          controller.signal.aborted ||
+          !receivingBrief ||
+          brief.format !== 'markdown' ||
+          !brief.text.trim() ||
+          brief.text.length > 24000
+        )
+          return;
+        base.brief = { ...brief };
+        dependencies.brief?.(base.brief);
+      },
     );
+    receivingBrief = false;
     base.usage.searches = discovery.searches;
     base.usage.providerUsage = discovery.usage;
     const answerReadyMs = Date.now() - started;
@@ -922,7 +936,7 @@ export async function signalSearch(
     }
     if (research.provisionalLeads.length) base.provisionalLeads = research.provisionalLeads;
     const provisional = research.proposal;
-    dependencies.provisional?.([
+    base.provisionalLeads = [
       ...provisional.candidates.map(({ uri, name, description, limits }) => ({
         uri,
         name,
@@ -930,7 +944,9 @@ export async function signalSearch(
         limits,
       })),
       ...research.provisionalLeads,
-    ]);
+    ].slice(0, 60);
+    base.counts.leads = base.provisionalLeads.length;
+    dependencies.provisional?.(base.provisionalLeads);
     if (discovery.searches > limits.searches) throw new Error('budget_exhausted');
     if (request.cache === 'private')
       await atomicJson(
@@ -1051,17 +1067,28 @@ export async function signalSearch(
       base.persistence = { changed: saved.changed, skipped: saved.skipped, privateRun: false };
     }
   } catch (failure) {
+    receivingBrief = false;
     if (failure instanceof RunnerFailure) {
       base.usage.searches = failure.searches;
       base.usage.providerUsage = failure.providerUsage;
-      if (failure.brief) base.brief = failure.brief;
+      if (failure.brief) {
+        base.brief ??= failure.brief;
+        dependencies.brief?.(base.brief);
+      }
     }
     base.status = controller.signal.aborted ? 'cancelled' : 'failed';
     base.gaps.push(failure instanceof Error ? failure.message : 'search_failed');
   } finally {
+    receivingBrief = false;
     clearTimeout(timer);
     dependencies.signal?.removeEventListener('abort', abort);
     base.usage.elapsedMs = Date.now() - started;
+    if (['cancelled', 'failed'].includes(base.status))
+      base.gaps.push(
+        base.brief
+          ? 'Research stopped before completion. Retained narrative and candidate pointers are unassessed and may be incomplete; missing or contradictory sources remain unresolved. Discuss this frozen work or acquire evidence explicitly.'
+          : 'Research stopped before producing usable narrative. No answer or verified result was recovered.',
+      );
     if (request.cache === 'private') {
       base.persistence = {
         changed: base.persistence?.changed ?? [],

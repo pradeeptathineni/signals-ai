@@ -8,7 +8,103 @@ import { resolvePublicUrl, publicTransportUrl } from './search-fetch.js';
 import { signalSearch } from './signal-search.js';
 import { loadEntities, retainRun } from './search-store.js';
 import { budgets, type SearchResult } from '../../domain/src/search-contract.js';
+import { frozenFollowupMaterial } from './search-followup.js';
 import { randomUUID } from 'node:crypto';
+
+it('explicitly reopens an interrupted private run for frozen continuation without restarting research', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-partial-api-')));
+  const result: SearchResult = {
+    schemaVersion: 2,
+    runId: randomUUID(),
+    query: 'unfinished source comparison',
+    status: 'cancelled',
+    brief: {
+      format: 'markdown',
+      text: 'Earlier source reported a conditional capability; present status is unknown.',
+    },
+    items: [],
+    sources: [],
+    coverage: [],
+    gaps: ['Verification stopped.'],
+    usage: {
+      searches: 1,
+      documents: 0,
+      elapsedMs: 5,
+      modelCalls: 0,
+      providerUsage: null,
+      cost: null,
+    },
+    counts: { leads: 0, distinct: 0, duplicates: 0, omitted: 0 },
+    limits: budgets.quick,
+  };
+  await retainRun(result, root);
+  const path = join(root, '.signals/runs', result.runId + '.json');
+  const bytes = await readFile(path);
+  let continuations = 0;
+  const api = searchApi(
+    root,
+    async () => {
+      throw new Error('research_must_not_restart');
+    },
+    undefined,
+    async (parent) => {
+      continuations++;
+      const frozen = frozenFollowupMaterial(parent, []);
+      expect(parent.status).toBe('cancelled');
+      expect(parent.answerReceipt).toBeUndefined();
+      expect(frozen.material).toEqual([]);
+      expect(frozen.priorSynthesis).toBe(result.brief!.text);
+      expect(frozen.gaps.join(' ')).toContain(
+        'currentness and contradictions have not been renewed',
+      );
+      return {
+        mode: 'frozen-evidence-replay',
+        answer: 'Current status requires a separate source check.',
+        statements: [],
+        gaps: frozen.gaps,
+        usage: null,
+      };
+    },
+  );
+  const server = createServer((request, response) => {
+    void api(request, response);
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('no_port');
+  const base = `http://127.0.0.1:${address.port}/signals-ai/__signals/api/`;
+  try {
+    const { token } = await (await fetch(base + 'session')).json();
+    const headers = { 'content-type': 'application/json', 'x-signals-token': token };
+    const body = JSON.stringify({
+      runId: result.runId,
+      ids: [],
+      question: 'The source may have changed; what remains unresolved?',
+    });
+    expect((await fetch(base + 'followup', { method: 'POST', headers, body })).status).toBe(400);
+    expect(continuations).toBe(0);
+    expect(
+      (
+        await fetch(base + 'history/open', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ runId: result.runId }),
+        })
+      ).status,
+    ).toBe(200);
+    const followup = await fetch(base + 'followup', { method: 'POST', headers, body });
+    expect(followup.status).toBe(200);
+    const reply = (await followup.json()) as { gaps: string[] };
+    expect(reply.gaps.join(' ')).toContain('incomplete, unassessed context');
+    expect(continuations).toBe(1);
+    expect(await readFile(path)).toEqual(bytes);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 it('saves only the private question input without requiring a Corpus or invoking research', async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-question-api-')));

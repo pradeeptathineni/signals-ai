@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { searchApi } from '../../packages/corpus/src/search-api.js';
 import { signalSearch } from '../../packages/corpus/src/signal-search.js';
+import { RunnerFailure } from '../../packages/corpus/src/search-runner.js';
 import { loadEntities } from '../../packages/corpus/src/search-store.js';
 import { contextualize } from '../../packages/domain/src/search-priority.js';
 import { saveDecision } from '../../packages/domain/src/search-score.js';
@@ -27,6 +28,32 @@ for (const record of approved)
   );
 const api = searchApi(root, async (input, dependencies) => {
   const request = parseRequest(input);
+  if (request.query === 'partial timeout fixture')
+    return signalSearch(request, {
+      ...dependencies,
+      root,
+      runner: {
+        readiness: () =>
+          Promise.resolve({
+            available: true,
+            broadSearch: true,
+            runner: 'fixture',
+            reason: 'No model; controlled cancellation.',
+          }),
+        discover: async (_request, signal, _progress, _hints, brief) => {
+          const note = {
+            format: 'markdown' as const,
+            text: 'A source pointer is available: [guide](https://example.com/guide). Current support is unresolved.',
+          };
+          brief?.(note);
+          await new Promise<void>((done) => {
+            if (signal.aborted) done();
+            else signal.addEventListener('abort', () => done(), { once: true });
+          });
+          throw new RunnerFailure('cancelled', 0, null, note);
+        },
+      },
+    });
   if (request.claimOrigin === 'request')
     return signalSearch(request, {
       ...dependencies,

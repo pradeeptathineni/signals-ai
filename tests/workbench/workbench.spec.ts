@@ -367,7 +367,7 @@ test('provisional leads are separate from final savable evidence', async ({ page
     'This original answer is ready before source checks finish.',
   );
   await expect(page.getByRole('region', { name: 'Research brief' })).toContainText(
-    'source checks and saved-record preparation are pending',
+    'Partial output; research and evidence checks are still pending',
   );
   await expect(page.locator('.entity-card')).toHaveCount(0);
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();

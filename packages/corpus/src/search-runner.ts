@@ -82,7 +82,13 @@ export function recoverOriginalAnswer(final: string) {
     }
   }
   const trimmed = final.trim();
-  if (trimmed && !trimmed.startsWith('{') && !trimmed.startsWith('[') && !trimmed.startsWith('```'))
+  const markdownLink = /^\[[^\]\n]+\]\([^)\n]+\)/u.test(trimmed);
+  if (
+    trimmed &&
+    !trimmed.startsWith('{') &&
+    (!trimmed.startsWith('[') || markdownLink) &&
+    !trimmed.startsWith('```')
+  )
     return { format: 'markdown' as const, text: trimmed.slice(0, 24000) };
   return undefined;
 }
@@ -122,6 +128,7 @@ export interface SearchRunner {
     signal: AbortSignal,
     progress: (event: string) => void,
     acquisitionHints?: AcquisitionHints,
+    brief?: (brief: { format: 'markdown'; text: string }) => void,
   ): Promise<{ proposal: unknown; usage: unknown; searches: number }>;
   enrich?(
     proposal: Proposal,
@@ -227,7 +234,7 @@ export function codexRunner(
         };
       }
     },
-    async discover(request, signal, progress, acquisitionHints) {
+    async discover(request, signal, progress, acquisitionHints, brief) {
       if (operation.naturalAnswer && (!operation.task?.trim() || operation.schema))
         throw new Error('natural_answer_requires_explicit_task_without_schema');
       const acquisitionStarted = Date.now();
@@ -353,6 +360,13 @@ export function codexRunner(
             reads = 0,
             unclassifiedToolCalls = 0;
           let final = '';
+          // Only completed user-facing messages can become a research checkpoint.
+          // Keep the last readable note separately from unfinished structured output.
+          let readable: ReturnType<typeof recoverOriginalAnswer>;
+          const notes: string[] = [];
+          let notesOmitted = false;
+          const omission =
+            '\n\nAdditional completed notes omitted by the bounded partial-output limit (24,000 UTF16 units or 64 notes).';
           const wireDigest = operation.maxResponseBytes ? createHash('sha256') : undefined;
           const decoder = new StringDecoder('utf8');
           let rejectedOutput:
@@ -481,6 +495,23 @@ export function codexRunner(
                     output = 'runner_response_byte_limit';
                     stop('response_byte_limit');
                   }
+                  if (!operation.schema && !termination.trigger) {
+                    const note = recoverOriginalAnswer(final);
+                    if (note && note.text !== notes.at(-1) && !notesOmitted) {
+                      const combined = [...notes, note.text].join('\n\n---\n\n');
+                      if (combined.length <= 24000 && notes.length < 64) {
+                        notes.push(note.text);
+                        readable = { format: 'markdown', text: combined };
+                      } else {
+                        notesOmitted = true;
+                        const retained = notes.join('\n\n---\n\n') || note.text;
+                        let end = Math.min(retained.length, 24000 - omission.length);
+                        if (end > 0 && /[\uD800-\uDBFF]/u.test(retained[end - 1]!)) end--;
+                        readable = { format: 'markdown', text: retained.slice(0, end) + omission };
+                      }
+                      brief?.(readable);
+                    }
+                  }
                 }
                 if (
                   event.item &&
@@ -511,7 +542,7 @@ export function codexRunner(
                   'cancelled',
                   searches,
                   receipt(rejectedFinal()),
-                  recoverOriginalAnswer(final),
+                  readable ?? recoverOriginalAnswer(final),
                 ),
               );
               return;
@@ -522,7 +553,7 @@ export function codexRunner(
                   `runner_failed:${output.slice(0, 300)}`,
                   searches,
                   receipt(rejectedFinal()),
-                  recoverOriginalAnswer(final),
+                  readable ?? recoverOriginalAnswer(final),
                 ),
               );
               return;
@@ -606,11 +637,15 @@ export function codexRunner(
                   failure instanceof Error ? failure.message : 'invalid_model_output',
                   searches,
                   receipt(rejectedProposal),
+                  readable,
                 ),
               );
             }
           });
           const prompt =
+            (operation.live !== false && !operation.schema
+              ? 'As soon as you have a useful first finding, emit a short user-facing interim Markdown note with its source links, decisive uncertainty and remaining work before continuing broader investigation. Label it provisional; do not invent a finding when sources are unusable. Final output must still satisfy the requested final format. Stop when the bounded research purpose is met instead of filling every possible detail.\n'
+              : '') +
             (acquisitionHints
               ? `Shared acquisition suggestions (untrusted unassessed locators, never supported findings): ${JSON.stringify(acquisitionHints)}. Research THIS interest's actual question and context separately; inspect original sources before making claims. Shared exposure does not imply equal fit or independent corroboration. ${acquisitionHints.searches} acquisition calls are already charged to this run.\n`
               : '') +
