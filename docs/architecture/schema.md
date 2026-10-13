@@ -1,5 +1,7 @@
 # Data map
 
+Opt-in answer-first `checkSuggestions` retains at most three ordered unverified propositions, their narrative/need basis, consequence rationale and original cited URLs. Its `answerDigest` binds the unchanged answer; `offeredDigest` hashes UTF8 JSON of ordered `[claim,basis,why,urls]` tuples. An explicit linked selection pairs `suggestionIndex` and that digest before acquisition. The child retains `suggestionDigest` over `["check-selection-v1",parentRunId,parentAnswerDigest,offeredDigest,index]`, alongside the existing receipt's actual edited proposition and source order. Replay rejects inconsistent closures without treating hashes or nomination labels as authority or support. Memory-only answers acquire no implicit parent persistence; linked checks require an existing retained parent. Old absent-field runs remain readable.
+
 Public JSON is canonical knowledge. Local JSON is private working state. Indexes and Pages assets are disposable projections. Closed schemas reject unknown fields, duplicate keys, forged bindings, ambiguous identities and score tampering.
 
 | Data               | Authority and shape                                                                                                                                    |

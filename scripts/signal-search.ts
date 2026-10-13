@@ -46,6 +46,9 @@ const { values } = parseArgs({
     capability: { type: 'boolean' },
     review: { type: 'boolean' },
     method: { type: 'string' },
+    'suggest-checks': { type: 'boolean' },
+    'suggestion-index': { type: 'string' },
+    'offered-digest': { type: 'string' },
     'assessment-of': { type: 'string' },
     claim: { type: 'string' },
     'claim-origin': { type: 'string' },
@@ -72,6 +75,10 @@ try {
     throw new Error(
       values['claim-origin'] ? 'claim_requires_check_route' : 'claim_requires_linked_check_route',
     );
+  if (values['suggest-checks'] && values.accept)
+    throw new Error('suggestions_require_answer_route');
+  if (values['suggestion-index'] !== undefined && !/^[0-2]$/.test(values['suggestion-index']))
+    throw new Error('invalid_suggestion_selection');
   if (values.schema) process.stdout.write(`${JSON.stringify(nativeBriefSchema)}\n`);
   else if (values.capability)
     process.stdout.write(
@@ -83,6 +90,10 @@ try {
       profile: values.profile ?? (values['claim-origin'] === 'request' ? 'quick' : 'wide'),
       route: 'native',
       method: values.method,
+      suggestChecks: values['suggest-checks'],
+      suggestionIndex:
+        values['suggestion-index'] === undefined ? undefined : Number(values['suggestion-index']),
+      offeredDigest: values['offered-digest'],
       assessmentOf: values['assessment-of'],
       claimText: values.claim,
       claimOrigin: values['claim-origin'],

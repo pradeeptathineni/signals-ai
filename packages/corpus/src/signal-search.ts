@@ -25,6 +25,7 @@ import { privateCacheFetch } from './search-cache.js';
 import { runClaimCheck } from './search-claim.js';
 import { atomicJson, saveEntities, retainRun, loadEntities, loadRun } from './search-store.js';
 import { planResearchRetention } from './research-answer.js';
+import { checkSuggestions, offeredPayload } from '../../domain/src/search-suggestions.js';
 import { resolve } from 'node:path';
 import { loadAcquisitionConfig } from './search-acquisition.js';
 import { configuredDocumentFetch } from './search-extractors.js';
@@ -884,6 +885,32 @@ export async function signalSearch(
           'Answer and citation references are unassessed. Confidence Unknown. Select a cited resource for an explicit evidence assessment.',
           ...plan.limits,
         ];
+        if (request.suggestChecks) {
+          try {
+            const offered =
+              'suggestions' in discovery.proposal ? discovery.proposal.suggestions : undefined;
+            base.checkSuggestions = checkSuggestions(
+              {
+                version: 1,
+                state: 'unverified',
+                answerDigest: plan.answerSha256,
+                offered,
+                offeredDigest: digest(
+                  offeredPayload(offered as Parameters<typeof offeredPayload>[0]),
+                ),
+              },
+              plan.answerSha256,
+              base.provisionalLeads.map((lead) => lead.uri),
+            );
+            base.gaps.push(
+              'Suggested checks are unverified hypotheses; no proposition has been checked.',
+            );
+          } catch {
+            base.gaps.push(
+              'Suggested checks omitted: invalid metadata or uncited references. The complete answer remains available for manual selection.',
+            );
+          }
+        }
         if (plan.rejectedReferences.length)
           base.gaps.push(
             `${plan.rejectedReferences.length} unsafe or unsupported citation destinations rejected; original text retained.`,

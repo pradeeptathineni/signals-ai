@@ -11,6 +11,11 @@ import {
 } from 'node:fs/promises';
 import { resolve, join, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import {
+  checkSuggestions,
+  offeredPayload,
+  suggestionSelectionPayload,
+} from '../../domain/src/search-suggestions.js';
 import { isDeepStrictEqual } from 'node:util';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
@@ -52,6 +57,7 @@ import {
   relevanceSchema,
 } from '../../domain/src/search-assessment.js';
 import { importedAnswers } from './research-receipts.js';
+import { planResearchRetention } from './research-answer.js';
 
 /** Read-only private state never creates directories and rejects every symlink component. */
 export async function readPrivateJson(
@@ -761,7 +767,63 @@ export async function saveEntities(
     };
   });
 }
+async function validateRunSuggestions(result: SearchResult, root: string, ancestors?: Set<string>) {
+  if (result.checkSuggestions !== undefined) {
+    if (
+      !result.answerReceipt ||
+      result.claimCheck ||
+      result.answerReceipt.sha256 !== digest(result.brief?.text ?? '')
+    )
+      throw new Error('suggestions_require_answer');
+    const plan = planResearchRetention({
+      query: result.query,
+      answer: result.brief?.text ?? '',
+      observedAt: result.answerReceipt.observedAt,
+      provenance: result.answerReceipt.provenance,
+    });
+    checkSuggestions(
+      result.checkSuggestions,
+      digest(result.brief?.text ?? ''),
+      plan.citations
+        .map((citation) => citation.uri)
+        .filter((uri) => result.provisionalLeads?.some((lead) => lead.uri === uri)),
+    );
+    if (
+      result.checkSuggestions.offeredDigest !==
+      digest(offeredPayload(result.checkSuggestions.offered))
+    )
+      throw new Error('invalid_offered_digest');
+  }
+  if (result.suggestionIndex !== undefined) {
+    if (
+      !Number.isInteger(result.suggestionIndex) ||
+      result.suggestionIndex < 0 ||
+      result.suggestionIndex > 2 ||
+      result.claimCheck?.version !== 1 ||
+      !result.assessmentOf
+    )
+      throw new Error('invalid_suggestion_selection');
+    const parent = await loadRun(result.assessmentOf, root, 75, ancestors);
+    if (!parent.checkSuggestions?.offered[result.suggestionIndex])
+      throw new Error('unknown_check_suggestion');
+    if (
+      result.suggestionDigest !==
+      digest(
+        suggestionSelectionPayload(
+          parent.runId,
+          parent.answerReceipt!.sha256,
+          parent.checkSuggestions.offeredDigest,
+          result.suggestionIndex,
+        ),
+      )
+    )
+      throw new Error('invalid_suggestion_digest');
+  }
+  if (result.suggestionDigest !== undefined && result.suggestionIndex === undefined)
+    throw new Error('invalid_suggestion_selection');
+}
 export async function retainRun(result: SearchResult, root = process.cwd()) {
+  await validateRunSuggestions(result, root);
   if (!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(result.runId))
     throw new Error('invalid_run_identity');
   const path = resolve(root, '.signals/runs', `${result.runId}.json`);
@@ -864,6 +926,7 @@ export async function loadRun(
     )
       throw new Error('invalid_answer_receipt');
   }
+  await validateRunSuggestions(result, root, lineage);
   if (result.claimCheck) {
     const receipt = validateClaimReceipt(result);
     if (receipt.version === 1) {

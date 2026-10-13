@@ -51,6 +51,18 @@ const api = searchApi(root, async (input, dependencies) => {
             searches: 0,
             usage: null,
             proposal: {
+              ...(request.suggestChecks
+                ? {
+                    suggestions: [
+                      {
+                        claim: 'Offline export is available without uploading recordings.',
+                        basis: 'The original answer leaves export unknown.',
+                        why: 'A no-upload requirement could exclude this candidate.',
+                        urls: ['https://example.com/tool#export'],
+                      },
+                    ],
+                  }
+                : {}),
               answer:
                 '## A partial possibility\r\n\r\nRequired offline export is unknown; do not assume full fit.\r\n\r\n' +
                 'Background note. '.repeat(1300) +

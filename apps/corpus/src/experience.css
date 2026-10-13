@@ -704,3 +704,9 @@
     animation: none !important;
   }
 }
+.desk-check-suggestions a {
+  display: inline-block;
+  min-height: 24px;
+  padding-block: 3px;
+  overflow-wrap: anywhere;
+}

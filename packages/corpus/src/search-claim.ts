@@ -17,6 +17,7 @@ import {
 } from '../../domain/src/search-contract.js';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
 import { supportedSourceText } from '../../domain/src/source-text.js';
+import { suggestionSelectionPayload } from '../../domain/src/search-suggestions.js';
 import { digest, normalizeSpan, fetchEvidence, boundedTextReceipt } from './search-fetch.js';
 import { loadRun, retainRun } from './search-store.js';
 import { codexRunner, RunnerFailure, type SearchRunner } from './search-runner.js';
@@ -318,6 +319,12 @@ export async function runClaimCheck(
       ))
   )
     fail('assessment_selection_not_cited');
+  if (
+    request.suggestionIndex !== undefined &&
+    (!parent?.checkSuggestions?.offered[request.suggestionIndex] ||
+      request.offeredDigest !== parent.checkSuggestions.offeredDigest)
+  )
+    fail('unknown_check_suggestion');
   const history = new Map<number, ClaimMaterial>();
   // Resolve every explicit reference before external acquisition; caller text cannot become evidence.
   for (const ref of request.claimSources ?? []) {
@@ -399,6 +406,19 @@ export async function runClaimCheck(
     runId: randomUUID(),
     query: originalNeed,
     ...(parent ? { assessmentOf: parent.runId } : {}),
+    ...(request.suggestionIndex !== undefined ? { suggestionIndex: request.suggestionIndex } : {}),
+    ...(request.suggestionIndex !== undefined && parent?.checkSuggestions
+      ? {
+          suggestionDigest: digest(
+            suggestionSelectionPayload(
+              parent.runId,
+              parent.answerReceipt!.sha256,
+              parent.checkSuggestions.offeredDigest,
+              request.suggestionIndex,
+            ),
+          ),
+        }
+      : {}),
     assessmentTargets: request.captureUrls,
     claimCheck: receipt,
     status: 'partial',
