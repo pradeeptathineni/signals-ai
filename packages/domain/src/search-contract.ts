@@ -21,7 +21,7 @@ import type { ClaimReceipt } from './claim-check.js';
 import { claimCitationSchema } from './claim-check.js';
 import type { SourceText } from './source-text.js';
 import type { Grounding } from '@pradeeptathineni/research-ai';
-import type { CheckSuggestions } from './search-suggestions.js';
+import type { CheckSuggestions, RejectedCheckSuggestions } from './search-suggestions.js';
 export { channels, budgets } from './search-vocabulary.js';
 const enumOf = <const T extends string>(values: readonly T[]) => Type.Enum<T[]>(values);
 export const indicators = {
@@ -443,6 +443,7 @@ export interface SearchResult {
   /** Owner-produced self-contained claim/source closure; absence is unassessed history. */
   grounding?: Grounding;
   checkSuggestions?: CheckSuggestions;
+  rejectedCheckSuggestions?: RejectedCheckSuggestions;
   suggestionIndex?: number;
   suggestionDigest?: string;
   claimCheck?: ClaimReceipt;

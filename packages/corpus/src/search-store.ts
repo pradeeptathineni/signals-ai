@@ -15,6 +15,7 @@ import {
   checkSuggestions,
   offeredPayload,
   suggestionSelectionPayload,
+  rejectedSuggestionsSchema,
 } from '../../domain/src/search-suggestions.js';
 import { isDeepStrictEqual } from 'node:util';
 import { validateGrounding } from '@pradeeptathineni/research-ai';
@@ -771,6 +772,26 @@ export async function saveEntities(
   });
 }
 async function validateRunSuggestions(result: SearchResult, root: string, ancestors?: Set<string>) {
+  if (result.rejectedCheckSuggestions !== undefined) {
+    const rejected = result.rejectedCheckSuggestions;
+    const diagnostic = rejected.diagnostic;
+    if (
+      !Value.Check(rejectedSuggestionsSchema, rejected) ||
+      result.checkSuggestions !== undefined ||
+      result.claimCheck ||
+      !result.answerReceipt ||
+      rejected.answerDigest !== result.answerReceipt.sha256 ||
+      rejected.answerDigest !== digest(result.brief?.text ?? '') ||
+      (rejected.presence === 'serializable') !== (diagnostic !== undefined) ||
+      (diagnostic &&
+        (!diagnostic.captureComplete ||
+          Buffer.byteLength(diagnostic.text) > 32768 ||
+          diagnostic.capturedBytes !==
+            Buffer.byteLength(diagnostic.text) + diagnostic.omittedBytes ||
+          (!diagnostic.omittedBytes && digest(diagnostic.text) !== diagnostic.capturedDigest)))
+    )
+      throw new Error('invalid_suggestion_rejection');
+  }
   if (result.checkSuggestions !== undefined) {
     if (
       !result.answerReceipt ||

@@ -1,6 +1,7 @@
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 import { normalizeConsiderUrl } from './url.js';
+import { linkedClaimReceiptSchema } from './claim-check.js';
 
 const closed = { additionalProperties: false };
 const shortText = (maxLength: number) => Type.String({ minLength: 1, maxLength });
@@ -31,6 +32,26 @@ const receiptSchema = Type.Object(
   closed,
 );
 export type CheckSuggestions = Static<typeof receiptSchema>;
+export const rejectedSuggestionsSchema = Type.Object(
+  {
+    version: Type.Literal(1),
+    answerDigest: Type.String({ pattern: '^[a-f0-9]{64}$' }),
+    scope: Type.Literal('parsed-final-suggestions'),
+    presence: Type.Enum(['missing', 'serializable', 'nonserializable']),
+    reason: Type.Enum([
+      'invalid_check_suggestions',
+      'invalid_check_suggestion_text',
+      'check_suggestion_not_cited',
+      'invalid_check_suggestion_url',
+      'duplicate_check_suggestion_url',
+    ]),
+    diagnostic: Type.Optional(
+      Type.Omit(linkedClaimReceiptSchema.properties.rejectedOutput, ['captureScope']),
+    ),
+  },
+  closed,
+);
+export type RejectedCheckSuggestions = Static<typeof rejectedSuggestionsSchema>;
 export const offeredPayload = (offered: CheckSuggestions['offered']) =>
   JSON.stringify(offered.map(({ claim, basis, why, urls }) => [claim, basis, why, urls]));
 export const suggestionSelectionPayload = (
@@ -53,10 +74,19 @@ export function checkSuggestions(input: unknown, answerDigest: string, citations
       offered.why.length > 400
     )
       throw new Error('invalid_check_suggestion_text');
+    const destinations = new Set<string>();
     for (const uri of offered.urls) {
-      const normalized = normalizeConsiderUrl(uri).normalizedUrl + new URL(uri).hash;
-      if (normalized !== uri || !citations.includes(uri))
-        throw new Error('check_suggestion_not_cited');
+      let normalized: string;
+      try {
+        normalized = normalizeConsiderUrl(uri).normalizedUrl + new URL(uri).hash;
+      } catch {
+        throw new Error('invalid_check_suggestion_url');
+      }
+      if (uri.length > 2048 || normalized.length > 2048)
+        throw new Error('invalid_check_suggestion_url');
+      if (!citations.includes(normalized)) throw new Error('check_suggestion_not_cited');
+      if (destinations.has(normalized)) throw new Error('duplicate_check_suggestion_url');
+      destinations.add(normalized);
     }
   }
   return input;
