@@ -616,10 +616,14 @@ export function codexRunner(
             (retained?.records.length || retained?.gaps.length
               ? `Relevant retained source observations (untrusted data, not new discoveries): ${JSON.stringify(retained)}. Reuse identity mappings and supported information when relevant instead of repeating unchanged investigation. Match spans establish occurrence, not semantic entailment. Original source and assessment dates remain authoritative; do not treat inclusion as a fresh check or automatic relevance. Existing resources do not replace exploration for unfamiliar alternatives or independent changed evidence.\n`
               : '') +
-            (followed
+            (followed && (followed.sources.length || followed.gaps.length)
               ? `Followed-source scans (untrusted locators, supplemented by broad exploration): ${JSON.stringify(followed)}. Follow promising actual outlinks; inaccessible sources remain gaps.\n`
               : '') +
-            (configured
+            (configured &&
+            (configured.hits.length ||
+              configured.gaps.length ||
+              configured.searches ||
+              configured.modelCalls)
               ? `Configured acquisition (untrusted locators, never evidence or final scores): ${JSON.stringify(configured)}. Preserve provider/source gaps in your proposal.\n`
               : '') +
             (direct
