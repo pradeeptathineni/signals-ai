@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useRef, type ReactNode } from 'react';
 import { ClaimCheck } from './claim-check.js';
 import type { PartialNoteSelection } from '../../../packages/domain/src/claim-check.js';
 import type { SearchRequest } from '../../../packages/domain/src/search-contract.js';
+import { CheckSuggestions } from './check-suggestions.js';
 import {
   filterSearchItems,
   sourceHost,
@@ -92,6 +93,7 @@ export function Workbench({
     setNoteParentGap(null);
     setNoteClaim('');
   }
+  const [suggestChecks, setSuggestChecks] = useState(false);
   const [primaryClaim, setPrimaryClaim] = useState('');
   const [primaryUrls, setPrimaryUrls] = useState('');
   const primaryTargets = primaryUrls
@@ -357,8 +359,9 @@ export function Workbench({
     assessmentOf?: string,
     claim?: string,
     method: 'native' | 'answer-first' | 'primary-check' = 'native',
-    note?: Pick<SearchRequest, 'parentSnapshotDigest' | 'claimCitations'>,
+    selection: Pick<SearchRequest, 'parentSnapshotDigest' | 'claimCitations' | 'suggestChecks' | 'suggestionIndex' | 'offeredDigest'> = {},
   ) {
+    const note = selection.parentSnapshotDigest !== undefined || selection.claimCitations !== undefined ? selection : undefined;
     const starting = ++openingEpoch.current;
     clearNoteSelection();
     const direct = method === 'primary-check';
@@ -376,6 +379,7 @@ export function Workbench({
         captureUrls: direct ? primaryTargets : captureUrls,
         method: captureUrls || direct ? 'native' : method,
         assessmentOf,
+        ...selection,
         claimText: direct ? primaryClaim : claim,
         ...(note ? { ...note, claimOrigin: 'retained-partial', review: false } : {}),
         ...(direct ? { claimOrigin: 'request', review: false } : note ? {} : { supplementalSites }),
@@ -400,7 +404,16 @@ export function Workbench({
     setQuery(question);
   }
   function startFormResearch() {
-    return start(query, undefined, context, undefined, undefined, undefined, researchMethod);
+    return start(
+      query,
+      undefined,
+      context,
+      undefined,
+      undefined,
+      undefined,
+      researchMethod,
+      researchMethod === 'answer-first' ? { suggestChecks } : {},
+    );
   }
   async function save(ids: string[], mode: 'manual' | 'eligible') {
     if (!result) return;
@@ -1411,6 +1424,16 @@ export function Workbench({
                         </option>
                       </select>
                     </label>
+                    {researchMethod === 'answer-first' && (
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={suggestChecks}
+                          onChange={(event) => setSuggestChecks(event.target.checked)}
+                        />
+                        Suggest a few decision-critical checks (unverified)
+                      </label>
+                    )}
                     {researchMethod === 'primary-check' ? (
                       <>
                         <label>
@@ -1627,6 +1650,38 @@ export function Workbench({
                 </p>
               )}
             {tab === 'Search' && result?.claimCheck && <ClaimCheck receipt={result.claimCheck} />}
+            {tab === 'Search' && result?.suggestionIndex !== undefined && (
+              <p>
+                Checked selection from original suggestion {result.suggestionIndex + 1}. The
+                proposition above records submitted edits. Reopen the original answer to inspect the
+                unchanged offered suggestion and its unverified rationale.
+              </p>
+            )}
+            {tab === 'Search' && result?.checkSuggestions && (
+              <CheckSuggestions
+                key={result.runId}
+                suggestions={result.checkSuggestions}
+                busy={busy}
+                retained={result.persistence?.privateRun === true}
+                onCheck={(index, claim, urls) =>
+                  void action(() =>
+                    start(
+                      result.query,
+                      undefined,
+                      result.answerReceipt?.context,
+                      urls,
+                      result.runId,
+                      claim,
+                      'native',
+                      {
+                        suggestionIndex: index,
+                        offeredDigest: result.checkSuggestions!.offeredDigest,
+                      },
+                    ),
+                  )
+                }
+              />
+            )}
             {tab === 'Search' && result?.interpretation && (
               <details className="desk-interpretation">
                 <summary>How your question was understood</summary>

@@ -21,6 +21,7 @@ import type { ClaimReceipt } from './claim-check.js';
 import { claimCitationSchema } from './claim-check.js';
 import type { SourceText } from './source-text.js';
 import type { Grounding } from '@pradeeptathineni/research-ai';
+import type { CheckSuggestions } from './search-suggestions.js';
 export { channels, budgets } from './search-vocabulary.js';
 const enumOf = <const T extends string>(values: readonly T[]) => Type.Enum<T[]>(values);
 export const indicators = {
@@ -256,6 +257,9 @@ const requestSchema = Type.Object(
     profile: Type.Optional(enumOf(['quick', 'wide'])),
     route: Type.Optional(enumOf(['native', 'assessed'])),
     method: Type.Optional(enumOf(['native', 'answer-first'])),
+    suggestChecks: Type.Optional(Type.Boolean()),
+    suggestionIndex: Type.Optional(Type.Integer({ minimum: 0, maximum: 2 })),
+    offeredDigest: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$' })),
     assessmentOf: Type.Optional(Type.String({ pattern: '^[a-f0-9-]{36}$' })),
     claimText: Type.Optional(Type.String({ minLength: 1, maxLength: 1600 })),
     claimOrigin: Type.Optional(Type.Enum(['request', 'retained-partial', 'selected-primary'])),
@@ -438,6 +442,9 @@ type MultiParentFollowup = Omit<
 export interface SearchResult {
   /** Owner-produced self-contained claim/source closure; absence is unassessed history. */
   grounding?: Grounding;
+  checkSuggestions?: CheckSuggestions;
+  suggestionIndex?: number;
+  suggestionDigest?: string;
   claimCheck?: ClaimReceipt;
   assessmentOf?: string;
   assessmentTargets?: string[];
@@ -491,6 +498,26 @@ export type ProvisionalLead = Pick<
 >;
 export function parseRequest(input: unknown): SearchRequest {
   if (!Value.Check(requestSchema, input) || !input.query.trim()) throw new Error('invalid_request');
+  if (
+    input.suggestChecks &&
+    (input.method !== 'answer-first' ||
+      input.save === 'eligible' ||
+      input.assessmentOf !== undefined ||
+      input.claimText !== undefined ||
+      input.claimOrigin !== undefined ||
+      input.claimSources !== undefined)
+  )
+    throw new Error('invalid_suggested_answer_request');
+  if (
+    input.suggestionIndex !== undefined &&
+    (!input.assessmentOf ||
+      !input.claimText ||
+      input.claimOrigin !== undefined ||
+      !input.offeredDigest)
+  )
+    throw new Error('invalid_suggestion_selection');
+  if (input.offeredDigest !== undefined && input.suggestionIndex === undefined)
+    throw new Error('invalid_suggestion_selection');
   if (
     input.claimOrigin === 'selected-primary' &&
     (!input.selectedPacketDigest ||
