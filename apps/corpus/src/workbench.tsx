@@ -1359,9 +1359,10 @@ export function Workbench({
                         </label>
                         <p>
                           Select one or two primary URLs. Their text is acquired before one bounded
-                          review. Unusable text means no review and no verdict. Confidence stays
-                          Unknown; this creates no entity or numeric Signal. The request and its
-                          outcome are retained privately, without an original answer parent.
+                          review. No usable primary text means no review and no verdict.
+                          Partial-source gaps remain visible. Confidence stays Unknown; this creates
+                          no entity or numeric Signal. The request and its outcome are retained
+                          privately, without an original answer parent.
                         </p>
                       </>
                     ) : (
