@@ -122,7 +122,7 @@ it('separates the host deadline from wall-clock jumps without changing narrative
   let deadline: (() => void) | undefined;
   vi.spyOn(globalThis, 'setTimeout').mockImplementation((...args) => {
     if (args[1] === budgets.quick.seconds * 1000 && typeof args[0] === 'function')
-      deadline = args[0] as () => void;
+      deadline = args[0];
     return originalTimer(...args);
   });
   const start = Date.now();
