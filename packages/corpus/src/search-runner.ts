@@ -342,6 +342,7 @@ export function codexRunner(
         );
         const acquisitionMs = Date.now() - acquisitionStarted;
         const sessionStarted = Date.now();
+        const sessionMonotonic = performance.now();
         return await new Promise((resolve, reject) => {
           const child = spawn('codex', args, {
             stdio: ['pipe', 'pipe', 'pipe'],
@@ -369,6 +370,16 @@ export function codexRunner(
           // Keep the last readable note separately from unfinished structured output.
           let readable: ReturnType<typeof recoverOriginalAnswer>;
           const notes: string[] = [];
+          // Categories partition received completed messages, not unseen provider output.
+          const messages = {
+            completed: 0,
+            checkpointed: 0,
+            unreadable: 0,
+            duplicate: 0,
+            limited: 0,
+            afterStop: 0,
+            schema: 0,
+          };
           let notesOmitted = false;
           const omission =
             '\n\nAdditional completed notes omitted by the bounded partial-output limit (24,000 UTF16 units or 64 notes).';
@@ -388,8 +399,15 @@ export function codexRunner(
             effort: selectedEffort ?? 'host-default',
             direct,
             configured,
-            actionCounts: { toolCalls, reads, unclassifiedToolCalls },
-            stages: { acquisitionMs, nativeSessionMs: Date.now() - sessionStarted },
+            actionCounts: { toolCalls, reads, unclassifiedToolCalls, messages: { ...messages } },
+            stages: {
+              acquisitionMs,
+              nativeSessionMs: Date.now() - sessionStarted,
+              nativeSessionMonotonicMs: Math.max(
+                0,
+                Math.round(performance.now() - sessionMonotonic),
+              ),
+            },
             nativeSessions: child.pid ? 1 : 0,
             servedModel: null,
             rejectedProposal,
@@ -490,6 +508,8 @@ export function codexRunner(
                   }
                 }
                 if (event.item?.type === 'agent_message' && event.type === 'item.completed') {
+                  messages.completed++;
+                  const alreadyStopped = termination.trigger !== null;
                   final = event.item.text ?? '';
                   if (
                     operation.maxResponseBytes &&
@@ -500,14 +520,22 @@ export function codexRunner(
                     output = 'runner_response_byte_limit';
                     stop('response_byte_limit');
                   }
-                  if (!operation.schema && !termination.trigger) {
+                  if (alreadyStopped) messages.afterStop++;
+                  else if (operation.schema) messages.schema++;
+                  else if (termination.trigger) messages.limited++;
+                  else {
                     const note = recoverOriginalAnswer(final);
-                    if (note && note.text !== notes.at(-1) && !notesOmitted) {
+                    if (!note) messages.unreadable++;
+                    else if (note.text === notes.at(-1)) messages.duplicate++;
+                    else if (notesOmitted) messages.limited++;
+                    else {
                       const combined = [...notes, note.text].join('\n\n---\n\n');
                       if (combined.length <= 24000 && notes.length < 64) {
                         notes.push(note.text);
+                        messages.checkpointed++;
                         readable = { format: 'markdown', text: combined };
                       } else {
+                        messages.limited++;
                         notesOmitted = true;
                         const retained = notes.join('\n\n---\n\n') || note.text;
                         let end = Math.min(retained.length, 24000 - omission.length);
@@ -610,10 +638,22 @@ export function codexRunner(
                     records: retained?.records.length ?? 0,
                     characters: retained ? JSON.stringify(retained).length : 0,
                   },
-                  stages: { acquisitionMs, nativeSessionMs: Date.now() - sessionStarted },
+                  stages: {
+                    acquisitionMs,
+                    nativeSessionMs: Date.now() - sessionStarted,
+                    nativeSessionMonotonicMs: Math.max(
+                      0,
+                      Math.round(performance.now() - sessionMonotonic),
+                    ),
+                  },
                   nativeSessions: 1,
                   servedModel: null,
-                  actionCounts: { toolCalls, reads, unclassifiedToolCalls },
+                  actionCounts: {
+                    toolCalls,
+                    reads,
+                    unclassifiedToolCalls,
+                    messages: { ...messages },
+                  },
                   termination: { ...termination },
                 },
                 searches,

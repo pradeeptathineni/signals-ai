@@ -8,6 +8,7 @@ import { codexRunner, RunnerFailure, type SearchRunner } from './search-runner.j
 import { signalSearch } from './signal-search.js';
 import { loadRun } from './search-store.js';
 import { frozenFollowupMaterial } from './search-followup.js';
+import { budgets } from '../../domain/src/search-contract.js';
 
 type FakeChild = EventEmitter & {
   stdout: EventEmitter;
@@ -74,7 +75,80 @@ beforeEach(async () => {
   state.script = () => {};
 });
 afterEach(async () => {
+  vi.restoreAllMocks();
   await rm(state.home, { recursive: true, force: true });
+});
+
+it('accounts for received narrative exclusions without retaining dropped message text', async () => {
+  const controller = new AbortController();
+  state.script = (child) => {
+    emit(child, answer);
+    emit(child, answer);
+    emit(child, '{"unfinished":[');
+    emit(child, 'Reasoning is not a completed narrative.', 'reasoning');
+    controller.abort();
+    emit(child, 'UNRETAINED_AFTER_STOP');
+  };
+  const result = await signalSearch(request, {
+    root: state.home,
+    signal: controller.signal,
+    runner: fixtureRunner(),
+  });
+  expect(result.brief?.text).toBe(answer);
+  expect(result.usage.providerUsage).toMatchObject({
+    actionCounts: {
+      messages: {
+        completed: 4,
+        checkpointed: 1,
+        duplicate: 1,
+        unreadable: 1,
+        afterStop: 1,
+        limited: 0,
+        schema: 0,
+      },
+    },
+    stages: { nativeSessionMonotonicMs: expect.any(Number) },
+  });
+  expect(result.usage.stop).toMatchObject({ reason: 'external' });
+  expect(JSON.stringify(result)).not.toContain('UNRETAINED_AFTER_STOP');
+  expect(JSON.stringify(result)).not.toContain('unfinished');
+  const before = await readFile(join(state.home, '.signals/runs', result.runId + '.json'));
+  expect(await loadRun(result.runId, state.home)).toEqual(result);
+  expect(await readFile(join(state.home, '.signals/runs', result.runId + '.json'))).toEqual(before);
+});
+
+it('separates the host deadline from wall-clock jumps without changing narrative or memory privacy', async () => {
+  const originalTimer = globalThis.setTimeout;
+  let deadline: (() => void) | undefined;
+  vi.spyOn(globalThis, 'setTimeout').mockImplementation((...args) => {
+    if (args[1] === budgets.quick.seconds * 1000 && typeof args[0] === 'function')
+      deadline = args[0] as () => void;
+    return originalTimer(...args);
+  });
+  const start = Date.now();
+  const result = await signalSearch(
+    { ...request, cache: 'memory' },
+    {
+      root: state.home,
+      runner: {
+        readiness: ready,
+        discover: async (_request, signal, _progress, _hints, brief) => {
+          brief?.({ format: 'markdown', text: answer });
+          vi.spyOn(Date, 'now').mockReturnValue(start + 120000);
+          deadline?.();
+          expect(signal.aborted).toBe(true);
+          expect(signal.reason).toBeInstanceOf(DOMException);
+          throw new RunnerFailure('fixture stopped', 0, null);
+        },
+      },
+    },
+  );
+  expect(result.status).toBe('cancelled');
+  expect(result.brief?.text).toBe(answer);
+  expect(result.usage.elapsedMs).toBeGreaterThanOrEqual(119000);
+  expect(result.usage.stop).toMatchObject({ reason: 'deadline' });
+  expect(result.usage.stop!.elapsedMonotonicMs).toBeLessThan(1000);
+  expect(await readdir(state.home)).toEqual([]);
 });
 
 it('delivers useful output before process close and retains it after timeout and reopen', async () => {
@@ -179,6 +253,38 @@ it('bounds multiple notes with an explicit omission instead of silently dropping
   expect(result.brief?.text.startsWith(first)).toBe(true);
   expect(result.brief?.text).toContain('Additional completed notes omitted');
   expect(result.brief!.text.length).toBeLessThanOrEqual(24000);
+  expect(result.usage.providerUsage).toMatchObject({
+    actionCounts: { messages: { completed: 2, checkpointed: 1, limited: 1 } },
+  });
+});
+
+it('counts note-limit exclusions while preserving the existing 64-note boundary', async () => {
+  const controller = new AbortController();
+  state.script = (child) => {
+    for (let index = 0; index < 66; index++) emit(child, `Completed note ${index}.`);
+    controller.abort();
+  };
+  const result = await signalSearch(request, {
+    root: state.home,
+    signal: controller.signal,
+    runner: fixtureRunner(),
+  });
+  expect(result.brief?.text).toContain('Completed note 63.');
+  expect(result.brief?.text).not.toContain('Completed note 64.');
+  expect(result.brief?.text).toContain('Additional completed notes omitted');
+  expect(result.usage.providerUsage).toMatchObject({
+    actionCounts: {
+      messages: {
+        completed: 66,
+        checkpointed: 64,
+        limited: 2,
+        unreadable: 0,
+        duplicate: 0,
+        afterStop: 0,
+        schema: 0,
+      },
+    },
+  });
 });
 
 it('closes stored callbacks before a completed final answer is returned', async () => {
@@ -254,13 +360,16 @@ it('does not emit structured claim-operation output as an interim research answe
     emit(child, '{"answer":"private check result"}');
     child.emit('close', 0, null);
   };
-  await codexRunner('fixture', 'high', {
+  const result = await codexRunner('fixture', 'high', {
     root: state.home,
     live: false,
     task: 'fixture custom operation',
     schema: { type: 'object', properties: {} },
   }).discover(request, new AbortController().signal, () => {}, undefined, notes);
   expect(notes).not.toHaveBeenCalled();
+  expect(result.usage).toMatchObject({
+    actionCounts: { messages: { completed: 1, checkpointed: 0, schema: 1 } },
+  });
 });
 
 it('keeps only the exact completed final answer in its answer receipt', async () => {

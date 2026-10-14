@@ -409,6 +409,10 @@ export interface SearchResult {
     elapsedMs: number;
     modelCalls: number;
     providerUsage: unknown;
+    stop?: {
+      reason: 'deadline' | 'external' | null;
+      elapsedMonotonicMs: number;
+    };
     stages?: {
       readinessMs: number;
       researchMs: number;

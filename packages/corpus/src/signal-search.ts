@@ -796,12 +796,20 @@ export async function signalSearch(
       throw new Error('assessment_selection_not_cited');
   }
   const started = Date.now();
+  const monotonicStarted = performance.now();
   const limits = budgets[request.profile ?? 'wide'];
   const controller = new AbortController();
-  const abort = () => controller.abort();
+  let stoppedBy: 'deadline' | 'external' | null = null;
+  const abort = () => {
+    stoppedBy ??= 'external';
+    controller.abort();
+  };
   dependencies.signal?.addEventListener('abort', abort, { once: true });
-  if (dependencies.signal?.aborted) controller.abort();
-  const timer = setTimeout(abort, limits.seconds * 1000);
+  if (dependencies.signal?.aborted) abort();
+  const timer = setTimeout(() => {
+    stoppedBy ??= 'deadline';
+    controller.abort();
+  }, limits.seconds * 1000);
   const base: SearchResult = {
     schemaVersion: 2,
     runId: randomUUID(),
@@ -1085,12 +1093,17 @@ export async function signalSearch(
     clearTimeout(timer);
     dependencies.signal?.removeEventListener('abort', abort);
     base.usage.elapsedMs = Date.now() - started;
-    if (['cancelled', 'failed'].includes(base.status))
+    if (['cancelled', 'failed'].includes(base.status)) {
+      base.usage.stop = {
+        reason: stoppedBy,
+        elapsedMonotonicMs: Math.max(0, Math.round(performance.now() - monotonicStarted)),
+      };
       base.gaps.push(
         base.brief
           ? 'Research stopped before completion. Retained narrative and candidate pointers are unassessed and may be incomplete; missing or contradictory sources remain unresolved. Discuss this frozen work or acquire evidence explicitly.'
           : 'Research stopped before producing usable narrative. No answer or verified result was recovered.',
       );
+    }
     if (request.cache === 'private') {
       base.persistence = {
         changed: base.persistence?.changed ?? [],
