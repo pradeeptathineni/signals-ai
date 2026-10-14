@@ -257,7 +257,8 @@ const requestSchema = Type.Object(
     method: Type.Optional(enumOf(['native', 'answer-first'])),
     assessmentOf: Type.Optional(Type.String({ pattern: '^[a-f0-9-]{36}$' })),
     claimText: Type.Optional(Type.String({ minLength: 1, maxLength: 1600 })),
-    claimOrigin: Type.Optional(Type.Enum(['request', 'retained-partial'])),
+    claimOrigin: Type.Optional(Type.Enum(['request', 'retained-partial', 'selected-primary'])),
+    selectedPacketDigest: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$' })),
     parentSnapshotDigest: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$' })),
     claimCitations: Type.Optional(Type.Array(claimCitationSchema, { minItems: 1, maxItems: 2 })),
     claimSources: Type.Optional(
@@ -428,6 +429,30 @@ export type ProvisionalLead = Pick<
 export function parseRequest(input: unknown): SearchRequest {
   if (!Value.Check(requestSchema, input) || !input.query.trim()) throw new Error('invalid_request');
   if (
+    input.claimOrigin === 'selected-primary' &&
+    (!input.selectedPacketDigest ||
+      !input.claimText?.trim() ||
+      input.claimText.length > 1600 ||
+      !input.claimText.isWellFormed() ||
+      input.query.length > 2000 ||
+      !input.query.isWellFormed() ||
+      (input.context !== undefined &&
+        (input.context.length > 4000 || !input.context.isWellFormed())) ||
+      input.captureUrls?.length !== 1 ||
+      input.captureUrls.some((uri) => uri.length > 2048 || !uri.isWellFormed()) ||
+      input.assessmentOf !== undefined ||
+      input.claimSources !== undefined ||
+      input.profile !== 'quick' ||
+      input.save !== 'never' ||
+      input.method === 'answer-first' ||
+      input.review === true ||
+      input.sources !== undefined ||
+      input.supplementalSites !== undefined)
+  )
+    throw new Error('invalid_selected_primary_request');
+  if (input.claimOrigin !== 'selected-primary' && input.selectedPacketDigest !== undefined)
+    throw new Error('unexpected_selected_primary_fields');
+  if (
     input.claimOrigin === 'retained-partial' &&
     (!input.assessmentOf ||
       !input.parentSnapshotDigest ||
@@ -497,7 +522,7 @@ export function parseRequest(input: unknown): SearchRequest {
     (uri) => normalizeConsiderUrl(uri).normalizedUrl + new URL(uri).hash,
   );
   if (
-    input.claimOrigin === 'retained-partial' &&
+    (input.claimOrigin === 'retained-partial' || input.claimOrigin === 'selected-primary') &&
     captureUrls?.some((uri, index) => uri.length > 2048 || uri !== input.captureUrls![index])
   )
     throw new Error('invalid_partial_claim_target');

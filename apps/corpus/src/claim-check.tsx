@@ -2,14 +2,16 @@ import type { ClaimReceipt } from '../../../packages/domain/src/claim-check.js';
 
 export function ClaimCheck({ receipt }: { receipt: ClaimReceipt }) {
   return (
-    <section aria-label="Selected proposition check">
+    <section aria-label="Selected proposition check" style={{ overflowWrap: 'anywhere' }}>
       <h2>Selected proposition</h2>
       <p>
-        {receipt.version === 3
-          ? 'Explicit check from retained incomplete notes. The original prose remains unassessed; this is not a completed-answer assessment.'
-          : receipt.version === 2
-            ? 'User-specified proposition and primary sources, without an original research answer.'
-            : 'User-specified proposition; it need not be asserted by the original answer.'}
+        {receipt.version === 4
+          ? 'Explicit check of selected PDF text-layer windows from a newly registered source. This is not whole-source coverage or a historical answer citation.'
+          : receipt.version === 3
+            ? 'Explicit check from retained incomplete notes. The original prose remains unassessed; this is not a completed-answer assessment.'
+            : receipt.version === 2
+              ? 'User-specified proposition and primary sources, without an original research answer.'
+              : 'User-specified proposition; it need not be asserted by the original answer.'}
       </p>
       <p>
         The snapshot preserves supplied normalized text. Extraction may omit original structure,
@@ -22,11 +24,13 @@ export function ClaimCheck({ receipt }: { receipt: ClaimReceipt }) {
       </p>
       <p>
         {receipt.historySaved
-          ? receipt.version === 3
-            ? 'Saved privately with a copy of the incomplete notes and primary snapshots. Original-run expiry or deletion does not delete this separate copy.'
-            : receipt.version === 2
-              ? 'Saved privately with the original request and primary snapshots.'
-              : 'Saved privately with the original answer link.'
+          ? receipt.version === 4
+            ? 'Saved privately with a separate full normalized extraction copy for replay. The native reviewer received only the selected windows. Raw PDF bytes were not copied.'
+            : receipt.version === 3
+              ? 'Saved privately with a copy of the incomplete notes and primary snapshots. Original-run expiry or deletion does not delete this separate copy.'
+              : receipt.version === 2
+                ? 'Saved privately with the original request and primary snapshots.'
+                : 'Saved privately with the original answer link.'
           : 'Not saved to history.'}
       </p>
       <p>{receipt.reason}</p>
@@ -67,6 +71,17 @@ export function ClaimCheck({ receipt }: { receipt: ClaimReceipt }) {
                     <li key={index}>{omission}</li>
                   ))}
                 </ul>
+                {source.scope === 'selected-page-windows' && (
+                  <p>
+                    Selected pages:{' '}
+                    {source.packet.selectedPages.map((page) => page.page).join(', ')}. Unread pages:{' '}
+                    {source.packet.unreadPages.join(', ') || 'None in the text-layer ledger'}. Full
+                    normalized digest: {source.packet.fullTextDigest}. Coordinates: original global
+                    UTF16.
+                    {source.capture.followedFrom &&
+                      ` Contextual outlink from ${source.capture.followedFrom.uri}; this is not a claim parent.`}
+                  </p>
+                )}
               </>
             ) : (
               <p>{source.reason}</p>
@@ -76,8 +91,15 @@ export function ClaimCheck({ receipt }: { receipt: ClaimReceipt }) {
       </ol>
       {receipt.findings.map((finding, index) => {
         const source = receipt.selectedMaterial[finding.sourceIndex];
-        const text = source?.state === 'usable' ? source.text.replace(/\s+/g, ' ').trim() : '';
-        const quote = finding.quote.replace(/\s+/g, ' ').trim();
+        const selected = source?.state === 'usable' && source.scope === 'selected-page-windows';
+        const text =
+          source?.state === 'usable'
+            ? selected
+              ? (source.packet.windows.find((window) => window.text.includes(finding.quote))
+                  ?.text ?? '')
+              : source.text.replace(/\s+/g, ' ').trim()
+            : '';
+        const quote = selected ? finding.quote : finding.quote.replace(/\s+/g, ' ').trim();
         const position = text.indexOf(quote);
         return (
           <article key={index}>
@@ -87,6 +109,17 @@ export function ClaimCheck({ receipt }: { receipt: ClaimReceipt }) {
             </p>
             <blockquote>{finding.quote}</blockquote>
             <p>{finding.reason}</p>
+            {receipt.version === 4 && (
+              <p>
+                Original UTF16/page bindings:{' '}
+                {receipt.findingSpans
+                  .find((span) => span.findingIndex === index)
+                  ?.occurrences.map(
+                    (span) => `${span.start}–${span.end}, pages ${span.startPage}–${span.endPage}`,
+                  )
+                  .join('; ')}
+              </p>
+            )}
             {position >= 0 && (
               <details>
                 <summary>Primary passage context</summary>

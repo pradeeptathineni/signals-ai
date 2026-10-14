@@ -472,6 +472,8 @@ export function searchApi(
           input = refreshRequest(record.entity, settings);
         }
         const rawQuery = parseRequest(input);
+        if (rawQuery.claimOrigin === 'selected-primary')
+          throw new Error('selected_primary_producer_unavailable');
         if (route === 'capture' && !rawQuery.captureUrls?.length)
           throw new Error('capture_url_required');
         const query = rawQuery.claimOrigin

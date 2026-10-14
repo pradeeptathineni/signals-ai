@@ -1,5 +1,5 @@
 import { createServer } from 'vite';
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -10,6 +10,11 @@ import { RunnerFailure } from '../../packages/corpus/src/search-runner.js';
 import { loadEntities } from '../../packages/corpus/src/search-store.js';
 import { contextualize } from '../../packages/domain/src/search-priority.js';
 import { saveDecision } from '../../packages/domain/src/search-score.js';
+import { materialPreviewCli } from '../../scripts/material-preview.js';
+import {
+  prepareSelectedExample,
+  reviewSelectedExample,
+} from '../../scripts/examples/selected-primary.js';
 import {
   budgets,
   parseRequest,
@@ -18,7 +23,34 @@ import {
 
 // Replay approved public evidence through the real API/storage. No private planning records,
 // browser route interception, discovery or model execution is part of this UI fixture.
-const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-workbench-')));
+const fixtureRoot = await realpath(await mkdtemp(join(tmpdir(), 'signals-workbench-')));
+await prepareSelectedExample(fixtureRoot);
+const [inputSha, sourceSha, textSha] = (await readFile(join(fixtureRoot, 'digests'), 'utf8'))
+  .trim()
+  .split(' ');
+const preview = materialPreviewCli([
+  'pages',
+  '--snapshot',
+  join(fixtureRoot, 'extraction.json'),
+  '--input-sha256',
+  inputSha!,
+  '--source-sha256',
+  sourceSha!,
+  '--text-sha256',
+  textSha!,
+  '--source-uri',
+  'https://example.org/manual.pdf',
+  '--claim',
+  'Water cooling is approved.',
+  '--anchors',
+  '["Only water c"]',
+]);
+if (preview.code !== 0) throw new Error(preview.stderr);
+await writeFile(join(fixtureRoot, 'packet.json'), preview.stdout, { flag: 'wx' });
+const example = await reviewSelectedExample(fixtureRoot, 'private');
+if (example.proof.scriptedReviews !== 1 || example.proof.actualNativeCalls !== 0)
+  throw new Error('selected_example_fixture_failed');
+const root = join(fixtureRoot, 'history');
 const approved = (await loadEntities(resolve('signals/entities'))).slice(0, 2);
 if (approved.length !== 2) throw new Error('public_replay_fixture_missing');
 await mkdir(join(root, 'signals/entities'), { recursive: true });
@@ -281,5 +313,5 @@ const server = await createServer({
 });
 await server.listen();
 process.once('SIGTERM', () => {
-  void server.close().then(() => rm(root, { recursive: true, force: true }));
+  void server.close().then(() => rm(fixtureRoot, { recursive: true, force: true }));
 });

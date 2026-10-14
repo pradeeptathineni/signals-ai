@@ -1,6 +1,48 @@
 import { test, expect, type Page } from '@playwright/test';
 import { expectAccessibleViewport } from './accessibility.js';
 import { openResearchOptions } from './research.js';
+import { selectedExampleQuery } from '../../scripts/examples/selected-primary.js';
+
+test('offline page selection and registered synthetic host survive cold Activity/Open without another check', async ({
+  page,
+}) => {
+  let checkRequests = 0;
+  await page.route('**/__signals/api/capture', async (route) => {
+    checkRequests++;
+    await route.abort();
+  });
+  const openSaved = async () => {
+    await page
+      .getByRole('complementary')
+      .getByRole('button', { name: 'Activity', exact: true })
+      .click();
+    const row = page
+      .getByRole('region', { name: 'Recent research', exact: true })
+      .locator('article')
+      .filter({ hasText: selectedExampleQuery });
+    const open = row.getByRole('button', { name: 'Open result', exact: true });
+    await open.focus();
+    await open.press('Enter');
+  };
+  await page.goto('/signals-ai/');
+  await openSaved();
+  const receipt = page.getByRole('region', { name: 'Selected proposition check', exact: true });
+  await expect(receipt).toContainText('selected PDF text-layer windows');
+  await expect(receipt).toContainText('Authored scripted fixture');
+  await expect(receipt).toContainText('Confidence Unknown');
+  await expect(receipt).toContainText('No numeric Signal');
+  await expect(receipt).toContainText('separate full normalized extraction copy');
+  await expect(receipt).toContainText('Selected pages: 1, 2. Unread pages: 3, 4');
+  await expect(receipt).toContainText('Original UTF16/page bindings: 0–31, pages 1–1');
+  await expect(
+    receipt.getByRole('link', { name: 'Selected source 1', exact: true }),
+  ).toHaveAttribute('href', 'https://example.org/manual.pdf');
+  await expectAccessibleViewport(page, 390);
+  await page.reload();
+  await openSaved();
+  await expect(receipt).toContainText('Only water cooling is approved.');
+  expect(checkRequests).toBe(0);
+});
 
 async function primaryCheck(page: Page, question: string) {
   await openResearchOptions(page, question);

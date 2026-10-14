@@ -163,3 +163,41 @@ Open a saved cancelled or failed research note in Activity. **Check a claim from
 A private check retains a copy of the bounded notes and primary snapshots after the original run expires or is deleted. Deleting the original does not delete copies in separately saved checks. An unavailable original disables its navigation action without restoring it; a present changed or unsafe parent produces a lineage error. The copied note remains visible within the child. Memory-only notes are not saved implicitly. A memory check against an already retained parent writes no new history.
 
 Original context was not persisted in stopped notes and remains explicitly missing. Notes beyond the new selection bounds stay readable without a claim-selection action. No usable primary material means no inference and a null verdict. Source failures, extraction omissions and adverse findings remain visible. Reopening checks does not refresh sources, resume a native process or assess the whole narrative. `SIGNALS_PARTIAL_CHECKS=0` disables new retained-note check creation while compatible saved-check reading remains available.
+
+### Registered selected PDF evidence
+
+An experimental host-only selected-primary check can consume the already validated offline page-window packet from an explicitly registered public PDF capture. It is unavailable through default API/CLI creation: requests cannot upload text, specify local paths or install producers. The host must verify the capture and full extraction before readiness. No new PDF acquisition or parser is included.
+
+The native check receives selected windows, exact page/global UTF16 provenance and unread coverage. It remains partial with Confidence Unknown; matching text is not whole-source support or personal applicability. Private history explicitly retains a separate bounded full normalized extraction copy for deep reopening, while raw PDF bytes stay outside the child. Memory mode saves nothing. Existing answer, direct and retained-note checks keep their meanings.
+
+#### Run the synthetic registered-host example
+
+This complete [host example](scripts/examples/selected-primary.ts) authors public fixture bytes and uses a scripted runner. It fetches nothing, parses no PDF, probes no login and invokes no native model. It is a runnable example, not a default PDF transport or an authenticated publisher capture.
+
+```sh
+EXAMPLE_ROOT="$(mktemp -d)"
+EXAMPLE_ROOT="$(node --import tsx scripts/examples/selected-primary.ts prepare "$EXAMPLE_ROOT")"
+read -r INPUT_SHA SOURCE_SHA TEXT_SHA < "$EXAMPLE_ROOT/digests"
+npm run --silent material-preview -- pages \
+  --snapshot "$EXAMPLE_ROOT/extraction.json" \
+  --input-sha256 "$INPUT_SHA" --source-sha256 "$SOURCE_SHA" --text-sha256 "$TEXT_SHA" \
+  --source-uri https://example.org/manual.pdf \
+  --claim 'Water cooling is approved.' --anchors '["Only water c"]' \
+  > "$EXAMPLE_ROOT/packet.json"
+node --import tsx scripts/examples/selected-primary.ts review "$EXAMPLE_ROOT" private --retain-extraction-copy
+```
+
+The last command deliberately chooses private storage and acknowledges its separate full normalized extraction copy before creation. Choose `review "$EXAMPLE_ROOT" memory` instead to write no product history. Scripted review counts are not actual provider sessions; the example reports `actualNativeCalls: 0`.
+
+`prepare` writes new `source.pdf`, `extraction.json`, `capture.json`, `acquisition.json` and digest files without overwriting existing inputs. The ordinary preview command creates the canonical packet. The host then registers `selectedPrimary` in its `signalSearch` dependencies, binds the selected URI and packet digest, verifies the capture-receipt digest, and supplies the exact raw, extraction and packet bytes. The existing kernel checks all source/projection/window bindings before the scripted review. Request JSON cannot supply this dependency.
+
+Producer input is bounded: raw bytes at most 20 MiB, full extraction JSON 250,000 bytes, capture metadata 16,384 characters, and the canonical packet at most 48,000 UTF16 units and 300,000 bytes. The private result keeps its existing 2 MB limit. This does not enlarge default URL-fetch budgets. `captureChecked` pins `pypdf6.20.1` and extraction-worker SHA256 `db181d4f30169cc576fb4be26886c7e2dd064298c71ff95dcec5d3f88818be0e`. Setting those fields in an authored fixture does not prove a parser ran. A real registered host must establish its acquisition and approved extraction separately; no parser is shipped or activated here.
+
+To reopen the saved synthetic result through Activity → Open result, use the existing workspace setting:
+
+```sh
+npm run build
+SIGNALS_WORKSPACE="$EXAMPLE_ROOT/history" npm run start
+```
+
+Open the printed loopback address. Reopening uses the saved child, with no new producer or review. Selected pages 1–2 and unread pages 3–4 remain visible. These authored declarations establish no real source truth, installation permission, whole-document assessment or human usefulness. Keep or remove the explicitly created temporary example directory yourself when finished.

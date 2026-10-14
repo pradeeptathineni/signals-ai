@@ -306,7 +306,8 @@ it('direct receipt replay rejects historical lineage in usable and unavailable m
   const root = await area();
   const result = await signalSearch(input, { root, fetch, runner: runner() });
   const original = result.claimCheck!.selectedMaterial[0]!;
-  if (original.state !== 'usable') throw new Error('not_usable');
+  if (original.state !== 'usable' || original.scope !== 'complete-normalized-document')
+    throw new Error('not_usable');
   const retainedFrom = {
     runId: randomUUID(),
     sourceId: `evidence-${digest(`${original.requestedUri}:${original.documentDigest}:${original.snapshotDigest}:${original.normalizer}`).slice(0, 24)}`,

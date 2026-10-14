@@ -765,7 +765,8 @@ export async function saveEntities(
 export async function retainRun(result: SearchResult, root = process.cwd()) {
   if (!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(result.runId))
     throw new Error('invalid_run_identity');
-  if (result.claimCheck?.version === 3) validateClaimReceipt(result);
+  if (result.claimCheck?.version === 3 || result.claimCheck?.version === 4)
+    validateClaimReceipt(result);
   const path = resolve(root, '.signals/runs', `${result.runId}.json`);
   const stat = await lstat(path).catch((failure: NodeJS.ErrnoException) => {
     if (failure.code !== 'ENOENT') throw failure;
@@ -835,7 +836,9 @@ export async function loadRun(
     throw new Error('invalid_assessment_parent');
   if (result.assessmentTargets) {
     if (
-      (!result.assessmentOf && result.claimCheck?.version !== 2) ||
+      (!result.assessmentOf &&
+        result.claimCheck?.version !== 2 &&
+        result.claimCheck?.version !== 4) ||
       !Array.isArray(result.assessmentTargets) ||
       result.assessmentTargets.length > 10
     )

@@ -349,13 +349,24 @@ it.each(['resolve', 'reject'])(
       resolve = yes;
       reject = no;
     });
+    let acquired!: () => void;
+    const firstAcquired = new Promise<void>((done) => {
+      acquired = done;
+    });
     const operation = signalSearch(request, {
       root,
       runner: native,
       signal: controller.signal,
-      fetch: async (uri) => (uri === uris[0] ? fetch(uri) : deferred),
+      fetch: async (uri) => {
+        if (uri !== uris[0]) return deferred;
+        const document = await fetch(uri);
+        acquired();
+        return document;
+      },
     });
-    await new Promise((done) => setTimeout(done, 20));
+    // Establish acquired material before cancellation; elapsed wall time is not that premise.
+    await firstAcquired;
+    await new Promise((done) => setImmediate(done));
     controller.abort();
     const result = await operation;
     expect(result.status).toBe('cancelled');

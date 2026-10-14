@@ -1,5 +1,6 @@
 import { Type, type Static } from 'typebox';
 import { sourceTextSchema } from './source-text.js';
+import { selectedClaimMaterialSchema, selectedFindingSpanSchema } from './selected-source.js';
 
 const closed = { additionalProperties: false };
 const reason = Type.String({ minLength: 1, maxLength: 1200 });
@@ -139,6 +140,22 @@ const directFields = Type.Omit(linkedClaimReceiptSchema, [
   'parentAnswerDigest',
 ]).properties;
 export const claimReceiptSchema = Type.Union([
+  Type.Object(
+    {
+      ...directFields,
+      version: Type.Literal(4),
+      origin: Type.Object(
+        { kind: Type.Literal('selected-primary'), requestDigest: sha, selectedPacketDigest: sha },
+        closed,
+      ),
+      selectedMaterial: Type.Array(Type.Union([selectedClaimMaterialSchema, claimMaterialSchema]), {
+        minItems: 1,
+        maxItems: 1,
+      }),
+      findingSpans: Type.Array(selectedFindingSpanSchema, { maxItems: 4 }),
+    },
+    closed,
+  ),
   linkedClaimReceiptSchema,
   Type.Object(
     {

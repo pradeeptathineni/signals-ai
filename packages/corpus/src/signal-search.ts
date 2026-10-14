@@ -25,6 +25,7 @@ import {
 } from './search-runner.js';
 import { privateCacheFetch } from './search-cache.js';
 import { runClaimCheck } from './search-claim.js';
+import type { SelectedPrimaryProducer } from './search-selected-source.js';
 import { atomicJson, saveEntities, retainRun, loadEntities, loadRun } from './search-store.js';
 import { planResearchRetention } from './research-answer.js';
 import { resolve } from 'node:path';
@@ -769,6 +770,7 @@ export async function signalSearch(
   dependencies: {
     runner?: SearchRunner;
     claimRunner?: (task: string, schema: unknown) => SearchRunner;
+    selectedPrimary?: SelectedPrimaryProducer;
     signal?: AbortSignal;
     progress?: (event: string) => void;
     provisional?: (leads: ProvisionalLead[]) => void;

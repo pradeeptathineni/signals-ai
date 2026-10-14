@@ -59,3 +59,9 @@ Useful retired exports and implementation receipts belong in private planning ar
 with original paths and verified hashes for recovery. Public historical records still
 use their declared decoding and assessment policies. [Product intent](../product.yaml)
 and [AI authoring context](../../.meta/context/README.md) describe the project rather than public evidence.
+
+Selected-primary checks use a closed version-4 private receipt, distinct from historical citations and complete HTML normalization. Creation requires a host-installed registered producer; default API/CLI requests cannot supply evidence bytes, paths or producer objects. The host verifies the captured PDF identity and replays the accepted offline selector against a bounded full normalized extraction. No PDF parser or acquisition is installed by this contract.
+
+The receipt binds request/proposition/ordered target/packet digest and a selected-page-windows material closure. Original PDF, full normalized text, extraction bytes, selected packet and generated display-view digests remain distinct. Exact quotes must occur inside one selected window and retain original global UTF16/page occurrences. Unread and unextracted material may contain contrary conditions. Completed scoped review remains overall partial, Confidence Unknown and no Signal.
+
+Private v4 history explicitly copies up to 250,000 UTF8 extraction bytes as base64 for self-contained deep page/selection replay; it does not copy the raw PDF or send the full archive to the reviewer. Deleting an external artifact does not delete this independent copy. Memory mode writes none. Native selected-source JSON stays within 48,000 UTF16 units; private serialization stays within two million bytes. Disabling v4 creation preserves reading, and versions 1–3 keep their existing contracts. This producer-only path adds no public upload, file selector, default PDF support or historical-parent authority.

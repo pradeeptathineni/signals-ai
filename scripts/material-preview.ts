@@ -7,26 +7,40 @@ import {
   previewSnapshot,
   previewSnapshotByteLimit,
   selectPreview,
+  selectPagePreview,
 } from '../packages/corpus/src/search-material-preview.js';
 
 const usage = `Usage:
   material-preview list --snapshot FILE [--offset N] [--window N] [--windows N] [--source-uri HTTPS_URL]
   material-preview select --snapshot FILE --sha256 TEXT_SHA256 --start N --end N [--source-uri HTTPS_URL]
-Reads one DocumentMaterial JSON file and writes a preview to stdout. Nothing is fetched or saved.`;
+  material-preview pages --snapshot EXTRACTION_JSON --input-sha256 SHA --source-sha256 SHA --text-sha256 SHA --source-uri HTTPS_URL --claim TEXT --anchors JSON_ARRAY [--pages JSON_ARRAY]
+Reads one explicit DocumentMaterial or PDF extraction JSON file and writes a preview to stdout. Nothing is fetched or saved.`;
 
 const commands = {
   list: { required: ['snapshot'], optional: ['offset', 'window', 'windows', 'source-uri'] },
   select: { required: ['snapshot', 'sha256', 'start', 'end'], optional: ['source-uri'] },
+  pages: {
+    required: [
+      'snapshot',
+      'input-sha256',
+      'source-sha256',
+      'text-sha256',
+      'source-uri',
+      'claim',
+      'anchors',
+    ],
+    optional: ['pages'],
+  },
 } as const;
 
 /** Explicit bounded read of one regular file; size is refused before any bytes are parsed. */
-function readSnapshot(path: string) {
+export function readPreviewFile(path: string, limit = previewSnapshotByteLimit) {
   if (!lstatSync(path).isFile()) throw new Error('preview_snapshot_not_regular_file');
   const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const stat = fstatSync(fd);
     if (!stat.isFile()) throw new Error('preview_snapshot_not_regular_file');
-    if (stat.size > previewSnapshotByteLimit) throw new Error('preview_input_too_large');
+    if (stat.size > limit) throw new Error('preview_input_too_large');
     const buffer = Buffer.alloc(stat.size + 1);
     let length = 0;
     while (length < buffer.length) {
@@ -43,7 +57,8 @@ function readSnapshot(path: string) {
 
 function parse(argv: string[]) {
   const [command, ...rest] = argv;
-  if (command !== 'list' && command !== 'select') throw new Error('missing or unknown command');
+  if (command !== 'list' && command !== 'select' && command !== 'pages')
+    throw new Error('missing or unknown command');
   const { required, optional } = commands[command];
   const names: string[] = [...required, ...optional];
   const parsed = parseArgs({
@@ -72,6 +87,33 @@ function parse(argv: string[]) {
   // Required options were checked above, so the assertions below cannot fail.
   const snapshot = values.snapshot!;
   const sourceUri = values['source-uri'];
+  if (command === 'pages') {
+    const anchors: unknown = JSON.parse(values.anchors!);
+    const contextPages: unknown = values.pages === undefined ? [] : JSON.parse(values.pages);
+    if (
+      !Array.isArray(anchors) ||
+      !anchors.every((item): item is string => typeof item === 'string')
+    )
+      throw new Error('--anchors must be a JSON array of strings');
+    if (
+      !Array.isArray(contextPages) ||
+      !contextPages.every((item): item is number => typeof item === 'number')
+    )
+      throw new Error('--pages must be a JSON array of numbers');
+    return {
+      command: 'pages' as const,
+      snapshot,
+      selection: {
+        expectedInputSha256: values['input-sha256']!,
+        expectedSourceSha256: values['source-sha256']!,
+        expectedTextSha256: values['text-sha256']!,
+        sourceUri: sourceUri!,
+        claim: values.claim!,
+        anchors,
+        contextPages,
+      },
+    };
+  }
   if (command === 'list') {
     const options = {
       offset: number('offset'),
@@ -98,7 +140,14 @@ export function materialPreviewCli(argv: string[]) {
     return { code: 2, stdout: '', stderr };
   }
   try {
-    const snapshot = previewSnapshot(readSnapshot(request.snapshot), request.sourceUri);
+    if (request.command === 'pages') {
+      const result = selectPagePreview(
+        readPreviewFile(request.snapshot, 1000000),
+        request.selection,
+      );
+      return { code: 0, stdout: `${JSON.stringify(result)}\n`, stderr: '' };
+    }
+    const snapshot = previewSnapshot(readPreviewFile(request.snapshot), request.sourceUri);
     const result =
       request.command === 'list'
         ? listPreview(snapshot, request.options)
