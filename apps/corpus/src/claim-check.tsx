@@ -35,6 +35,52 @@ export function ClaimCheck({ receipt }: { receipt: ClaimReceipt }) {
       </p>
       <p>{receipt.reason}</p>
       <p>Next check: {receipt.nextCheck}</p>
+      {receipt.reviewState === 'not-reviewed' &&
+        !receipt.selectedMaterial.some((source) => source.state === 'usable') && (
+          <section aria-label="Blocked source check">
+            <h3>This check could not proceed</h3>
+            <p>Proposition: {receipt.claimText}</p>
+            <ul>
+              {receipt.selectedMaterial.map((source) => (
+                <li key={source.sourceIndex}>
+                  Selected source {source.sourceIndex + 1}: {source.requestedUri} — {source.state}
+                  {source.state !== 'usable' && (
+                    <>
+                      : <code>{source.reason}</code>
+                    </>
+                  )}
+                </li>
+              ))}
+            </ul>
+            <p>
+              No source was reviewed, so there is no verdict or inference. Reopening this saved
+              result does not fetch, resume a session, add context or change the source.
+            </p>
+            {receipt.selectedMaterial.some(
+              (source) => source.state === 'denied' || source.state === 'cancelled',
+            ) && (
+              <p>
+                Denied access is not a prompt to work around it; cancellation does not resubmit
+                itself. Start a new check deliberately if you want one.
+              </p>
+            )}
+            {receipt.selectedMaterial.some(
+              (source) => source.state === 'failed' && source.reason === 'unsupported_content',
+            ) && (
+              <p>
+                unsupported_content: this host cannot read that source shape. A .pdf suffix does not
+                prove PDF identity, parser execution or extraction readiness. Other shapes have no
+                converter here. Follow the{' '}
+                <a href="https://github.com/pradeeptathineni/signals-ai#when-a-selected-source-is-refused">
+                  source recovery steps
+                </a>{' '}
+                to inspect an explicitly supplied supported snapshot or approved PDF extraction.
+                Inspection does not create a new check; a selected-primary review requires a trusted
+                registered PDF producer and a deliberate storage choice.
+              </p>
+            )}
+          </section>
+        )}
       <details>
         <summary>Original need and context</summary>
         <p>{receipt.originalNeed}</p>

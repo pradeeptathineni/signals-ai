@@ -145,7 +145,15 @@ const api = searchApi(root, async (input, dependencies) => {
     return signalSearch(request, {
       ...dependencies,
       root,
-      fetch: () => Promise.reject(new Error('source_denied_403')),
+      // Synthetic refusals only: no fetch, parser or converter exists behind these fixture URLs.
+      fetch: (uri) =>
+        Promise.reject(
+          new Error(
+            /\/unsupported-fixture\.(pdf|bin)$/.test(uri)
+              ? 'unsupported_content'
+              : 'source_denied_403',
+          ),
+        ),
     });
   if (request.method === 'answer-first')
     return signalSearch(request, {

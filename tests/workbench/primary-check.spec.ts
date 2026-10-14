@@ -135,6 +135,72 @@ test('primary acquisition denial remains unreviewed and can be reopened from pri
   await expectAccessibleViewport(page, 390);
 });
 
+test('unsupported primary sources show an honest handoff and reopen without another check', async ({
+  page,
+}) => {
+  let checkRequests = 0;
+  await page.route('**/__signals/api/capture', async (route) => {
+    checkRequests++;
+    await route.continue();
+  });
+  const cases = [
+    {
+      question: 'Primary unsupported PDF-like fixture: does the manual establish an outcome?',
+      proposition: 'The manual establishes an outcome.',
+      uri: 'https://example.org/unsupported-fixture.pdf',
+      pdf: true,
+    },
+    {
+      question: 'Primary unsupported shape fixture: does the download establish an outcome?',
+      proposition: 'The download establishes an outcome.',
+      uri: 'https://example.org/unsupported-fixture.bin',
+      pdf: false,
+    },
+  ];
+  for (const fixture of cases) {
+    await page.goto('/signals-ai/');
+    await primaryCheck(page, fixture.question);
+    await page
+      .getByRole('textbox', { name: 'Proposition to check against primary sources', exact: true })
+      .fill(fixture.proposition);
+    await page.getByRole('textbox', { name: 'Primary source URLs', exact: true }).fill(fixture.uri);
+    await page.getByRole('button', { name: 'Check primary sources', exact: true }).click();
+    const receipt = page.getByRole('region', { name: 'Selected proposition check', exact: true });
+    const blocked = receipt.getByRole('region', { name: 'Blocked source check', exact: true });
+    const verify = async () => {
+      await expect(receipt).toContainText('not-reviewed');
+      await expect(receipt).toContainText('Not available');
+      await expect(blocked).toContainText(fixture.proposition);
+      await expect(blocked).toContainText(fixture.uri);
+      await expect(blocked).toContainText('unsupported_content');
+      await expect(blocked).toContainText('does not fetch, resume a session');
+      if (fixture.pdf) await expect(blocked).toContainText('does not prove PDF identity');
+      await expect(blocked).toContainText('Other shapes have no converter');
+      await expect(blocked.getByRole('link', { name: 'source recovery steps' })).toHaveAttribute(
+        'href',
+        'https://github.com/pradeeptathineni/signals-ai#when-a-selected-source-is-refused',
+      );
+      await expect(blocked).not.toContainText('Denied access');
+    };
+    await verify();
+    const submitted = checkRequests;
+    await page.reload();
+    await page
+      .getByRole('complementary')
+      .getByRole('button', { name: 'Activity', exact: true })
+      .click();
+    await page
+      .getByRole('region', { name: 'Recent research', exact: true })
+      .locator('article')
+      .filter({ hasText: fixture.question })
+      .getByRole('button', { name: 'Open result', exact: true })
+      .click();
+    await verify();
+    expect(checkRequests).toBe(submitted);
+    await expectAccessibleViewport(page, 390);
+  }
+});
+
 test('saved-question research cannot inherit unrelated primary drafts or lose its source scopes', async ({
   page,
 }) => {

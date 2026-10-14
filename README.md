@@ -170,6 +170,14 @@ An experimental host-only selected-primary check can consume the already validat
 
 The native check receives selected windows, exact page/global UTF16 provenance and unread coverage. It remains partial with Confidence Unknown; matching text is not whole-source support or personal applicability. Private history explicitly retains a separate bounded full normalized extraction copy for deep reopening, while raw PDF bytes stay outside the child. Memory mode saves nothing. Existing answer, direct and retained-note checks keep their meanings.
 
+#### When a selected source is refused
+
+If a direct check fails with `unsupported_content`, the receipt stays failed and unreviewed: null verdict, no usable source, no answer parent, and the exact proposition, selected URL and code are shown together. The next check explains that nothing was reviewed. A `.pdf` suffix does not prove PDF identity, parser execution or extraction readiness, and other unsupported shapes are not promised a converter.
+
+For an explicitly acquired supported `DocumentMaterial` snapshot, use the existing `material-preview list` and `select` commands above to inspect exact normalized ranges. For a separately approved closed PDF extraction, use `material-preview pages` below. These commands inspect supplied evidence; they do not acquire, convert or review an unsupported format. A new selected-primary check additionally requires trusted host registration of the PDF capture, raw bytes, full extraction and exact packet as described below, with a deliberate memory/private storage choice. Default API/CLI selected-primary creation stays refused, and the synthetic example is not a real-PDF converter or source verification. If you cannot supply those prerequisites, keep the check unreviewed or deliberately select a different supported primary source for a new check.
+
+Reopening a blocked, denied or cancelled result shows its saved work and next action only. It does not fetch, resume a native session, add context, change the source or start a model, and it never resubmits itself. Denied, authorization and rate-limit codes (`source_denied_401`, `source_denied_403`, `source_denied_429`) are not a prompt to bypass them. Existing receipts are not rewritten.
+
 #### Run the synthetic registered-host example
 
 This complete [host example](scripts/examples/selected-primary.ts) authors public fixture bytes and uses a scripted runner. It fetches nothing, parses no PDF, probes no login and invokes no native model. It is a runnable example, not a default PDF transport or an authenticated publisher capture.

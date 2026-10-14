@@ -48,6 +48,22 @@ const directClaimDigest = (query: string, context: string, claim: string, target
 const short = (value: unknown) =>
   String(value instanceof Error ? value.message : value).slice(0, 1200) || 'unknown_failure';
 
+/** Name existing inspection paths without inferring format or authorizing a new check. */
+function blockedNextCheck(material: ClaimMaterial[], fallback: string) {
+  if (material.some((source) => source.state === 'usable')) return fallback;
+  const blocked = material.filter(
+    (source) => source.state === 'failed' && source.reason === 'unsupported_content',
+  );
+  if (!blocked.length) return fallback;
+  return [
+    `This host refused source ${blocked.map((source) => source.sourceIndex + 1).join(', ')} with unsupported_content; the proposition is unchecked.`,
+    'Inspect an explicitly acquired supported DocumentMaterial snapshot with material-preview list/select, or an approved closed PDF extraction with material-preview pages (README: When a selected source is refused).',
+    'A .pdf suffix does not prove PDF identity, parser execution or extraction readiness; unsupported formats have no converter here.',
+    'Inspection is not a new check. Selected-primary review additionally requires a trusted registered PDF producer; default API/CLI creation stays refused.',
+    'Keep the original proposition, selected URL and refusal. Start any new check deliberately with its own source and storage choice.',
+  ].join(' ');
+}
+
 /** Summaries lead with fixed coverage; complete warnings remain in the source and native input. */
 function selectedGap(sourceIndex: number, omissions: string[]) {
   const reason = `Selected source ${sourceIndex}: ${[...omissions.slice(-1), ...omissions.slice(0, -1)].join(' ')}`;
@@ -681,6 +697,7 @@ export async function runClaimCheck(
           });
       }
     receipt.gaps = hostGaps;
+    receipt.nextCheck = blockedNextCheck(receipt.selectedMaterial, receipt.nextCheck);
     validateClaimReceipt(result);
     controller.signal.throwIfAborted();
     if (!receipt.selectedMaterial.some((source) => source.state === 'usable')) return result;

@@ -302,6 +302,95 @@ it('memory and failed source review preserve no history and never bind caller te
   expect(await readdir(root)).toEqual([]);
 });
 
+it('unsupported sources stay unreviewed with an honest handoff, exact code and no inference', async () => {
+  const root = await area();
+  const unsupported = async () => {
+    throw new Error('unsupported_content');
+  };
+  for (const uri of ['https://example.org/guide.pdf', 'https://example.org/archive.zip']) {
+    const native = runner();
+    const result = await signalSearch(
+      { ...input, captureUrls: [uri] },
+      { root, runner: native, fetch: unsupported },
+    );
+    const receipt = result.claimCheck!;
+    expect(receipt).toMatchObject({
+      version: 2,
+      claimText: input.claimText,
+      reviewState: 'not-reviewed',
+      verdict: null,
+      confidence: 'Unknown',
+      findings: [],
+      historySaved: true,
+      selectedMaterial: [{ state: 'failed', requestedUri: uri, reason: 'unsupported_content' }],
+    });
+    expect(receipt.nextCheck).toContain('unsupported_content');
+    expect(receipt.nextCheck).toContain('unchecked');
+    expect(receipt.nextCheck).toContain('material-preview list/select');
+    expect(receipt.nextCheck).toContain('material-preview pages');
+    expect(receipt.nextCheck).toContain('does not prove PDF identity');
+    expect(receipt.nextCheck).toContain('Inspection is not a new check');
+    expect(receipt.nextCheck).toContain('no converter here');
+    expect(receipt.nextCheck).not.toMatch(/ready|verified|converted to/i);
+    expect(result.assessmentOf).toBeUndefined();
+    expect(result.answerReceipt).toBeUndefined();
+    expect(result.items).toEqual([]);
+    expect(result.usage.modelCalls).toBe(0);
+    expect(native.readiness).not.toHaveBeenCalled();
+    expect(native.discover).not.toHaveBeenCalled();
+    // Private cold reopen: original proposition, URI and code are retained byte-for-byte.
+    const path = join(root, '.signals/runs', `${result.runId}.json`);
+    const before = await readFile(path);
+    const reopened = await loadRun(result.runId, root);
+    expect(reopened).toEqual(result);
+    expect(reopened.claimCheck!.selectedMaterial[0]).toMatchObject({
+      requestedUri: uri,
+      reason: 'unsupported_content',
+    });
+    expect(await readFile(path)).toEqual(before);
+  }
+  const memoryRoot = await area();
+  const memory = await signalSearch(
+    { ...input, cache: 'memory', captureUrls: ['https://example.org/guide.pdf'] },
+    { root: memoryRoot, runner: runner(), fetch: unsupported },
+  );
+  expect(memory.claimCheck).toMatchObject({ historySaved: false, verdict: null });
+  expect(await readdir(memoryRoot)).toEqual([]);
+});
+
+it('denial and cancellation keep their original next check and never resubmit themselves', async () => {
+  const root = await area();
+  const denied = await signalSearch(input, {
+    root,
+    runner: runner(),
+    fetch: async () => {
+      throw new Error('source_denied_403');
+    },
+  });
+  expect(denied.claimCheck).toMatchObject({
+    selectedMaterial: [{ state: 'denied', reason: 'source_denied_403' }],
+    nextCheck: 'Acquire explicitly selected primary material before reviewing the proposition.',
+  });
+  expect(denied.claimCheck!.nextCheck).not.toMatch(/bypass|page-selection/i);
+  const controller = new AbortController();
+  controller.abort();
+  const acquire = vi.fn(fetch);
+  const cancelled = await signalSearch(
+    { ...input, cache: 'memory' },
+    { root, signal: controller.signal, runner: runner(), fetch: acquire },
+  );
+  expect(cancelled.status).toBe('cancelled');
+  expect(cancelled.claimCheck).toMatchObject({
+    verdict: null,
+    reviewState: 'not-reviewed',
+    nextCheck: 'Acquire explicitly selected primary material before reviewing the proposition.',
+  });
+  expect(acquire).not.toHaveBeenCalled();
+  const reopened = await loadRun(denied.runId, root);
+  expect(reopened).toEqual(denied);
+  expect(acquire).not.toHaveBeenCalled();
+});
+
 it('direct receipt replay rejects historical lineage in usable and unavailable material', async () => {
   const root = await area();
   const result = await signalSearch(input, { root, fetch, runner: runner() });
