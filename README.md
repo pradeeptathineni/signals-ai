@@ -55,7 +55,7 @@ Replace the digest and range placeholders with values from the list output. Navi
 
 ### Keep a native research answer
 
-Online Research options includes **Answer first; assess selected citations later**. The CLI exposes the same opt-in route:
+In the local workbench, a newly typed question starts with **Answer first; assess selected citations later**; a visible note says the answer is unassessed and its citations can be checked. **Research with evidence assessment** and **Check a proposition against primary sources** remain under Research options, and the method you select is kept for the rest of the session. Citation assessments, URL captures, primary checks and saved-question runs still request native research explicitly. The CLI, API, scheduler and saved-question defaults are unchanged: they use native research unless answer-first is requested, and earlier results are not migrated. The CLI exposes the same opt-in route:
 
 ```sh
 npm run signal-search -- --query 'Your research question' --method answer-first --cache private --save never

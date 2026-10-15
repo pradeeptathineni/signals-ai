@@ -5,7 +5,11 @@ import { selectedExampleQuery } from '../../scripts/examples/selected-primary.js
 
 test('offline page selection and registered synthetic host survive cold Activity/Open without another check', async ({
   page,
+  request,
 }) => {
+  const setup = await request.post('__fixture/selected-primary');
+  expect(setup.ok()).toBe(true);
+  expect(await setup.json()).toEqual({ scripted: true, actualNativeCalls: 0 });
   let checkRequests = 0;
   await page.route('**/__signals/api/capture', async (route) => {
     checkRequests++;

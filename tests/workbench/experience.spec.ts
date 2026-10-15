@@ -1,4 +1,5 @@
 import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
+import { selectEvidenceResearch } from './research.js';
 import { mkdtemp, writeFile, rm, realpath, mkdir } from 'node:fs/promises';
 import { AxeBuilder } from '@axe-core/playwright';
 import { tmpdir } from 'node:os';
@@ -90,6 +91,7 @@ test('interactive checkpoint preserves result place, comparison, scopes and subm
       .getByLabel('Find something useful', { exact: true })
       .fill('checkpoint retained evidence');
     await page.getByRole('button', { name: 'Research online', exact: true }).click();
+    await selectEvidenceResearch(page);
     await page.getByRole('button', { name: 'Start online research', exact: true }).click();
     await expect(page.locator('.entity-card')).toHaveCount(2);
     await page.locator('.entity-card input[type=checkbox]').first().check();

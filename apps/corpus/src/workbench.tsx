@@ -69,9 +69,11 @@ export function Workbench({
   const [query, setQuery] = useState(''),
     [result, setResult] = useState<SearchResult | null>(null);
   const [earlyBrief, setEarlyBrief] = useState<SearchResult['brief']>();
+  // Form selection only; a fresh typed question starts answer-first. Other callers stay explicit.
   const [researchMethod, setResearchMethod] = useState<'native' | 'answer-first' | 'primary-check'>(
-    'native',
+    'answer-first',
   );
+  const [runMethod, setRunMethod] = useState<typeof researchMethod>('native');
   const [claimText, setClaimText] = useState('');
   const [noteParent, setNoteParent] = useState<PartialNoteSelection | null>(null);
   const [noteParentGap, setNoteParentGap] = useState<string | null>(null);
@@ -411,7 +413,7 @@ export function Workbench({
       throw failure;
     }
     if (note && starting !== openingEpoch.current) return;
-    setResearchMethod(method);
+    setRunMethod(method);
     setRun(started.id);
     setBusy(true);
     setResult(null);
@@ -492,7 +494,7 @@ export function Workbench({
       if (operation === discussionEpoch.current) setAnswerBusy(false);
     }
   }
-  const answerFirstVisible = !!result?.answerReceipt || (busy && researchMethod === 'answer-first');
+  const answerFirstVisible = !!result?.answerReceipt || (busy && runMethod === 'answer-first');
   const narrative =
     tab === 'Search' && (result?.brief ?? earlyBrief)?.text ? (
       <section className="research-brief" aria-label="Research brief">
@@ -1351,6 +1353,13 @@ export function Workbench({
                     void action(startFormResearch);
                   }}
                 >
+                  <p>
+                    {researchMethod === 'answer-first'
+                      ? 'Answer first: the answer is unassessed and confidence stays Unknown. Its citations can be checked afterwards. Evidence assessment and primary-source checks remain under Research options.'
+                      : researchMethod === 'native'
+                        ? 'Research with evidence assessment is selected. Change the method under Research options.'
+                        : 'Primary-source check is selected. Change the method under Research options.'}
+                  </p>
                   <details>
                     <summary>Project context and constraints</summary>
                     <label>

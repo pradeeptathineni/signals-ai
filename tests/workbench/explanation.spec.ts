@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { expectAccessibleViewport } from './accessibility.js';
+import { selectEvidenceResearch } from './research.js';
 import { createHash } from 'node:crypto';
 import { acceptDiscovery } from '../../packages/corpus/src/signal-search.js';
 import { validateEntity } from '../../packages/corpus/src/search-store.js';
@@ -135,6 +136,7 @@ for (const kind of ['held', 'copies', 'unmatched'] as const) {
       await route.fulfill({ json: body });
     });
     await page.goto('?view=Search&mode=research&q=explanation+fixture');
+    await selectEvidenceResearch(page);
     await page.getByRole('button', { name: 'Start online research', exact: true }).click();
     const card = page.locator('.entity-card');
     await expect(card).toHaveCount(1);
@@ -178,6 +180,7 @@ for (const kind of ['held', 'copies', 'unmatched'] as const) {
 
 test('fresh online comparison explains mixed historical score policies', async ({ page }) => {
   await page.goto('?view=Search&mode=research&q=approved+public+replay');
+  await selectEvidenceResearch(page);
   await page.getByRole('button', { name: 'Start online research', exact: true }).click();
   await expect(page.locator('.entity-card')).toHaveCount(2);
   for (const card of await page.locator('.entity-card').all())

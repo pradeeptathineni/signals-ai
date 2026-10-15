@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { expectAccessibleViewport } from './accessibility.js';
+import { selectEvidenceResearch } from './research.js';
 import { loadEntities } from '../../packages/corpus/src/search-store.js';
 import { projectNativeLibrary } from '../../packages/domain/src/library-search.js';
 
@@ -11,6 +12,7 @@ async function research(page: Page, question?: string) {
   if (question !== undefined)
     await page.getByLabel('Find something useful', { exact: true }).fill(question);
   await page.getByRole('button', { name: 'Research online', exact: true }).click();
+  await selectEvidenceResearch(page);
 }
 async function following(page: Page, panel: string) {
   await destination(page, 'Following');
@@ -68,7 +70,6 @@ test('Search capture carries explicit question constraints to the research bound
   await research(page, 'Inspect this learning resource');
   await page.getByText('Project context and constraints', { exact: true }).click();
   await page.getByLabel('Context for this question').fill('Read only; no containers or installs.');
-  await page.getByText('Research options', { exact: true }).click();
   await page.getByLabel('Capture a public URL').fill('https://example.com/learning');
   await page.getByRole('button', { name: 'Capture URL', exact: true }).click();
   await expect(page.getByText('capture_payload_fixture_stopped', { exact: true })).toBeVisible();

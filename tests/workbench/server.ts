@@ -1,5 +1,5 @@
 import { createServer } from 'vite';
-import { mkdir, mkdtemp, realpath, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, readFile, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -309,6 +309,20 @@ const server = await createServer({
       enforce: 'pre',
       configureServer(server) {
         server.middlewares.use((request, response, next) => {
+          // Keep the unchanged authored record in Activity's 30-row window for its test.
+          if (
+            request.method === 'POST' &&
+            request.url === '/signals-ai/__fixture/selected-primary'
+          ) {
+            const now = new Date();
+            void utimes(join(root, '.signals/runs', `${example.result.runId}.json`), now, now)
+              .then(() => {
+                response.writeHead(200, { 'content-type': 'application/json' });
+                response.end(JSON.stringify({ scripted: true, actualNativeCalls: 0 }));
+              })
+              .catch(next);
+            return;
+          }
           void api(request, response)
             .then((handled) => {
               if (!handled) next();
