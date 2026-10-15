@@ -121,3 +121,37 @@ it('preserves provider uncertainty and publication uncertainty rather than claim
   expect(result.material.publishedAt).toBeNull();
   expect(result.material.extractor).toBe('jina-reader-hosted');
 });
+it('refuses a hosted Cloudflare block only with exact protocol title and challenge structure', async () => {
+  const read = async (text: string) =>
+    jinaDocument('https://example.com', undefined, {
+      validate: async () => ({
+        url: new URL('https://example.com'),
+        address: { address: '93.184.216.34', family: 4 },
+      }),
+      fetch: async (uri) => ({ uri, text, digest: 'a'.repeat(64) }),
+    });
+  for (const challenge of [
+    'Title: Attention Required! | Cloudflare\nMarkdown Content:\nSorry, you have been blocked.\nCloudflare Ray ID: abc123',
+    'Title: ATTENTION REQUIRED! | CLOUDFLARE\r\nContent:\r\nSorry, you have been blocked. /cdn-cgi/challenge-platform/',
+  ]) {
+    await expect(read(challenge)).rejects.toThrow('reader_source_denied');
+  }
+  for (const article of [
+    'Title: HTTP security reference\nMarkdown Content:\nTitle: Attention Required! | Cloudflare\nSorry, you have been blocked. Cloudflare Ray ID: abc123',
+    'Title: Attention Required! | Cloudflare documentation example\nMarkdown Content:\nCloudflare Ray ID: abc123',
+    'Title: Attention Required! | Cloudflare\nMarkdown Content:\nA source title alone does not establish a block response.',
+    'Title: Attention Required! | Cloudflare\nMarkdown Content:\nThis article explains the Cloudflare Ray ID: field without a block message.',
+    'Title: Attention Required! | Cloudflare\nContent:\nSorry, you have been blocked is quoted without a provider block marker.',
+    `Title: Attention Required! | Cloudflare\nMarkdown Content:\nSorry, you have been blocked.${' '.repeat(4096)}Cloudflare Ray ID: outside the bounded prefix`,
+    'Title: Attention Required! | Cloudflare\nURL Source: https://example.org/security-notes\nMarkdown Content:\n# Diagnostic reference\nThis article explains an error message. The following quoted example is not an access denial:\n> Sorry, you have been blocked.\n> Cloudflare Ray ID: placeholder\nRecord the ID when reporting the error.',
+    'Title: Attention Required! | Cloudflare\nMarkdown Content:\n# Troubleshooting reference\nExample response, reproduced for documentation:\n```text\nSorry, you have been blocked.\nCloudflare Ray ID: abc123\n```\nThe example above illustrates a message, rather than the status of this article.',
+    'Title: Attention Required! | Cloudflare\nMarkdown Content:\n> Sorry, you have been blocked.\n> Cloudflare Ray ID: placeholder',
+    'Title: Attention Required! | Cloudflare\nMarkdown Content:\n```text\nSorry, you have been blocked.\nCloudflare Ray ID: abc123\n```',
+  ]) {
+    const result = await read(article);
+    expect(result.text).toBe(article);
+    expect(result.digest).toBeTruthy();
+    expect(result.identityUnverified).toBe(true);
+    expect(result.material.publishedAt).toBeNull();
+  }
+});

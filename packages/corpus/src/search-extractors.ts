@@ -17,12 +17,28 @@ export async function jinaDocument(
   await dependencies.validate(uri);
   const result = await dependencies.fetch(`https://r.jina.ai/${uri}`, signal);
   const body = result.text;
-  const statusHeaders = body
-    .split(/\n\s*(?:Markdown Content|Content):/i)[0]!
+  const protocolHeaders = body.split(/\n\s*(?:Markdown Content|Content):/i)[0]!;
+  const statusHeaders = protocolHeaders
     .split('\n')
     .filter((line) => /^(?:Warning|Status|HTTP Status|Error):/i.test(line.trim()))
     .join('\n');
-  if (/\b(?:401|403|429|access denied|captcha|login required)\b/i.test(statusHeaders))
+  // Require a leading block message, not examples quoted inside an article.
+  const sample = body.slice(protocolHeaders.length, protocolHeaders.length + 4096);
+  const content = sample.replace(/^\s*(?:Markdown Content|Content):[^\S\r\n]*(?:\r?\n)?/i, '');
+  const firstLine = content
+    .trimStart()
+    .split(/\r?\n/, 1)[0]!
+    .replace(/^#{1,6}[ \t]+/, '');
+  const cloudflareBlock =
+    /^Title:[ \t]*Attention Required![ \t]*\|[ \t]*Cloudflare[ \t]*\r?$/im.test(protocolHeaders) &&
+    /^Sorry,[ \t]+you have been blocked[.!]?(?:[ \t]*$|[ \t]+\/cdn-cgi\/challenge-platform\/)/i.test(
+      firstLine,
+    ) &&
+    /\bCloudflare Ray ID\s*:|\/cdn-cgi\/challenge-platform\//i.test(sample);
+  if (
+    /\b(?:401|403|429|access denied|captcha|login required)\b/i.test(statusHeaders) ||
+    cloudflareBlock
+  )
     throw new Error('reader_source_denied');
   const title = /Title:\s*([^\n]+)/i.exec(body)?.[1]?.slice(0, 200) ?? new URL(uri).hostname;
   const links = [...body.matchAll(/\[([^\]]{0,200})\]\((https:\/\/[^\s)]+)\)/g)]
