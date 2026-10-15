@@ -31,3 +31,27 @@ Optional conversion never expands the document transport limit.
 Following → Sources shows configuration and retained health. Settings reports native
 runner readiness separately. Inspect failures and funding before explicit use;
 a successful locator lookup does not establish relevance or usefulness.
+
+## Agent-Reach and direct upstream tools
+
+[Agent-Reach 1.5.0](https://github.com/Panniantong/Agent-Reach/tree/94f06c1969dfc1834001269d79d3ad0972d9dee6)
+was inspected as optional upstream-tool guidance. Its CLI installs/checks
+backends; it does not provide a uniform source-reading API, and its MCP server
+reports status rather than research sources. Signals therefore has no
+`agentReach` provider setting. Reuse existing public APIs, RSS extraction and
+explicit Jina configuration instead of wrapping the same transports again.
+
+Review the exact official source and selected upstream dependencies before
+setup; a similarly named PyPI package is not that source. System installation,
+skill/MCP registration, browser sessions and authenticated channels are separate
+choices. A channel's readiness label does not establish target-specific access:
+the bounded public trial read RSS and web sources, but empty-profile GitHub CLI
+search required login and the first selected YouTube subtitle read hit a bot
+challenge. No cookie, alternate source or authentication fallback followed.
+
+Alternate renderings can expose material omitted by a normalized projection,
+including hidden content, while losing original identity or adding irrelevant
+text. Keep those representations and omissions distinct. They do not expand
+claim budgets, repair an old receipt or establish absence, factual support or
+personal fit. External captions and artifacts need an existing supported source
+contract before they can be used as checked evidence.
