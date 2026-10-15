@@ -105,6 +105,26 @@ function header(snapshot: PreviewSnapshot) {
   };
 }
 
+/** Normalized text joins blocks and generated table projections with this separator. */
+const blockGap = '\n\n';
+
+/**
+ * Window end that never exceeds the unit limit. Prefers the last blank-line separator when it
+ * keeps at least half the limit, so a window does not open mid-block after a fixed-size cut.
+ * Otherwise it is the plain pair-safe cut; no text is dropped or reordered either way.
+ */
+function windowEnd(text: string, start: number, units: number) {
+  const hard = Math.min(start + units, text.length);
+  if (hard === text.length) return hard;
+  const gap = text.lastIndexOf(blockGap, hard - blockGap.length);
+  const end = gap + blockGap.length;
+  return gap >= start && end - start >= units / 2 ? end : pairSafeEnd(text, hard);
+}
+const atGap = (text: string, index: number) =>
+  index === 0 ||
+  index === text.length ||
+  (index >= blockGap.length && text.slice(index - blockGap.length, index) === blockGap);
+
 /** Unranked text-order windows from an explicit offset; navigation aids, not prose sections. */
 export function listPreview(
   snapshot: PreviewSnapshot,
@@ -123,7 +143,7 @@ export function listPreview(
   const windows = [];
   let start = offset;
   while (start < text.length && windows.length < count) {
-    const end = pairSafeEnd(text, Math.min(start + windowUnits, text.length));
+    const end = windowEnd(text, start, windowUnits);
     const snippetEnd = pairSafeEnd(text, Math.min(start + snippetUnits, end));
     windows.push({
       start,
@@ -131,13 +151,16 @@ export function listPreview(
       units: end - start,
       snippet: text.slice(start, snippetEnd),
       snippetIsWholeWindow: snippetEnd === end,
+      // Mechanical separator observations only; a gap is not a semantic section boundary.
+      opensAtBlockGap: atGap(text, start),
+      endsAtBlockGap: atGap(text, end),
     });
     start = end;
   }
   return {
     ...header(snapshot),
     navigation:
-      'Mechanical windows in text order, unranked. Snippets are window openings, not semantic or complete prose sections. Windows end one unit early rather than split a surrogate pair.',
+      'Mechanical windows in text order, unranked. Snippets are window openings, not semantic or complete prose sections. A window may end early at a blank-line separator (never beyond windowUnits, and only when that keeps at least half of windowUnits) so later windows open at a separator; separators are generated joins, not section verdicts. Windows end one unit early rather than split a surrogate pair.',
     page: {
       offset,
       end: start,

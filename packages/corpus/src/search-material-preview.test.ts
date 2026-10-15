@@ -165,3 +165,55 @@ it('refuses malformed recognized projection, malformed JSON, invalid UTF8 and ex
     'preview_input_too_large',
   );
 });
+
+it('opens later windows at a blank-line separator without exceeding the limit or dropping text', () => {
+  const text = `Intro\n\n${'A'.repeat(90)}\n\nCaveat: not valid without the adapter.\n\n${'B'.repeat(90)}`;
+  const snapshot = previewSnapshot(bytes(text));
+  const page = listPreview(snapshot, { windowUnits: 120 }).page;
+  const [first, second] = page.windows;
+  // A fixed cut at 120 would end mid-caveat-neighbourhood; the last separator fits within it.
+  expect(first!.end).toBe(99);
+  expect(first!.endsAtBlockGap).toBe(true);
+  expect(second!.opensAtBlockGap).toBe(true);
+  expect(second!.snippet.startsWith('Caveat: not valid')).toBe(true);
+  expect(page.windows.every((window) => window.units <= 120)).toBe(true);
+  expect(page.windows.map((window) => text.slice(window.start, window.end)).join('')).toBe(text);
+  expect(page.end).toBe(text.length);
+  expect(page.remainingUnits).toBe(0);
+});
+
+it('falls back to the plain cut for oversized blocks and early separators, never shrinking below half', () => {
+  const huge = previewSnapshot(bytes(`${'A'.repeat(500)}\n\nTail`));
+  const hugePage = listPreview(huge, { windowUnits: 100, windows: 2 }).page;
+  expect(hugePage.windows.map((window) => window.end)).toEqual([100, 200]);
+  expect(hugePage.windows[0]!.endsAtBlockGap).toBe(false);
+  expect(hugePage.nextOffset).toBe(200);
+  expect(hugePage.remainingUnits).toBe(huge.material.text.length - 200);
+  // An early separator would yield a 3-unit window; the half-limit guard keeps the full cut.
+  const early = previewSnapshot(bytes(`X\n\n${'A'.repeat(300)}`));
+  expect(listPreview(early, { windowUnits: 100, windows: 1 }).page.windows[0]!.end).toBe(100);
+  // Exact limit sizing is unchanged when no separator exists in the whole text.
+  const plain = previewSnapshot(bytes('A'.repeat(60000)));
+  expect(listPreview(plain, { windows: 2 }).page.nextOffset).toBe(8000);
+});
+
+it('never ends a snapped window inside a generated table projection', () => {
+  const doc = extractHtml(
+    `<html><body><p>${'Lead '.repeat(20)}</p><table><caption>Limits</caption><tr><th>Setting</th><th>Value</th></tr><tr><td>Flow</td><td>5 mm</td></tr><tr><td>Note</td><td>Not valid unless calibrated</td></tr></table><p>${'Trail '.repeat(20)}</p></body></html>`,
+    'https://example.org/table-windows',
+  );
+  const table = doc.sections
+    .flatMap((section) => section.provenance ?? [])
+    .find((item) => (item as { kind?: string }).kind === 'html-table-v1') as {
+    start: number;
+    end: number;
+  };
+  const snapshot = previewSnapshot(Buffer.from(JSON.stringify(doc)));
+  for (let units = 40; units <= 400; units += 7)
+    for (const window of listPreview(snapshot, { windowUnits: units, windows: 100 }).page.windows) {
+      expect(window.units).toBeLessThanOrEqual(units);
+      // Hard cuts inside the table stay possible and are flagged; snapped ends are not inside it.
+      if (window.endsAtBlockGap && window.end < doc.text.length)
+        expect(window.end <= table.start || window.end >= table.end).toBe(true);
+    }
+});
