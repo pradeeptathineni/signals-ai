@@ -31,6 +31,7 @@ export function ProjectDesk({
   select,
   explore,
   research,
+  openAnswer,
   onOpportunitiesChange,
 }: {
   projects: Project[];
@@ -41,6 +42,7 @@ export function ProjectDesk({
   select: (id: string) => void;
   explore: (project: Project) => void;
   research: (preview: ResearchPreview) => void;
+  openAnswer: (finding: LibraryFinding) => void;
   onOpportunitiesChange: (opportunities: DisplayOpportunity[]) => void;
 }) {
   const [sourceKind, setSourceKind] = useState<ProjectSource['kind']>('local');
@@ -397,6 +399,7 @@ export function ProjectDesk({
                     key={entry.id}
                     opportunity={entry}
                     finding={findings.find((finding) => finding.key === entry.findingKey)}
+                    openAnswer={openAnswer}
                     onSave={(status, note) =>
                       action(async () => {
                         await api('opportunities/update', { id: entry.id, status, note });
@@ -546,6 +549,8 @@ export function ProjectDesk({
             <OpportunityRow
               key={entry.id}
               opportunity={entry}
+              finding={findings.find((finding) => finding.key === entry.findingKey)}
+              openAnswer={openAnswer}
               projects={projects}
               associate={(projectId) =>
                 action(async () => {
@@ -640,6 +645,7 @@ export function ProjectDesk({
 function OpportunityRow({
   opportunity,
   finding,
+  openAnswer,
   onSave,
   setup,
   projects,
@@ -647,6 +653,7 @@ function OpportunityRow({
 }: {
   opportunity: DisplayOpportunity;
   finding?: LibraryFinding;
+  openAnswer: (finding: LibraryFinding) => void;
   onSave: (status: Opportunity['status'], note: string) => Promise<void>;
   setup?: (targetProfile: string, aiNeed: string) => Promise<void>;
   projects?: Project[];
@@ -684,17 +691,29 @@ function OpportunityRow({
       {opportunity.projectRef && (
         <p className="desk-meta">Original project reference: {opportunity.projectRef}</p>
       )}
-      {finding && (
+      {finding ? (
         <>
-          <a href={finding.uri} target="_blank" rel="noreferrer">
-            Open {finding.title}
-          </a>
+          {finding.answer ? (
+            <button onClick={() => openAnswer(finding)}>Reopen complete answer</button>
+          ) : (
+            <a href={finding.uri} target="_blank" rel="noreferrer">
+              Open {finding.title}
+            </a>
+          )}
           <p>
-            {finding.native?.limits[0] ??
+            {finding.answer?.limits[0] ??
+              finding.native?.limits[0] ??
               finding.legacy?.limitations[0] ??
               'Inspect supporting sources and limits.'}
           </p>
         </>
+      ) : (
+        <p>
+          {opportunity.findingKey
+            ? 'The linked finding is unavailable.'
+            : 'No library finding is linked.'}{' '}
+          Retained evidence and decisions remain below.
+        </p>
       )}
       <details>
         <summary>Evidence, decision and private note</summary>

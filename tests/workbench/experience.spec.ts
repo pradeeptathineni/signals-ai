@@ -1,5 +1,5 @@
-import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
-import { selectEvidenceResearch } from './research.js';
+import { test, expect, type Page } from '@playwright/test';
+import { selectEvidenceResearch, registerScopedProject } from './research.js';
 import { mkdtemp, writeFile, rm, realpath, mkdir } from 'node:fs/promises';
 import { AxeBuilder } from '@axe-core/playwright';
 import { tmpdir } from 'node:os';
@@ -10,35 +10,10 @@ import {
   projectNativeLibrary,
   projectLegacyLibrary,
 } from '../../packages/domain/src/library-search.js';
-import type { Project } from '../../packages/corpus/src/project-contract.js';
 
 async function navigate(page: Page, name: string) {
   await page.getByRole('complementary').getByRole('button', { name, exact: true }).click();
 }
-async function registerScopedProject(request: APIRequestContext, folder: string, name: string) {
-  const { token } = (await (await request.get('__signals/api/session')).json()) as {
-    token: string;
-  };
-  const headers = { origin: 'http://127.0.0.1:5189', 'x-signals-token': token };
-  const preview = await request.post('__signals/api/projects/preview', {
-    headers,
-    data: { source: { kind: 'local', path: folder } },
-  });
-  expect(preview.ok()).toBe(true);
-  const { id } = (await preview.json()) as { id: string };
-  const saved = await request.post('__signals/api/projects/register', {
-    headers,
-    data: {
-      previewId: id,
-      name,
-      purpose: `The current purpose of ${name}`,
-      constraints: ['Read only'],
-    },
-  });
-  expect(saved.ok()).toBe(true);
-  return (await saved.json()) as Project;
-}
-
 test('interactive checkpoint preserves result place, comparison, scopes and submitted meaning consent', async ({
   page,
   request,

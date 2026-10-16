@@ -690,6 +690,28 @@ export function searchApi(
         const run = runs.get(route.split('/')[1]!);
         run?.controller.abort();
         json(200, { cancelled: !!run });
+      } else if (route === 'retain-answer' && mutation) {
+        const schema = Type.Object(
+          { runId: selection.properties.runId },
+          { additionalProperties: false },
+        );
+        if (!Value.Check(schema, body)) throw new Error('invalid_answer_selection');
+        const result = resultFor(body.runId);
+        if (
+          !result?.brief?.text ||
+          result.answerReceipt?.state !== 'unassessed' ||
+          result.answerReceipt.confidence !== 'unknown'
+        )
+          throw new Error('unknown_answer_selection');
+        await retainRun(result, root);
+        const key = `answer:private:${result.runId}`;
+        try {
+          await setLibrarySaved(root, key, true);
+        } catch {
+          json(500, { code: 'answer_retained_library_update_failed', retained: true, key });
+          return true;
+        }
+        json(200, { key, runId: result.runId, saved: true });
       } else if (route === 'save-lead' && mutation) {
         const schema = Type.Object(
           { runId: Type.String({ format: 'uuid' }), uri: Type.String({ maxLength: 2048 }) },

@@ -1044,6 +1044,7 @@ export function Experience() {
             projects={projects}
             findings={records}
             selected={state.project}
+            openAnswer={(finding) => navigate({ detail: finding.key })}
             api={api}
             reload={reloadProjects}
             onOpportunitiesChange={setOpportunities}
