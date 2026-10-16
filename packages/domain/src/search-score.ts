@@ -587,34 +587,32 @@ export function filterSearchItems(
       ),
     ).size <= 1;
   const numeric = candidates.some((item) => item.relevance !== undefined);
+  const relevance = (a: SearchItem, b: SearchItem) =>
+    (numeric
+      ? (b.relevance?.value ?? -1) - (a.relevance?.value ?? -1)
+      : rank[a.match.level] - rank[b.match.level]) || a.entity.id.localeCompare(b.entity.id);
+  // Contextual priority is the only owner of contextual order; equal priority falls back to
+  // query relevance, never to intrinsic strength.
+  const held = (item: SearchItem) =>
+    (item.priority?.feedback === 'mute' ? 2 : 0) +
+    (item.priority?.applicability === 'incompatible' || item.match.level === 'out-of-scope'
+      ? 1
+      : 0);
   return candidates.sort((a, b) => {
-    if (!filters.sort || filters.sort === 'match' || filters.sort === 'relevance') {
+    if (!filters.sort || filters.sort === 'match' || filters.sort === 'relevance')
+      return relevance(a, b);
+    if (filters.sort === 'priority')
       return (
-        (numeric
-          ? (b.relevance?.value ?? -1) - (a.relevance?.value ?? -1)
-          : rank[a.match.level] - rank[b.match.level]) || a.entity.id.localeCompare(b.entity.id)
+        held(a) - held(b) ||
+        (b.priority?.score ?? -1) - (a.priority?.score ?? -1) ||
+        relevance(a, b)
       );
-    }
-    if (filters.sort === 'priority') {
-      const fit = (item: SearchItem) =>
-        item.priority?.applicability === 'incompatible' || item.match.level === 'out-of-scope'
-          ? 1
-          : 0;
-      const mute = (item: SearchItem) => (item.priority?.feedback === 'mute' ? 1 : 0);
-      const order =
-        mute(a) - mute(b) ||
-        fit(a) - fit(b) ||
-        (b.priority?.score ?? -1) - (a.priority?.score ?? -1);
-      if (order) return order;
-    }
-    const match = 0;
     const type = filters.sort === 'type' ? a.entity.kind.localeCompare(b.entity.kind) : 0;
     const newest =
       filters.sort === 'newest'
         ? b.entity.assessment.asOf.localeCompare(a.entity.assessment.asOf)
         : 0;
     return (
-      match ||
       type ||
       newest ||
       (comparable ? (b.entity.assessment.score ?? -1) - (a.entity.assessment.score ?? -1) : 0) ||

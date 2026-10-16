@@ -79,22 +79,6 @@ export function contextualize(
     };
   });
 }
-export function rankContextual(items: SearchItem[]) {
-  return [...items].sort((a, b) => {
-    const muted = (item: SearchItem) => (item.priority?.feedback === 'mute' ? 1 : 0);
-    const fit = (item: SearchItem) =>
-      item.priority?.applicability === 'incompatible' || item.match.level === 'out-of-scope'
-        ? 1
-        : 0;
-    return (
-      muted(a) - muted(b) ||
-      fit(a) - fit(b) ||
-      (b.priority?.score ?? -1) - (a.priority?.score ?? -1) ||
-      a.entity.id.localeCompare(b.entity.id)
-    );
-  });
-}
-
 export function entityDelta(before: SearchItem['entity'], after: SearchItem['entity']) {
   const project = (entity: SearchItem['entity']) =>
     JSON.stringify({

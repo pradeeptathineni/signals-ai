@@ -3,14 +3,14 @@ import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { acceptDiscovery } from './signal-search.js';
-import { contextualize, rankContextual, entityDelta } from '../../domain/src/search-priority.js';
+import { contextualize, entityDelta } from '../../domain/src/search-priority.js';
 import { loadPersonal, updatePersonal } from './search-personal.js';
 import { updateInbox, loadInbox } from './search-inbox.js';
 import { searchEvidenceBundle } from './search-exchange.js';
 import { parseContextualExchange } from './search-context-exchange.js';
 import { randomUUID } from 'node:crypto';
 import { budgets, type SearchResult } from '../../domain/src/search-contract.js';
-import { saveDecision } from '../../domain/src/search-score.js';
+import { filterSearchItems, saveDecision } from '../../domain/src/search-score.js';
 import type { Proposal } from '../../domain/src/search-contract.js';
 
 async function pool() {
@@ -85,7 +85,7 @@ it('ranks the same frozen pool by contextual value without changing strength, el
   const original = await pool();
   const snapshots = original.map((i) => JSON.stringify(i.entity.assessment));
   original[1]!.entity.assessment.score = 99;
-  const items = rankContextual(contextualize(original, new Set()));
+  const items = filterSearchItems(contextualize(original, new Set()), { sort: 'priority' });
   expect(items[0]!.entity.name).toBe('Obscure useful tool');
   expect(items[0]!.priority?.novelty).toBe('new-to-corpus');
   expect(items[0]!.priority?.personalNovelty).toBe('unknown');
@@ -94,6 +94,33 @@ it('ranks the same frozen pool by contextual value without changing strength, el
   expect(contextualize(original, new Set([original[0]!.entity.id]))[0]!.priority?.novelty).toBe(
     'known-in-corpus',
   );
+});
+it('orders equal contextual priority by query relevance, not intrinsic strength or pool shape', async () => {
+  const [base] = contextualize(await pool(), new Set());
+  const twin = (id: string, level: 'direct' | 'related', strength: number) => {
+    const item = structuredClone(base!);
+    item.entity.id = id;
+    item.match = { ...item.match, level };
+    item.entity.assessment.score = strength;
+    return item;
+  };
+  const strong = twin('a-strong-related', 'related', 95),
+    relevant = twin('b-weak-direct', 'direct', 40);
+  expect(strong.priority?.score).toBe(relevant.priority?.score);
+  const order = (items: typeof strong[]) =>
+    filterSearchItems(items, { sort: 'priority' }).map((item) => item.entity.id);
+  expect(order([strong, relevant])).toEqual(['b-weak-direct', 'a-strong-related']);
+  // A differently-assessed, muted neighbour must not flip the tie between the two.
+  const neighbour = twin('c-muted-dataset', 'direct', 10);
+  neighbour.entity.kind = 'dataset';
+  neighbour.priority = { ...neighbour.priority!, feedback: 'mute' };
+  expect(order([neighbour, strong, relevant])).toEqual([
+    'b-weak-direct',
+    'a-strong-related',
+    'c-muted-dataset',
+  ]);
+  // Strength remains an explicit, separate order.
+  expect(filterSearchItems([relevant, strong], { sort: 'score' })[0]).toBe(strong);
 });
 it('hosted reader identity uncertainty blocks automatic admission without changing intrinsic strength', async () => {
   const item = (await pool())[0]!;
@@ -152,7 +179,9 @@ it('keeps user notes/feedback private and ignores fetch timestamps when detectin
     expect(() => parseContextualExchange({ ...(extension as object), schema_version: 2 })).toThrow(
       'unsupported_or_invalid_contextual_exchange',
     );
-    const ranked = rankContextual(contextualize(items, new Set(), personal));
+    const ranked = filterSearchItems(contextualize(items, new Set(), personal), {
+      sort: 'priority',
+    });
     expect(ranked.at(-1)!.entity.id).toBe(id);
     const after = structuredClone(items[0]!.entity);
     after.assessment.asOf = new Date().toISOString();
