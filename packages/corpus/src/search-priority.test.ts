@@ -107,7 +107,7 @@ it('orders equal contextual priority by query relevance, not intrinsic strength 
   const strong = twin('a-strong-related', 'related', 95),
     relevant = twin('b-weak-direct', 'direct', 40);
   expect(strong.priority?.score).toBe(relevant.priority?.score);
-  const order = (items: typeof strong[]) =>
+  const order = (items: (typeof strong)[]) =>
     filterSearchItems(items, { sort: 'priority' }).map((item) => item.entity.id);
   expect(order([strong, relevant])).toEqual(['b-weak-direct', 'a-strong-related']);
   // A differently-assessed, muted neighbour must not flip the tie between the two.
