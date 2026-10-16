@@ -14,7 +14,8 @@ const firstParty = new Map([
     {
       version: '0.1.0',
       license: 'MIT',
-      source: /^https:\/\/github\.com\/pradeeptathineni\/research-ai\/archive\/[0-9a-f]{40}\.tar\.gz$/,
+      source:
+        /^https:\/\/github\.com\/pradeeptathineni\/research-ai\/archive\/[0-9a-f]{40}\.tar\.gz$/,
     },
   ],
 ]);
