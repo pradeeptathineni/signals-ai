@@ -73,6 +73,8 @@ Constraint states are satisfied, conflicting or unknown. Relevance then stable i
 
 Contextual priority v2 requires active supported defining and cited evidence. Ungrounded leads keep null priority. Proposed use/wrap/adapt actions are held at study with the original action preserved. They remain visible and manually saveable, but are excluded from advisory recommendations. Reasons, constraints, actions and alternatives remain inspectable.
 
+Priority sorting orders by muted status, compatibility, contextual score, query relevance and stable identity; muted and incompatible/out-of-scope items sort later. Its relevance fallback is the ordinary query order: numeric relevance when present in the visible pool, otherwise match level. Explicit strength sorting retains its separate policy/rubric comparability rule. Sorting does not change retained assessments or admission decisions.
+
 Discovery trails distinguish user seeds, configured parents, matched outlinks and model reports. A candidate-named verification query cannot prove unknown-name discovery. Source-family coverage is model-reported. A source scan differs from a result exposure; explicit per-entity feedback binds once to a verified introducing configured parent. Missing historical provenance earns no inferred credit.
 
 ## Saving and retrieval
