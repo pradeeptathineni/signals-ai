@@ -1,4 +1,3 @@
-import MiniSearch from 'minisearch';
 import type { EvidenceBundle } from './evidence-exchange.js';
 import type { SignalReview, assessSignalQuality } from './signal-quality.js';
 
@@ -117,8 +116,8 @@ export function refreshPublicFreshness(options: PublicOption[], asOf: string): P
   }));
 }
 
+/** Ranked text search over these records is `library-query`'s shared Library index. */
 export interface PublicFilters {
-  textMode?: 'literal' | 'ranked';
   query?: string;
   type?: string;
   category?: string;
@@ -136,7 +135,7 @@ export function filterPublicOptions(options: readonly PublicOption[], filters: P
     .trim()
     .split(/\s+/)
     .filter(Boolean);
-  const constrained = options.filter((option) => {
+  return options.filter((option) => {
     if (filters.type && option.type !== filters.type) return false;
     if (filters.category && option.category !== filters.category) return false;
     if (filters.concept && !option.concepts.includes(filters.concept)) return false;
@@ -157,30 +156,6 @@ export function filterPublicOptions(options: readonly PublicOption[], filters: P
     ]
       .join(' ')
       .toLocaleLowerCase('en-US');
-    return filters.textMode === 'ranked' || words.every((word) => text.includes(word));
+    return words.every((word) => text.includes(word));
   });
-  if (filters.textMode !== 'ranked' || !words.length) return constrained;
-  const index = new MiniSearch({ fields: ['name', 'need', 'text'] });
-  index.addAll(
-    constrained.map((option) => ({
-      id: option.id,
-      name: option.name,
-      need: option.need,
-      text: [
-        option.reason,
-        option.category,
-        ...option.concepts,
-        ...option.claims.map((claim) => claim.text),
-        ...option.sources.map((source) => source.title),
-      ].join(' '),
-    })),
-  );
-  return index
-    .search(filters.query ?? '', {
-      combineWith: 'OR',
-      fuzzy: false,
-      prefix: false,
-      boost: { name: 2 },
-    })
-    .map((hit) => constrained.find((option) => option.id === hit.id)!);
 }

@@ -175,9 +175,11 @@ const fieldWeights = {
   domains: 1,
   sourceNames: 3,
   notes: 2,
+  // Caller-supplied retained statements; empty unless a caller indexes them.
+  evidenceText: 3,
 };
 type SearchField = keyof typeof fieldWeights;
-function fieldValues(finding: LibraryFinding, field: SearchField): string[] {
+function fieldValues(finding: LibraryFinding, field: Exclude<SearchField, 'evidenceText'>) {
   const value = finding[field];
   return typeof value === 'string' ? [value] : Array.isArray(value) ? value : [];
 }
@@ -215,21 +217,33 @@ function allows(finding: LibraryFinding, filters: LibraryFilters): boolean {
     (filters.acquisition !== 'free-to-use' || finding.access.freeToUse === true)
   );
 }
-/** One shared, reusable lexical index for local and public browsers; no I/O or inference. */
-export function createLibraryIndex(records: readonly LibraryFinding[]) {
+/**
+ * One shared, reusable lexical index for local and public browsers and retained-knowledge reuse;
+ * no I/O or inference. `evidenceText` lets a caller index statements without adding them to records.
+ */
+export function createLibraryIndex(
+  records: readonly LibraryFinding[],
+  evidenceText: (finding: LibraryFinding) => string[] = () => [],
+) {
   const byKey = new Map<string, LibraryFinding>();
-  const fields = Object.keys(fieldWeights) as SearchField[];
-  const index = new MiniSearch({ idField: 'key', fields, tokenize, processTerm });
+  const allFields = Object.keys(fieldWeights) as SearchField[];
+  const values = (finding: LibraryFinding, field: SearchField) =>
+    field === 'evidenceText' ? evidenceText(finding) : fieldValues(finding, field);
+  const index = new MiniSearch({ idField: 'key', fields: allFields, tokenize, processTerm });
   for (const finding of records) {
     if (byKey.has(finding.key)) throw new Error('duplicate_library_identity');
     byKey.set(finding.key, finding);
     index.add({
       key: finding.key,
-      ...Object.fromEntries(fields.map((field) => [field, fieldValues(finding, field).join(' ')])),
+      ...Object.fromEntries(allFields.map((field) => [field, values(finding, field).join(' ')])),
     });
   }
   return {
-    search(query: string, filters: LibraryFilters = {}): LibraryHit[] {
+    search(
+      query: string,
+      filters: LibraryFilters = {},
+      fields: readonly SearchField[] = allFields,
+    ): LibraryHit[] {
       const text = query.trim().slice(0, 2000);
       if (!tokenize(text).length)
         return [...byKey.values()]
@@ -243,6 +257,7 @@ export function createLibraryIndex(records: readonly LibraryFinding[]) {
         .filter((variants) => variants.length);
       return index
         .search(text, {
+          fields: [...fields],
           combineWith: 'OR',
           boost: fieldWeights,
           prefix: (term) => term.length >= 3,
@@ -252,12 +267,12 @@ export function createLibraryIndex(records: readonly LibraryFinding[]) {
           const finding = byKey.get(String(hit.id))!;
           if (!allows(finding, filters)) return [];
           const exact = fields.filter((field) =>
-            fieldValues(finding, field).some((value) => normalized(value).includes(whole)),
+            values(finding, field).some((value) => normalized(value).includes(whole)),
           );
           if (
             !phrases.every((phrase) =>
               fields.some((field) =>
-                fieldValues(finding, field).some((value) => normalized(value).includes(phrase)),
+                values(finding, field).some((value) => normalized(value).includes(phrase)),
               ),
             )
           )

@@ -48,10 +48,14 @@ if (operation === 'check') {
     }
     if (!match || !allowed.has(match[1]!))
       throw new Error('Use --query=TEXT or a documented exact filter.');
+    // Literal is the only mode here; ranked search uses the shared Library index.
+    if (match[1] === 'textMode') {
+      if (match[2] !== 'literal')
+        throw new Error('Text mode must be literal; use library-query for ranked search.');
+      continue;
+    }
     Object.assign(filters, { [match[1]!]: match[2]! });
   }
-  if (filters.textMode && !['literal', 'ranked'].includes(filters.textMode))
-    throw new Error('Text mode must be literal or ranked.');
   process.stdout.write(
     `${JSON.stringify({ universe: 'reviewed-public-files', filters, items: filterPublicOptions(corpus.options, filters) }, null, 2)}\n`,
   );

@@ -1,4 +1,4 @@
-import MiniSearch from 'minisearch';
+import { createLibraryIndex } from '../../domain/src/library-search.js';
 import type { Entity, SearchRequest, Source } from '../../domain/src/search-contract.js';
 import { activeObservations } from '../../domain/src/search-score.js';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
@@ -112,25 +112,26 @@ export async function researchCorpusSlice(request: SearchRequest, root: string) 
             }),
           ),
   }));
-  const index = new MiniSearch({ fields: ['name', 'text'] });
-  index.addAll(
-    candidates
-      .filter((item) => item.facts.length)
-      .map(({ finding, facts }) => ({
-        id: finding.key,
-        name: finding.title,
-        text: facts.map((fact) => `${fact.statement} ${fact.quote} ${fact.source.title}`).join(' '),
-      })),
+  const factsByKey = new Map(
+    candidates.filter((item) => item.facts.length).map((item) => [item.finding.key, item.facts]),
   );
-  const hits = index.search(`${request.query} ${request.context ?? ''}`, {
-    combineWith: 'OR',
-    fuzzy: false,
-    prefix: false,
-    boost: { name: 2 },
-  });
-  for (const hit of hits) {
+  // The Library's lexical rules (function words, inflection, coverage) over title and retained facts.
+  const hits = createLibraryIndex(
+    candidates.filter((item) => factsByKey.has(item.finding.key)).map((item) => item.finding),
+    (finding) =>
+      factsByKey
+        .get(finding.key)!
+        .map((fact) => `${fact.statement} ${fact.quote} ${fact.source.title}`),
+  )
+    .search(`${request.query} ${request.context ?? ''}`, {}, ['title', 'evidenceText'])
+    .filter((hit) => hit.matchedTerms.length);
+  if (!hits.length)
+    slice.gaps.push(
+      `No retained record with verified facts lexically matched the request among ${factsByKey.size} searched; absence here is not evidence that none exists.`,
+    );
+  for (const { finding } of hits) {
     if (slice.records.length >= recordLimit) break;
-    const { finding, facts } = candidates.find((item) => item.finding.key === hit.id)!;
+    const facts = factsByKey.get(finding.key)!;
     const selected = [...facts]
       .sort(
         (a, b) =>

@@ -202,6 +202,31 @@ it('reuses a bounded relevant slice without private notes, runtime data or file 
   }
 });
 
+it('selects retained facts with the Library lexical rules and states bounded absence', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-reuse-lexical-')));
+  try {
+    await saveEntities([await acquired(0)], 'manual', root, 'private', 75, true);
+    // Function words alone ("what", "is", "in", "the") no longer select a record.
+    const absent = await researchCorpusSlice({ query: 'What is in the orchard?' }, root);
+    expect(absent.records).toEqual([]);
+    expect(absent.gaps).toEqual([
+      'No retained record with verified facts lexically matched the request among 1 searched; absence here is not evidence that none exists.',
+    ]);
+    // Inflected words reach the same retained statement the Library would show.
+    const inflected = await researchCorpusSlice({ query: 'draining' }, root);
+    expect(inflected.records.map((record) => record.name)).toEqual(['Garden Resource 0']);
+    expect(inflected.records[0]!.facts[0]!.statement).toBe('Drains wet soil in gardens.');
+    expect(inflected.gaps).toEqual([]);
+    // Unmatched quoted phrases still exclude; description metadata is not searched.
+    expect((await researchCorpusSlice({ query: '"gardens drain wet"' }, root)).records).toEqual([]);
+    expect((await researchCorpusSlice({ query: 'DESCRIPTION_SENTINEL' }, root)).records).toEqual(
+      [],
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 it('does not create storage for empty reuse and limits large records without truncating facts', async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-reuse-budget-')));
   try {
