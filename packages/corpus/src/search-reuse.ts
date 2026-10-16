@@ -127,7 +127,7 @@ export async function researchCorpusSlice(request: SearchRequest, root: string) 
     .filter((hit) => hit.matchedTerms.length);
   if (!hits.length)
     slice.gaps.push(
-      `No retained record with verified facts lexically matched the request among ${factsByKey.size} searched; absence here is not evidence that none exists.`,
+      `No record with eligible retained facts lexically matched the request among ${factsByKey.size} searched; absence here is not evidence that none exists.`,
     );
   for (const { finding } of hits) {
     if (slice.records.length >= recordLimit) break;

@@ -210,7 +210,7 @@ it('selects retained facts with the Library lexical rules and states bounded abs
     const absent = await researchCorpusSlice({ query: 'What is in the orchard?' }, root);
     expect(absent.records).toEqual([]);
     expect(absent.gaps).toEqual([
-      'No retained record with verified facts lexically matched the request among 1 searched; absence here is not evidence that none exists.',
+      'No record with eligible retained facts lexically matched the request among 1 searched; absence here is not evidence that none exists.',
     ]);
     // Inflected words reach the same retained statement the Library would show.
     const inflected = await researchCorpusSlice({ query: 'draining' }, root);
