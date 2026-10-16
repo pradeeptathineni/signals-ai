@@ -27,7 +27,7 @@ npm run research -- library-query 'remembered purpose' --public
 
 The [signal-search skill](.meta/context/skills/signal-search/SKILL.md) uses the invoking AI's permitted search and reading tools without launching another AI. Ask an ordinary question; the agent creates the structured assessment. Other Agent Skills hosts can use the [same protocol](.meta/context/skills/signal-search/references/protocol.md).
 
-Headless research uses an installed, authenticated Codex CLI. Queries and selected evidence go to its configured provider; credentials stay with the CLI. Settings reports runner readiness and lets you select model, effort and research depth. Local control does not imply local inference.
+Headless research uses an installed, authenticated Codex CLI through the first-party [`@pradeeptathineni/research-ai`](docs/dependencies.md) executor. That package also runs standalone ordinary research with no storage. Queries and selected evidence go to its configured provider; credentials stay with the CLI. Settings reports runner readiness and lets you select model, effort and research depth. Local control does not imply local inference.
 
 ```sh
 npm run signal-search -- --capability

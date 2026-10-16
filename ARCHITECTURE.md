@@ -41,7 +41,7 @@ Query lists freeze selected interests and compatible acquisition pools. Differen
 
 ## Access boundaries
 
-The installed CLI owns authentication. The disposable read-only headless runner disables shell, hooks, plugins, apps, memories, MCP execution and delegation. Process-group cancellation and output/time/tool limits bound it. Retrieved instructions cannot grant permissions. Safe HTTPS transport validates DNS, pins the connected address, validates redirects and limits bytes/time. Failed sources remain inspectable.
+The installed CLI owns authentication. The disposable read-only headless runner disables shell, hooks, plugins, apps, memories, MCP execution and delegation. Process-group cancellation and output/time/tool limits bound it. That generic executor (readiness, lease, hardened arguments, minimal environment, stream supervision, checkpoints and termination) is the first-party `@pradeeptathineni/research-ai` package; `packages/corpus/src/search-runner.ts` keeps Signals' prompts, acquisition, schemas, output interpretation, receipts and failures and passes its own lease name, budgets and note reader. Retrieved instructions cannot grant permissions. Safe HTTPS transport validates DNS, pins the connected address, validates redirects and limits bytes/time. Failed sources remain inspectable.
 
 Local API mutations require loopback Host, same Origin and a random session token. Closed operations select server-owned results rather than arbitrary commands or paths. Development and built serving share the handler. Asset allowlists deny private files and symlink escapes. Public Pages contains approved public records only and cannot invoke a local runner.
 

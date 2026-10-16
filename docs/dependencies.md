@@ -14,6 +14,9 @@
 | @mozilla/readability |   0.6.0 | Apache-2.0 | Static document extraction                     |
 | linkedom             | 0.18.13 | ISC        | Inert DOM without script/resource execution    |
 | rss-parser           |  3.13.0 | MIT        | RSS/Atom parsing from safely fetched bytes     |
+| research-ai          |   0.1.0 | MIT        | First-party bounded Codex research executor    |
+
+`@pradeeptathineni/research-ai` is first-party, has no runtime dependencies and is pinned to one public commit archive ([`b8a7b068dd4aacd3916e04647b9eaf5b13d0a4de`](https://github.com/pradeeptathineni/research-ai/commit/b8a7b068dd4aacd3916e04647b9eaf5b13d0a4de)) with lockfile sha512 integrity. Project-local `allow-remote=root` permits only directly declared URL dependencies under npm 12; Research has no transitive runtime dependencies. An unpinned local `file:` link fails `security:dependencies`. Vitest inlines it so `node:child_process`/`node:os` test mocks still apply.
 
 Node HTTPS/DNS/filesystem/child-process primitives own safe acquisition, bounded project previews, file writes, the loopback API, headless supervision and interval scheduling. Linkedom does not grant transport authority; original outlinks are harvested before Readability. RSS entity declarations are rejected. Ajv does not coerce or insert defaults; domain checks own semantic references/privacy. Frozen schema bytes are excluded from formatting to preserve their digest.
 

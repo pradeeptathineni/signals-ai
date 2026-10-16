@@ -51,6 +51,7 @@
   },
   "dependencies": {
     "@mozilla/readability": "0.6.0",
+    "@pradeeptathineni/research-ai": "https://github.com/pradeeptathineni/research-ai/archive/b8a7b068dd4aacd3916e04647b9eaf5b13d0a4de.tar.gz",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
     "linkedom": "0.18.13",
