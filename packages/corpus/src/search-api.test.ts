@@ -1,7 +1,7 @@
 import { createServer, request as httpRequest } from 'node:http';
-import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { it, expect } from 'vitest';
 import { searchApi } from './search-api.js';
 import { resolvePublicUrl, publicTransportUrl } from './search-fetch.js';
@@ -9,6 +9,7 @@ import { signalSearch } from './signal-search.js';
 import { loadEntities, retainRun } from './search-store.js';
 import { budgets, type SearchResult } from '../../domain/src/search-contract.js';
 import { frozenFollowupMaterial } from './search-followup.js';
+import { loadLibrary } from './library.js';
 import { randomUUID } from 'node:crypto';
 
 it('explicitly reopens an interrupted private run for frozen continuation without restarting research', async () => {
@@ -295,6 +296,147 @@ it('finishes a rejected search with a visible error and allows the next request'
     expect(state.error).toBe('injected_runner_failure');
     expect((await start()).status).toBe(202);
   } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+it('shares one AI lease across jobs and frozen answers without leaking it on failed preparation', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-api-lease-')));
+  const parent: SearchResult = {
+    schemaVersion: 2,
+    runId: randomUUID(),
+    query: 'stopped comparison',
+    status: 'cancelled',
+    items: [],
+    sources: [],
+    coverage: [],
+    gaps: ['Verification stopped.'],
+    usage: {
+      searches: 0,
+      documents: 0,
+      elapsedMs: 1,
+      modelCalls: 0,
+      providerUsage: null,
+      cost: null,
+    },
+    counts: { leads: 0, distinct: 0, duplicates: 0, omitted: 0 },
+    limits: budgets.quick,
+  };
+  await retainRun(parent, root);
+  const [record] = await loadEntities(resolve('signals/entities'));
+  await mkdir(join(root, 'signals/entities'), { recursive: true });
+  await writeFile(
+    join(root, 'signals/entities', `${record!.entity.id}.json`),
+    JSON.stringify(record, null, 2) + '\n',
+  );
+  const [finding] = await loadLibrary(root);
+  let release = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let searches = 0;
+  let answers = 0;
+  const api = searchApi(
+    root,
+    async () => {
+      searches++;
+      await gate;
+      throw new Error('injected_after_gate');
+    },
+    undefined,
+    async () => {
+      answers++;
+      return {
+        mode: 'frozen-evidence-replay',
+        answer: 'Frozen.',
+        statements: [],
+        gaps: [],
+        usage: null,
+      };
+    },
+  );
+  const server = createServer((request, response) => {
+    void api(request, response);
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('no_port');
+  const base = `http://127.0.0.1:${address.port}/signals-ai/__signals/api/`;
+  try {
+    const { token } = (await (await fetch(`${base}session`)).json()) as { token: string };
+    const post = (route: string, body: unknown) =>
+      fetch(base + route, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-signals-token': token },
+        body: JSON.stringify(body),
+      });
+    const providers = join(root, '.signals/providers.json');
+    await writeFile(providers, '[]');
+    const unprepared = await post('search', { query: 'ordinary question' });
+    expect(unprepared.status).toBe(400);
+    expect(await unprepared.json()).toEqual({ code: 'invalid_acquisition_config' });
+    await rm(providers);
+    expect(searches).toBe(0);
+
+    const starts = await Promise.all([
+      post('search', { query: 'first question' }),
+      post('search', { query: 'second question' }),
+    ]);
+    expect(starts.map((response) => response.status).sort()).toEqual([202, 409]);
+    const started = starts.find((response) => response.status === 202)!;
+    expect(await starts.find((response) => response.status === 409)!.json()).toEqual({
+      code: 'runner_busy',
+    });
+    expect(searches).toBe(1);
+
+    expect((await post('history/open', { runId: parent.runId })).status).toBe(200);
+    const followup = { runId: parent.runId, ids: [], question: 'What remains unresolved?' };
+    for (const [route, body] of [
+      ['followup', followup],
+      ['library-discussion', { keys: [finding!.key], question: 'What remains unresolved?' }],
+      ['run-due', {}],
+      ['run-list', {}],
+    ] as const) {
+      const busy = await post(route, body);
+      expect(busy.status).toBe(409);
+      expect(await busy.json()).toEqual({ code: 'runner_busy' });
+    }
+    expect(answers).toBe(0);
+
+    const failed = async (job: Response) => {
+      const { id } = (await job.json()) as { id: string };
+      let state = { error: null as string | null, events: [] as string[] };
+      for (let attempt = 0; attempt < 100 && !state.error; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        state = (await (await fetch(`${base}runs/${id}`)).json()) as typeof state;
+      }
+      return state;
+    };
+    release();
+    const searchState = await failed(started);
+    expect(searchState.error).toBe('injected_after_gate');
+    expect(searchState.events.at(-1)).toBe('injected_after_gate');
+    expect((await post('followup', followup)).status).toBe(200);
+    expect(answers).toBe(1);
+    expect(searches).toBe(1);
+
+    // Query-list failures are visible like search failures and also release the lease.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const listed = await post('run-list', { ids: ['missing-interest'] });
+      expect(listed.status).toBe(202);
+      const listState = await failed(listed);
+      expect(listState.error).toBe('unknown_query_id');
+      expect(listState.events).toEqual([
+        'Starting explicit query-list research…',
+        'unknown_query_id',
+      ]);
+    }
+    expect(searches).toBe(1);
+  } finally {
+    release();
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),
     );

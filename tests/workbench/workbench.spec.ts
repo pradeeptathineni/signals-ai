@@ -350,6 +350,7 @@ test('source settings and owned cancellation remain usable', async ({ page }) =>
   await page.getByLabel('Source name', { exact: true }).fill('Private followed feed');
   await page.getByRole('button', { name: 'Add followed source', exact: true }).click();
   await page.getByRole('button', { name: 'Save settings', exact: true }).click();
+  await expect(page.getByRole('status')).toContainText('Settings saved.');
   await page.reload();
   await following(page, 'Sources');
   await expect(page.getByRole('group', { name: 'Private followed feed' })).toBeVisible();

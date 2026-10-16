@@ -1183,6 +1183,8 @@ export function Experience() {
         {local && workbenchStarted && (
           <div hidden={!powered} className="desk-powered">
             <Workbench
+              api={api}
+              sessionReady={Boolean(token)}
               requestedTab={powered ?? 'Search'}
               question={state.query}
               reopenRun={reopenRun}

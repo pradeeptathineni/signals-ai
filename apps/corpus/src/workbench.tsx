@@ -33,10 +33,13 @@ import {
   type FrozenAnswer,
 } from './candidate-views.js';
 
-const base = import.meta.env.BASE_URL;
 const settingsTabs = ['Settings', 'Interests', 'Sources', 'Jobs'];
 type WorkbenchPanel = 'Search' | 'Inbox' | 'Interests' | 'Sources' | 'Jobs' | 'Settings';
+/** The parent's loopback transport: one session token, checked session failures, optional abort. */
+type LocalApi = <T>(route: string, body?: unknown, signal?: AbortSignal) => Promise<T>;
 export function Workbench({
+  api,
+  sessionReady,
   requestedTab,
   question,
   reopenRun,
@@ -48,6 +51,8 @@ export function Workbench({
   providedProfile,
   monitorRun,
 }: {
+  api: LocalApi;
+  sessionReady: boolean;
   requestedTab?: WorkbenchPanel;
   question?: string;
   reopenRun?: string;
@@ -60,8 +65,9 @@ export function Workbench({
   monitorRun?: string;
 }) {
   const [tab, setTab] = useState<WorkbenchPanel>('Search');
-  const [token, setToken] = useState(''),
+  const [bridge, setBridge] = useState(false),
     [ready, setReady] = useState('Checking runner…');
+  const bridgeReady = bridge || sessionReady;
   const [settings, setSettings] = useState<SearchSettings | null>(null);
   const [providers, setProviders] = useState<
     { provider: string; configured: boolean; state: string }[]
@@ -216,34 +222,6 @@ export function Workbench({
   useEffect(() => {
     if (result && onCompleted) onCompleted(result.runId);
   }, [result?.runId]);
-  async function api<T>(route: string, body?: unknown): Promise<T> {
-    let requestToken = token;
-    if (body !== undefined && !requestToken) {
-      const session = await fetch(`${base}__signals/api/session`).then(
-        (response) => response.json() as Promise<{ token: string }>,
-      );
-      requestToken = session.token;
-      setToken(requestToken);
-    }
-    const response = await fetch(
-      `${base}__signals/api/${route}`,
-      body === undefined
-        ? {}
-        : {
-            method: 'POST',
-            headers: { 'content-type': 'application/json', 'x-signals-token': requestToken },
-            body: JSON.stringify(body),
-          },
-    );
-    const value: unknown = await response.json();
-    if (!response.ok)
-      throw new Error(
-        value && typeof value === 'object' && 'code' in value
-          ? String(value.code)
-          : 'Operation failed',
-      );
-    return value as T;
-  }
   async function reloadCorpus() {
     const [records, privateRecords] = await Promise.all([
       api<StoredEntity[]>('corpus'),
@@ -254,17 +232,12 @@ export function Workbench({
   }
   useEffect(() => {
     void reloadCorpus().catch((failure: unknown) => setError(String(failure)));
-    void fetch(`${base}__signals/api/session`)
-      .then(
-        (response) =>
-          response.json() as Promise<{
-            token: string;
-            capability: { available: boolean; reason: string; runner: string };
-            providers: { provider: string; configured: boolean; state: string }[];
-          }>,
-      )
+    void api<{
+      capability: { available: boolean; reason: string; runner: string };
+      providers: { provider: string; configured: boolean; state: string }[];
+    }>('session')
       .then((session) => {
-        setToken(session.token);
+        setBridge(true);
         setProviders(session.providers);
         setReady(
           `${session.capability.available ? 'Ready' : 'Unavailable'}: ${session.capability.runner}. ${session.capability.reason}`,
@@ -1453,7 +1426,7 @@ export function Workbench({
                         </label>
                         <button
                           type="button"
-                          disabled={busy || sourceBusy || !token || !captureUrl.trim()}
+                          disabled={busy || sourceBusy || !bridgeReady || !captureUrl.trim()}
                           onClick={() =>
                             void action(() =>
                               start(
@@ -1490,7 +1463,7 @@ export function Workbench({
                       disabled={
                         busy ||
                         sourceBusy ||
-                        !token ||
+                        !bridgeReady ||
                         !query.trim() ||
                         (researchMethod === 'primary-check' && !primaryReady)
                       }
@@ -1515,7 +1488,7 @@ export function Workbench({
                       {researchMethod === 'primary-check' ? 'Check again' : 'Search further'}
                     </button>
                     <button
-                      disabled={busy || sourceBusy || !token || !query.trim()}
+                      disabled={busy || sourceBusy || !bridgeReady || !query.trim()}
                       type="button"
                       onClick={() => {
                         void action(async () => {

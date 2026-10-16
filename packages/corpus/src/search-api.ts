@@ -6,6 +6,7 @@ import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 import {
   parseRequest,
+  type SearchRequest,
   type SearchResult,
   type ProvisionalLead,
   budgets,
@@ -113,6 +114,12 @@ interface ActiveRun {
   due?: Awaited<ReturnType<typeof runDueOnce>>;
   brief?: SearchResult['brief'];
 }
+/** Configured supplemental sites widen, never replace, the request's own site scopes. */
+const withSiteScopes = (query: SearchRequest, sites: string[] = []) =>
+  parseRequest({
+    ...query,
+    supplementalSites: [...new Set([...sites, ...(query.supplementalSites ?? [])])],
+  });
 export function searchApi(
   root = process.cwd(),
   search = signalSearch,
@@ -129,7 +136,16 @@ export function searchApi(
       if (run.result || run.error || run.batch || run.due) runs.delete(key);
     }
   };
+  const resultFor = (runId: string | undefined) =>
+    [...runs.values()].find((run) => run.result && run.result.runId === runId)?.result;
+  // One in-process AI job at a time. Claiming is synchronous so no await separates the
+  // check from the set; search-runner's filesystem lease separately guards other processes.
   let active = false;
+  const claim = () => {
+    if (active) return false;
+    active = true;
+    return true;
+  };
   return async (request: IncomingMessage, response: ServerResponse): Promise<boolean> => {
     const path = request.url?.split('?')[0] ?? '';
     if (!path.startsWith('/signals-ai/__signals/api/')) return false;
@@ -140,6 +156,39 @@ export function searchApi(
         'x-content-type-options': 'nosniff',
       });
       response.end(JSON.stringify(value));
+    };
+    /** Holds the AI lease for one synchronous answer; busy matches background jobs. */
+    const exclusive = async (work: () => Promise<unknown>) => {
+      if (!claim()) return json(409, { code: 'runner_busy' });
+      try {
+        json(200, await work());
+      } finally {
+        active = false;
+      }
+    };
+    /** Starts a polled background job under the AI lease; failures stay visible in its events. */
+    const startJob = (
+      first: string,
+      fallback: string,
+      work: (run: ActiveRun, progress: (event: string) => void) => Promise<void>,
+    ) => {
+      if (!claim()) return json(409, { code: 'runner_busy' });
+      const run: ActiveRun = { controller: new AbortController(), events: [first] };
+      const id = randomBytes(16).toString('hex');
+      runs.set(id, run);
+      void work(run, (event) => {
+        run.events.push(event);
+        if (run.events.length > 100) run.events.shift();
+      })
+        .catch((failure: unknown) => {
+          run.error = failure instanceof Error ? failure.message : fallback;
+          run.events.push(run.error);
+        })
+        .finally(() => {
+          active = false;
+          pruneRuns();
+        });
+      json(202, { id });
     };
     const host = request.headers.host ?? '';
     if (
@@ -205,8 +254,7 @@ export function searchApi(
           if (!response.writableEnded) controller.abort();
         });
         const busy = active;
-        const permitted = preferences.meaningMatching && !busy;
-        if (permitted) active = true;
+        const permitted = preferences.meaningMatching && claim();
         try {
           const result = await matchLibrary(
             await loadLibrary(root, { scope: body.scope }),
@@ -388,7 +436,7 @@ export function searchApi(
             )
           )
             throw new Error('invalid_inbox_selection');
-          const result = [...runs.values()].find((run) => run.result?.runId === body.runId)?.result;
+          const result = resultFor(body.runId);
           if (!result) throw new Error('unknown_result_identity');
           await retainRun(result, root);
           json(200, await updateInbox(root, result, body.ids, body.remove));
@@ -399,16 +447,10 @@ export function searchApi(
         json(
           200,
           await locate(
-            parseRequest({
-              ...query,
-              sources: query.sources ?? settings.sources,
-              supplementalSites: [
-                ...new Set([
-                  ...(settings.supplementalSites ?? []),
-                  ...(query.supplementalSites ?? []),
-                ]),
-              ],
-            }),
+            withSiteScopes(
+              { ...query, sources: query.sources ?? settings.sources },
+              settings.supplementalSites,
+            ),
           ),
         );
       } else if (route === 'corpus' && !mutation)
@@ -455,10 +497,6 @@ export function searchApi(
               : (material?.digest ?? null),
         });
       } else if ((route === 'search' || route === 'capture' || route === 'refresh') && mutation) {
-        if (active) {
-          json(409, { code: 'runner_busy' });
-          return true;
-        }
         const settings = await loadSettings(root);
         let input = body;
         let refreshDestination = settings.destination;
@@ -471,157 +509,132 @@ export function searchApi(
           refreshId = record.entity.id;
           input = refreshRequest(record.entity, settings);
         }
-        const rawQuery = parseRequest(input);
-        if (rawQuery.claimOrigin === 'selected-primary')
+        const query = parseRequest(input);
+        if (query.claimOrigin === 'selected-primary')
           throw new Error('selected_primary_producer_unavailable');
-        if (route === 'capture' && !rawQuery.captureUrls?.length)
+        if (route === 'capture' && !query.captureUrls?.length)
           throw new Error('capture_url_required');
-        const query = rawQuery.claimOrigin
-          ? rawQuery
-          : parseRequest({
-              ...rawQuery,
-              supplementalSites: [
-                ...new Set([
-                  ...(settings.supplementalSites ?? []),
-                  ...(rawQuery.supplementalSites ?? []),
-                ]),
-              ],
-            });
         if (query.save === 'eligible') throw new Error('interactive_review_first');
         const effectiveQuery = query.claimOrigin
           ? query
-          : parseRequest({
-              ...query,
-              profile: query.profile ?? settings.profile,
-              route: query.route ?? settings.route,
-              review: query.review ?? settings.groundedReview ?? false,
-              threshold: query.threshold ?? settings.threshold,
-              sources: settings.sources,
-              save: 'never',
+          : withSiteScopes(
+              {
+                ...query,
+                profile: query.profile ?? settings.profile,
+                route: query.route ?? settings.route,
+                review: query.review ?? settings.groundedReview ?? false,
+                threshold: query.threshold ?? settings.threshold,
+                sources: settings.sources,
+                save: 'never',
+              },
+              settings.supplementalSites,
+            );
+        // Preparation that can fail finishes before the lease is claimed.
+        const runner = query.claimText
+          ? undefined
+          : codexRunner(settings.model || undefined, settings.effort || undefined, {
+              root,
+              acquisition: await loadAcquisitionConfig(root),
+              extractionModel: settings.extractionModel || undefined,
+              extractionEffort: settings.extractionEffort || undefined,
+              ...answerFirstOperation(effectiveQuery),
             });
-        const controller = new AbortController(),
-          id = randomBytes(16).toString('hex');
-        const run: ActiveRun = { controller, events: ['Starting research…'] };
-        runs.set(id, run);
-        active = true;
-        void search(effectiveQuery, {
-          root,
-          claimRunner: (task, schema) =>
-            codexRunner(
-              settings.model || undefined,
-              settings.effort || undefined,
-              claimReviewOperation(root, task, schema),
-            ),
-          ...(query.claimText
-            ? {}
-            : {
-                runner: codexRunner(settings.model || undefined, settings.effort || undefined, {
-                  root,
-                  acquisition: await loadAcquisitionConfig(root),
-                  extractionModel: settings.extractionModel || undefined,
-                  extractionEffort: settings.extractionEffort || undefined,
-                  ...answerFirstOperation(effectiveQuery),
-                }),
-              }),
-          signal: controller.signal,
-          provisional: (leads) => {
-            run.provisional = leads;
-          },
-          brief: (brief) => {
-            run.brief = brief;
-          },
-          progress: (event) => {
-            run.events.push(event);
-            if (run.events.length > 100) run.events.shift();
-          },
-        })
-          .then(async (result) => {
-            try {
-              const preference = (await libraryPreferences(root)).automaticSaving;
-              if (
-                route !== 'refresh' &&
-                query.cache !== 'memory' &&
-                !result.claimCheck &&
-                preference?.enabled &&
-                !['failed', 'not_configured', 'cancelled'].includes(result.status)
-              ) {
-                const decisions = result.items.map((item) => {
-                  const decision = personalSaveDecision(
-                    item.entity,
-                    item.match,
-                    item.relevance,
-                    preference.signalThreshold,
-                  );
-                  const reasons = [
-                    ...decision.reasons,
-                    ...((item.relevance?.value ?? -1) < preference.relevanceThreshold
-                      ? ['configured_topic_threshold']
-                      : []),
-                  ];
-                  return { id: item.entity.id, eligible: !reasons.length, reasons };
-                });
-                const selected = new Set(
-                  decisions.filter((row) => row.eligible).map((row) => row.id),
-                );
-                const saved = await saveEntities(
-                  result.items.filter((item) => selected.has(item.entity.id)),
-                  'eligible',
-                  root,
-                  'private',
-                  preference.signalThreshold,
-                  false,
-                  { runId: result.runId, query: result.query, kind: 'one-off' },
-                );
-                await saveQuery(
-                  {
-                    kind: 'automatic-personal-saving',
-                    runId: result.runId,
-                    query: result.query,
-                    policy: preference,
-                    decisions,
-                    saved,
-                  },
-                  resolve(root, '.signals/queries'),
-                );
-                run.events.push(
-                  `Automatic private saving: ${saved.changed.length} saved, ${decisions.filter((row) => !row.eligible).length} excluded. Decisions retained in private query history.`,
-                );
-              }
-              if (query.cache === 'private') await retainRun(result, root);
-              if (
-                route === 'refresh' &&
-                !['failed', 'not_configured', 'cancelled'].includes(result.status)
-              ) {
-                const target = result.items.filter((item) => item.entity.id === refreshId);
-                if (!target.length) throw new Error('refresh_target_missing');
-                const saved = await saveEntities(
-                  target,
-                  'refresh',
-                  root,
-                  refreshDestination,
-                  settings.threshold,
-                  false,
-                  { runId: result.runId, query: result.query, kind: 'corpus-refresh' },
-                );
-                if (saved.skipped.length) throw new Error('refresh_target_not_updated');
-              }
-            } catch (failure) {
-              result.gaps.push(
-                `Local persistence failed: ${failure instanceof Error ? failure.message : 'unknown'}`,
-              );
-              result.status = 'partial';
-            }
-            run.result = result;
-          })
-          .catch((failure: unknown) => {
-            run.error = failure instanceof Error ? failure.message : 'search_failed';
-            run.events.push(run.error);
-          })
-          .finally(() => {
-            active = false;
-            pruneRuns();
+        startJob('Starting research…', 'search_failed', async (run, progress) => {
+          const result = await search(effectiveQuery, {
+            root,
+            claimRunner: (task, schema) =>
+              codexRunner(
+                settings.model || undefined,
+                settings.effort || undefined,
+                claimReviewOperation(root, task, schema),
+              ),
+            ...(runner ? { runner } : {}),
+            signal: run.controller.signal,
+            provisional: (leads) => {
+              run.provisional = leads;
+            },
+            brief: (brief) => {
+              run.brief = brief;
+            },
+            progress,
           });
-        json(202, { id });
+          try {
+            const preference = (await libraryPreferences(root)).automaticSaving;
+            if (
+              route !== 'refresh' &&
+              query.cache !== 'memory' &&
+              !result.claimCheck &&
+              preference?.enabled &&
+              !['failed', 'not_configured', 'cancelled'].includes(result.status)
+            ) {
+              const decisions = result.items.map((item) => {
+                const decision = personalSaveDecision(
+                  item.entity,
+                  item.match,
+                  item.relevance,
+                  preference.signalThreshold,
+                );
+                const reasons = [
+                  ...decision.reasons,
+                  ...((item.relevance?.value ?? -1) < preference.relevanceThreshold
+                    ? ['configured_topic_threshold']
+                    : []),
+                ];
+                return { id: item.entity.id, eligible: !reasons.length, reasons };
+              });
+              const selected = new Set(
+                decisions.filter((row) => row.eligible).map((row) => row.id),
+              );
+              const saved = await saveEntities(
+                result.items.filter((item) => selected.has(item.entity.id)),
+                'eligible',
+                root,
+                'private',
+                preference.signalThreshold,
+                false,
+                { runId: result.runId, query: result.query, kind: 'one-off' },
+              );
+              await saveQuery(
+                {
+                  kind: 'automatic-personal-saving',
+                  runId: result.runId,
+                  query: result.query,
+                  policy: preference,
+                  decisions,
+                  saved,
+                },
+                resolve(root, '.signals/queries'),
+              );
+              progress(
+                `Automatic private saving: ${saved.changed.length} saved, ${decisions.filter((row) => !row.eligible).length} excluded. Decisions retained in private query history.`,
+              );
+            }
+            if (query.cache === 'private') await retainRun(result, root);
+            if (
+              route === 'refresh' &&
+              !['failed', 'not_configured', 'cancelled'].includes(result.status)
+            ) {
+              const target = result.items.filter((item) => item.entity.id === refreshId);
+              if (!target.length) throw new Error('refresh_target_missing');
+              const saved = await saveEntities(
+                target,
+                'refresh',
+                root,
+                refreshDestination,
+                settings.threshold,
+                false,
+                { runId: result.runId, query: result.query, kind: 'corpus-refresh' },
+              );
+              if (saved.skipped.length) throw new Error('refresh_target_not_updated');
+            }
+          } catch (failure) {
+            result.gaps.push(
+              `Local persistence failed: ${failure instanceof Error ? failure.message : 'unknown'}`,
+            );
+            result.status = 'partial';
+          }
+          run.result = result;
+        });
       } else if (/^runs\/[a-f0-9]{32}$/.test(route) && !mutation) {
         const run = runs.get(route.split('/')[1]!);
         let noteOriginalAvailable: boolean | null = null;
@@ -683,7 +696,7 @@ export function searchApi(
           { additionalProperties: false },
         );
         if (!Value.Check(schema, body)) throw new Error('invalid_lead_selection');
-        const result = [...runs.values()].find((run) => run.result?.runId === body.runId)?.result;
+        const result = resultFor(body.runId);
         const lead = result?.provisionalLeads?.find((lead) => lead.uri === body.uri);
         if (!result || !lead) throw new Error('unknown_lead_selection');
         json(
@@ -695,9 +708,7 @@ export function searchApi(
       } else if (route === 'save' && mutation) {
         if (!Value.Check(selection, body)) throw new Error('invalid_selection');
         const selected = body;
-        const result = [...runs.values()].find(
-          (run) => run.result?.runId === selected.runId,
-        )?.result;
+        const result = resultFor(selected.runId);
         if (
           !result ||
           selected.ids.some((id) => !result.items.some((item) => item.entity.id === id))
@@ -751,26 +762,19 @@ export function searchApi(
           body.keys.includes(record.key),
         );
         if (selected.length !== body.keys.length) throw new Error('unknown_library_identity');
-        if (active) throw new Error('ai_job_active');
-        active = true;
-        try {
+        await exclusive(async () => {
           const settings = await loadSettings(root);
-          json(
-            200,
-            await answerFromRetainedMaterial(
-              frozenLibraryMaterial(selected),
-              body.question,
-              settings.model || undefined,
-              settings.effort || undefined,
-            ),
+          return answerFromRetainedMaterial(
+            frozenLibraryMaterial(selected),
+            body.question,
+            settings.model || undefined,
+            settings.effort || undefined,
           );
-        } finally {
-          active = false;
-        }
+        });
       } else if (route === 'followup' && mutation) {
         if (!Value.Check(followupSchema, body)) throw new Error('invalid_followup');
         const question = body;
-        let result = [...runs.values()].find((run) => run.result?.runId === question.runId)?.result;
+        let result = resultFor(question.runId);
         if (!question.runId) {
           if (
             !question.ids.length ||
@@ -814,26 +818,17 @@ export function searchApi(
           question.ids.some((id) => !result.items.some((item) => item.entity.id === id))
         )
           throw new Error('unknown_result_identity');
-        if (active) {
-          json(409, { code: 'runner_busy' });
-          return true;
-        }
-        const settings = await loadSettings(root);
-        active = true;
-        try {
-          json(
-            200,
-            await follow(
-              result,
-              question.question,
-              question.ids,
-              settings.model || undefined,
-              settings.effort || undefined,
-            ),
+        const scoped = result;
+        await exclusive(async () => {
+          const settings = await loadSettings(root);
+          return follow(
+            scoped,
+            question.question,
+            question.ids,
+            settings.model || undefined,
+            settings.effort || undefined,
           );
-        } finally {
-          active = false;
-        }
+        });
       } else if (/^batches\/[a-f0-9-]{36}$/.test(route) && !mutation) {
         json(200, await loadQueryBatch(route.split('/')[1]!, root));
       } else if (route === 'run-list' && mutation) {
@@ -847,69 +842,31 @@ export function searchApi(
           { additionalProperties: false },
         );
         if (!Value.Check(schema, body)) throw new Error('invalid_query_list');
-        if (active) {
-          json(409, { code: 'runner_busy' });
-          return true;
-        }
-        const controller = new AbortController(),
-          id = randomBytes(16).toString('hex');
-        const run: ActiveRun = { controller, events: ['Starting explicit query-list research…'] };
-        runs.set(id, run);
-        active = true;
-        void runQueryListOnce({
-          root,
-          search,
-          ids: body.ids,
-          resume: body.resume,
-          signal: controller.signal,
-          progress: (event) => {
-            run.events.push(event);
-            if (run.events.length > 100) run.events.shift();
+        const { ids, resume } = body;
+        startJob(
+          'Starting explicit query-list research…',
+          'query_list_failed',
+          async (run, progress) => {
+            run.batch = await runQueryListOnce({
+              root,
+              search,
+              ids,
+              resume,
+              signal: run.controller.signal,
+              progress,
+            });
           },
-        })
-          .then((batch) => {
-            run.batch = batch;
-          })
-          .catch((failure) => {
-            run.error = failure instanceof Error ? failure.message : 'query_list_failed';
-          })
-          .finally(() => {
-            active = false;
-            pruneRuns();
-          });
-        json(202, { id });
+        );
       } else if (route === 'run-due' && mutation) {
         if (!Value.Check(Type.Object({}, { additionalProperties: false }), body))
           throw new Error('invalid_due_activation');
-        if (active) {
-          json(409, { code: 'runner_busy' });
-          return true;
-        }
-        const controller = new AbortController(),
-          id = randomBytes(16).toString('hex');
-        const run: ActiveRun = { controller, events: ['Starting finite due activation…'] };
-        runs.set(id, run);
-        active = true;
-        void runDueOnce({
-          root,
-          search,
-          signal: controller.signal,
-          progress: (event) => {
-            run.events.push(event);
-            if (run.events.length > 100) run.events.shift();
+        startJob(
+          'Starting finite due activation…',
+          'due_activation_failed',
+          async (run, progress) => {
+            run.due = await runDueOnce({ root, search, signal: run.controller.signal, progress });
           },
-        })
-          .then((due) => {
-            run.due = due;
-          })
-          .catch((failure: unknown) => {
-            run.error = failure instanceof Error ? failure.message : 'due_activation_failed';
-          })
-          .finally(() => {
-            active = false;
-            pruneRuns();
-          });
-        json(202, { id });
+        );
       } else if (route === 'cleanup' && mutation) {
         const settings = await loadSettings(root);
         await cleanRuns(root, settings.retentionDays);
