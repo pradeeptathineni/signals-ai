@@ -1008,13 +1008,37 @@ export async function runHistory(root = process.cwd()) {
 }
 export async function cleanRuns(root = process.cwd(), days = 7) {
   const directory = resolve(root, '.signals/runs');
+  // A retained note is history even after its bookmark is removed.
+  const collection = await readPrivateJson(root, 'library-state.json', null).catch(() => 'invalid');
+  const retainedNotes =
+    collection === null
+      ? new Set<string>()
+      : collection &&
+          typeof collection === 'object' &&
+          'version' in collection &&
+          collection.version === 1 &&
+          'collection' in collection &&
+          collection.collection &&
+          typeof collection.collection === 'object' &&
+          !Array.isArray(collection.collection)
+        ? new Set(
+            Object.keys(collection.collection).filter((key) => key.startsWith('note:private:')),
+          )
+        : null;
   for (const name of await readdir(directory).catch(() => [])) {
     if (!/^[a-f0-9-]{36}\.json$/.test(name)) continue;
     const path = join(directory, name);
     const stat = await lstat(path);
     if (!stat.isSymbolicLink() && stat.mtimeMs < Date.now() - days * 86400000) {
       const run = await loadRun(name.slice(0, -5), root);
-      if (!run.answerReceipt && !run.assessmentOf && !run.claimCheck) await rm(path);
+      if (
+        !run.answerReceipt &&
+        !run.assessmentOf &&
+        !run.claimCheck &&
+        retainedNotes !== null &&
+        !retainedNotes.has(`note:private:${run.runId}`)
+      )
+        await rm(path);
     }
   }
   const acquisitions = resolve(root, '.signals/acquisitions');

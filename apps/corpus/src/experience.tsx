@@ -71,7 +71,17 @@ function previewMatches(
 }
 function strengthLabel(finding: LibraryFinding) {
   const strength = finding.intrinsicStrength;
-  return `${finding.origin.format === 'legacy' ? 'Legacy review' : finding.origin.format === 'lead' ? 'Unassessed lead' : 'Native intrinsic signal'} (${strength.policy}): ${strength.score ?? 'unknown'}${strength.legacyLevel ? ` · review gate: ${strength.legacyLevel}` : ''}`;
+  const source =
+    finding.origin.format === 'legacy'
+      ? 'Legacy review'
+      : finding.origin.format === 'lead'
+        ? 'Unassessed lead'
+        : finding.origin.format === 'note'
+          ? 'Incomplete research note'
+          : finding.origin.format === 'answer'
+            ? 'Unassessed research answer'
+            : 'Native intrinsic signal';
+  return `${source} (${strength.policy}): ${strength.score ?? 'unknown'}${strength.legacyLevel ? ` · review gate: ${strength.legacyLevel}` : ''}`;
 }
 function locationState(): LocationState {
   const params = new URLSearchParams(window.location.search);
@@ -849,7 +859,13 @@ export function Experience() {
                       )}
                       <p className="desk-meta" title={strengthLabel(finding)}>
                         {finding.native?.evidence[0]?.publisher ??
-                          (finding.lead ? 'Saved link' : 'Historical review')}{' '}
+                          (finding.lead
+                            ? 'Saved link'
+                            : finding.partialNote
+                              ? 'Incomplete research'
+                              : finding.answer
+                                ? 'Retained research'
+                                : 'Historical review')}{' '}
                         · {date(finding.native?.evidence[0]?.fetchedAt ?? finding.observedAt)}
                       </p>
                       {(finding.native?.limits[0] ?? finding.lead?.limits[0]) && (
@@ -858,23 +874,25 @@ export function Experience() {
                         </p>
                       )}
                       <div className="desk-actions">
-                        {finding.answer ? (
+                        {finding.answer || finding.partialNote ? (
                           <>
                             <button onClick={() => navigate({ detail: finding.key })}>
-                              Reopen complete answer
+                              {finding.partialNote
+                                ? 'Reopen incomplete note'
+                                : 'Reopen complete answer'}
                             </button>
                             <button
                               onClick={() =>
                                 navigate({
                                   view: 'Search',
                                   mode: 'research',
-                                  run: finding.answer!.runId,
+                                  run: (finding.answer ?? finding.partialNote)!.runId,
                                   query: finding.title,
                                   detail: '',
                                 })
                               }
                             >
-                              Review citations
+                              {finding.partialNote ? 'Review original run' : 'Review citations'}
                             </button>
                           </>
                         ) : (
@@ -1318,6 +1336,26 @@ function FindingDetail({
             <pre>{finding.answerText}</pre>
             <pre>{JSON.stringify(finding.answer.provenance, null, 2)}</pre>
           </details>
+        </section>
+      )}
+      {finding.partialNote && (
+        <section aria-label="Incomplete retained note">
+          <h4>Incomplete research note · {finding.partialNote.status}</h4>
+          {finding.answerText ? (
+            <Brief text={finding.answerText} />
+          ) : (
+            <p>{finding.partialNote.unavailableReason ?? 'Original unavailable.'}</p>
+          )}
+          <p>
+            Original run {finding.partialNote.runId} · SHA256{' '}
+            {finding.partialNote.sha256 ?? 'unavailable'}. This is not a completed answer or
+            verified claim.
+          </p>
+          <ul>
+            {finding.partialNote.limits.map((limit, index) => (
+              <li key={index}>{limit}</li>
+            ))}
+          </ul>
         </section>
       )}
       <details>

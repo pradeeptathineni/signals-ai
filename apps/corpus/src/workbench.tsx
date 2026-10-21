@@ -75,6 +75,7 @@ export function Workbench({
   const [query, setQuery] = useState(''),
     [result, setResult] = useState<SearchResult | null>(null);
   const [earlyBrief, setEarlyBrief] = useState<SearchResult['brief']>();
+  const [retainedNarrative, setRetainedNarrative] = useState<string | null>(null);
   // Form selection only; a fresh typed question starts answer-first. Other callers stay explicit.
   const [researchMethod, setResearchMethod] = useState<'native' | 'answer-first' | 'primary-check'>(
     'answer-first',
@@ -216,6 +217,7 @@ export function Workbench({
       setTab('Search');
       setResult(null);
       setEarlyBrief(undefined);
+      setRetainedNarrative(null);
       setEvents(['Opening active research…']);
     }
   }, [monitorRun]);
@@ -487,6 +489,34 @@ export function Workbench({
                 : 'Retained from this research session. '}
             Inspect supporting evidence and limitations before acting.
           </p>
+          {result?.brief?.text &&
+            ['completed', 'partial', 'failed', 'cancelled'].includes(result.status) && (
+              <button
+                disabled={retainedNarrative === result.runId}
+                onClick={() =>
+                  void (async () => {
+                    try {
+                      const saved = await api<{ key: string }>('retain-answer', {
+                        runId: result.runId,
+                      });
+                      setRetainedNarrative(result.runId);
+                      setMessage(
+                        `${saved.key.startsWith('note:') ? 'Incomplete note' : 'Answer'} saved in Library. Its original status and evidence remain unchanged.`,
+                      );
+                      onCompleted?.(result.runId);
+                    } catch (failure) {
+                      setError(failure instanceof Error ? failure.message : String(failure));
+                    }
+                  })()
+                }
+              >
+                {retainedNarrative === result.runId
+                  ? 'Saved in Library'
+                  : result.answerReceipt
+                    ? 'Save answer in Library'
+                    : 'Save incomplete note in Library'}
+              </button>
+            )}
           {result?.assessmentOf && (
             <p>
               Assessment of retained answer {result.assessmentOf}. The original answer remains

@@ -20,7 +20,7 @@ export interface LibraryFinding {
   license: { state: 'known' | 'unknown'; values: string[]; openSource: boolean | null };
   access: { state: 'known' | 'unknown'; freeToUse: boolean | null };
   origin: {
-    format: 'native' | 'legacy' | 'lead' | 'answer';
+    format: 'native' | 'legacy' | 'lead' | 'answer' | 'note';
     destination: 'public' | 'private';
     recordId: string;
   };
@@ -35,6 +35,13 @@ export interface LibraryFinding {
     runId: string;
     sha256: string;
     provenance: { receipt: string; requestedModel: string | null; servedModel: string | null };
+    limits: string[];
+  };
+  partialNote?: {
+    runId: string;
+    sha256: string | null;
+    status: 'partial' | 'failed' | 'cancelled' | 'unknown';
+    unavailableReason: string | null;
     limits: string[];
   };
   native?: Entity;

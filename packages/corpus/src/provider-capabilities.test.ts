@@ -7,6 +7,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   realpath,
   rm,
   symlink,
@@ -17,6 +18,11 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, it } from 'vitest';
 import { retainRun } from './search-store.js';
+import { retainIncompleteNarrative } from './library.js';
+import { saveLibraryLead } from './library-leads.js';
+import { retainResearchAnswer } from './research-answer.js';
+import { previewProject } from './project-preview.js';
+import { attachOpportunity, registerProject } from './projects.js';
 import { budgets, type SearchResult } from '../../domain/src/search-contract.js';
 
 const hash = (bytes: Uint8Array | string) => createHash('sha256').update(bytes).digest('hex');
@@ -148,6 +154,176 @@ it('negotiates a portable owner boundary and reads exact partial answer bytes wi
     const opened = await open(reference);
     expect(opened.status).toBe(200);
     const exact = (await opened.json()) as { ref: typeof reference; content: string };
+    const libraryResponse = await fetch(first.base + 'provider/library?q=offline&limit=1', {
+      headers: owned,
+    });
+    expect(libraryResponse.status).toBe(200);
+    const libraryPage = (await libraryResponse.json()) as {
+      records: { ref: typeof reference; open_capability: string }[];
+      owner_coverage: unknown[];
+    };
+    expect(libraryPage.records).toContainEqual(
+      expect.objectContaining({
+        ref: expect.objectContaining({ kind: 'answer', id: run.runId, digest: hash(bytes) }),
+        open_capability: 'owner_route',
+      }),
+    );
+    expect(libraryPage.owner_coverage).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ owner: 'signals-ai', state: 'connected' }),
+      ]),
+    );
+    const note: SearchResult = {
+      ...run,
+      runId: randomUUID(),
+      query: 'offline note evidence',
+      status: 'failed',
+      answerReceipt: undefined,
+      gaps: ['Fixture stopped before evidence assessment.'],
+    };
+    await retainIncompleteNarrative(root, note);
+    const page = (query: string) =>
+      fetch(first.base + 'provider/library?' + query, { headers: owned });
+    const notePageResponse = await page('q=offline&kinds=research_note&limit=1');
+    expect(notePageResponse.status).toBe(200);
+    const notePage = (await notePageResponse.json()) as {
+      records: { ref: typeof reference; domain_status: string }[];
+      next_cursor: string | null;
+    };
+    expect(notePage.records[0]).toMatchObject({
+      ref: { kind: 'research_note', id: note.runId },
+      domain_status: 'incomplete:failed',
+    });
+    for (const q of ['"offline note"', 'offlin', 'offlne']) {
+      const found = (await (
+        await page('q=' + encodeURIComponent(q) + '&kinds=research_note')
+      ).json()) as { records: { ref: typeof reference }[] };
+      expect(
+        found.records.map((row) => row.ref.id),
+        q,
+      ).toContain(note.runId);
+    }
+    expect((await open(notePage.records[0]!.ref)).status).toBe(200);
+    const firstPage = (await (await page('q=offline&limit=1')).json()) as {
+      records: unknown[];
+      next_cursor: string | null;
+    };
+    expect(firstPage.records).toHaveLength(1);
+    expect(firstPage.next_cursor).toEqual(expect.any(String));
+    expect(
+      (
+        (await (
+          await page('q=offline&limit=1&cursor=' + encodeURIComponent(firstPage.next_cursor!))
+        ).json()) as { records: unknown[] }
+      ).records,
+    ).toHaveLength(1);
+    expect((await page('q=offline&kinds=unsupported')).status).toBe(400);
+    expect((await page('q=offline&project_ref=unsupported')).status).toBe(400);
+    expect((await page('q=offline&cursor=invalid')).status).toBe(409);
+    const publicEntityName = (await readdir('signals/entities')).find((name) =>
+      name.endsWith('.json'),
+    )!;
+    const entityOriginal = await readFile(join('signals/entities', publicEntityName));
+    await mkdir(join(root, 'signals/entities'), { recursive: true });
+    await mkdir(join(root, '.signals/corpus/entities'), { recursive: true });
+    await writeFile(join(root, 'signals/entities', publicEntityName), entityOriginal);
+    await writeFile(join(root, '.signals/corpus/entities', publicEntityName), entityOriginal);
+    const entities = (await (await page('kinds=entity')).json()) as {
+      records: { ref: typeof reference; visibility: string }[];
+    };
+    expect(entities.records).toHaveLength(2);
+    expect(entities.records.map((row) => row.ref.id).sort()).toEqual([
+      `private:${publicEntityName.slice(0, -5)}`,
+      `public:${publicEntityName.slice(0, -5)}`,
+    ]);
+    for (const entity of entities.records) {
+      const original = await open(entity.ref);
+      expect(original.status).toBe(200);
+      expect(((await original.json()) as { content: string }).content).toBe(
+        entityOriginal.toString(),
+      );
+    }
+    const selected = join(root, 'selected');
+    await mkdir(selected);
+    await writeFile(
+      join(selected, 'README.md'),
+      '# Offline owner project\n\nInspect the selected entity.\n',
+    );
+    const project = (await previewProject({ kind: 'local', path: selected }, '/example')).project;
+    await registerProject(root, project);
+    await attachOpportunity(root, {
+      projectId: project.id,
+      findingKey: `native:public:${publicEntityName.slice(0, -5)}`,
+      need: 'Inspect evidence',
+      reason: 'Explicit offline fixture association',
+      nextAction: 'explore',
+    });
+    const projectRef = {
+      owner: 'signals-ai',
+      kind: 'project',
+      id: project.id,
+      revision: null,
+      digest: null,
+    };
+    const linked = (await (
+      await page('kinds=entity&project_ref=' + encodeURIComponent(JSON.stringify(projectRef)))
+    ).json()) as { records: { ref: typeof reference; project_refs: (typeof reference)[] }[] };
+    expect(linked.records).toHaveLength(1);
+    expect(linked.records[0]?.ref.id).toBe(`public:${publicEntityName.slice(0, -5)}`);
+    expect(linked.records[0]?.project_refs[0]).toMatchObject({
+      id: project.id,
+      digest: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
+    expect((await open(linked.records[0]!.project_refs[0]!)).status).toBe(200);
+    expect(
+      (
+        await page(
+          'kinds=entity&project_ref=' +
+            encodeURIComponent(JSON.stringify({ ...projectRef, digest: 'f'.repeat(64) })),
+        )
+      ).status,
+    ).toBe(409);
+    const savedLead = await saveLibraryLead(
+      root,
+      {
+        uri: 'https://example.org/s04-lead',
+        name: 'S04 candidate lead',
+        description: 'Source not assessed',
+        limits: ['Requires independent primary check.'],
+      },
+      run.runId,
+      run.query,
+    );
+    const leadPage = (await (await page('q=candidate&kinds=lead')).json()) as {
+      records: { ref: typeof reference }[];
+    };
+    expect(leadPage.records).toHaveLength(1);
+    expect(leadPage.records[0]?.ref.id).toBe(savedLead.id);
+    expect((await open(leadPage.records[0]!.ref)).status).toBe(200);
+    const imported = await retainResearchAnswer(
+      root,
+      {
+        query: 'older imported constellation',
+        answer: 'Original older Ω synthesis; no new generation.',
+        observedAt: '2026-10-19T10:00:00Z',
+        provenance: {
+          receipt: 'authored offline import fixture',
+          requestedModel: null,
+          servedModel: null,
+        },
+      },
+      [],
+    );
+    const importedBytes = await readFile(imported.answerPath);
+    const importedPage = (await (await page('q=constellation&kinds=imported_answer')).json()) as {
+      records: { ref: typeof reference }[];
+    };
+    expect(importedPage.records).toHaveLength(1);
+    expect(importedPage.records[0]?.ref.id).toBe(imported.runId);
+    expect(
+      ((await (await open(importedPage.records[0]!.ref)).json()) as { content: string }).content,
+    ).toBe(importedBytes.toString());
+    expect(await readFile(imported.answerPath)).toEqual(importedBytes);
     expect(exact.content).toBe(bytes.toString());
     expect(exact.ref.digest).toBe(hash(bytes));
     expect(exact.ref.revision).toBe('sha256:' + hash(bytes));
@@ -188,6 +364,7 @@ it('negotiates a portable owner boundary and reads exact partial answer bytes wi
     const escapedId = randomUUID();
     await symlink(join(root, 'probes'), join(root, '.signals/runs', escapedId + '.json'));
     expect((await open({ ...reference, id: escapedId })).status).toBe(503);
+    await rm(join(root, '.signals/runs', escapedId + '.json'));
     const forbidden = await fetch(first.base + 'search', {
       method: 'POST',
       headers: { ...auth, origin: 'https://untrusted.example' },
@@ -257,12 +434,47 @@ it('negotiates a portable owner boundary and reads exact partial answer bytes wi
     const standalone = await consume(first.base);
     expect(standalone.exit).toBe(0);
     expect((JSON.parse(standalone.stdout) as { content: string }).content).toBe(bytes.toString());
+    await copyFile(
+      fileURLToPath(new URL('../../../scripts/examples/library-consumer.mjs', import.meta.url)),
+      join(consumer, 'library-consumer.mjs'),
+    );
+    const consumeLibrary = async (base: string) => {
+      const child = spawn(
+        process.execPath,
+        ['library-consumer.mjs', base, scope.identity, scope.epoch, 'offline'],
+        {
+          cwd: consumer,
+          env: {
+            PATH: process.execPath.slice(0, process.execPath.lastIndexOf('/')) + ':/usr/bin:/bin',
+            HOME: consumer,
+            TMPDIR: consumer,
+          },
+          stdio: ['ignore', 'pipe', 'pipe'],
+        },
+      );
+      let stdout = '',
+        stderr = '';
+      child.stdout.on('data', (data: Buffer) => {
+        stdout += data.toString();
+      });
+      child.stderr.on('data', (data: Buffer) => {
+        stderr += data.toString();
+      });
+      const [exit] = await once(child, 'close');
+      return { exit, stdout, stderr };
+    };
+    const libraryBefore = await consumeLibrary(first.base);
+    expect(libraryBefore.exit, libraryBefore.stderr).toBe(0);
+    expect((JSON.parse(libraryBefore.stdout) as { records: unknown[] }).records).toHaveLength(2);
     await stop(first.child);
     const restarted = await launch(root);
     children.push(restarted.child);
     const reopened = await consume(restarted.base);
     expect(reopened.exit).toBe(0);
     expect(reopened.stdout).toBe(standalone.stdout);
+    const libraryAfter = await consumeLibrary(restarted.base);
+    expect(libraryAfter.exit, libraryAfter.stderr).toBe(0);
+    expect((JSON.parse(libraryAfter.stdout) as { records: unknown[] }).records).toHaveLength(2);
     expect(await readFile(join(root, 'probes'))).toEqual(probes);
     expect(await readFile(join(root, '.signals/requests/ledger.json'))).toEqual(ledger);
     expect(await readFile(join(root, '.signals/runs', run.runId + '.json'))).toEqual(bytes);

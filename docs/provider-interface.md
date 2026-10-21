@@ -12,7 +12,7 @@ Register the complete trusted base URL, for example `http://127.0.0.1:5178/signa
 - `deduplication`: accepted S02 identity, epoch and durable request retention contract.
 - `access`: relative routes and origin/session requirements, describing this endpoint rather than authorizing arbitrary discovery or execution.
 
-Capability reads never initialize storage, probe a native CLI or start research. Available means the HTTP owner contract is available; native generation readiness remains separate. `process_observation:true` advertises K13's bounded owner snapshot. Consumers check required operations and target kinds as well as versions. Unsupported operations disable only that action, not unrelated products. K01/K12 support here is bounded to exact retained-run references; aggregate Library search and summary pagination are not advertised.
+Capability reads never initialize storage, probe a native CLI or start research. Available means the HTTP owner contract is available; native generation readiness remains separate. `process_observation:true` advertises K13's bounded owner snapshot. Consumers check required operations and target kinds as well as versions. Unsupported operations disable only that action, not unrelated products. K12 now advertises bounded `search_library` and exact owner reads for its supported kinds.
 
 Identity reuses S02's durable scope. Missing/corrupt/unreadable scope yields `503 provider_unavailable`, never an invented instance or repaired ledger. For an explicitly selected fresh workspace, obtain the existing session token and explicitly `POST request-scope` with `{}`. Session acquisition includes native readiness and is separate from capability/record reads. Never initialize another scope to resolve uncertain work, storage loss or restore. Already registered callers can pin `x-signals-instance-id` and `x-signals-owner-epoch` while negotiating.
 
@@ -26,13 +26,19 @@ x-signals-instance-id: <trusted registered instance_id>
 x-signals-owner-epoch: <trusted registered epoch>
 ```
 
-The closed reference has `owner`, `kind`, `id`, `revision`, `digest`. Supported owner is `signals-ai`; kinds are `answer` and `research_run`; IDs are UUIDs selecting existing private `.signals/runs` snapshots. Answers additionally require a valid answer receipt. Arbitrary paths/open commands, extra fields, entity records, legacy query-import projections and other formats are unsupported on this boundary. Existing Library routes retain their behavior. Missing data never triggers research.
+The closed reference has `owner`, `kind`, `id`, `revision`, `digest`. Supported owner is `signals-ai`. `answer`, `research_run` and `research_note` use UUID IDs selecting existing private `.signals/runs` snapshots; answers require a valid answer receipt, while notes require an incomplete narrative without one. `imported_answer` uses the older answer's run UUID and opens its unchanged `.signals/queries` record. `entity` IDs have `public:` or `private:` before the native entity ID, preserving duplicate visibility identities. `lead` and `project` use their existing owner IDs and open deterministic validated per-record JSON projections from their aggregate stores. Legacy published bundles have no exact per-record reader and are excluded from this provider search. Arbitrary paths/open commands and extra reference fields are unsupported. Missing data never triggers research.
 
-The response includes exact original UTF8 JSON in `content`, `content_type:"application/json"`, `encoding:"utf8"`, owner instance/epoch, `storage:"retained_run_snapshot"` and a resolved `ref`. Digest is lowercase SHA256 over the original bytes; revision is `sha256:<digest>`. Original CRLF, Unicode, partial/failed status, narrative, dates and limits survive. The historical reader validates the snapshot, but its recalculated replay projection is not substituted for original bytes. A change during validation is refused. These reads write no records, Library selections or job state.
+The response includes bounded UTF8 JSON in `content`, `content_type:"application/json"`, `encoding:"utf8"`, owner instance/epoch, a storage label and a resolved `ref`. Runs, imports and native entities return their exact original file bytes. Lead and project records return the canonical validated per-record JSON projection. Digest is lowercase SHA256 over those returned bytes; revision is `sha256:<digest>`. Original run CRLF, Unicode, partial/failed status, narrative, dates and limits survive. The historical reader validates the snapshot, but its recalculated replay projection is not substituted for original bytes. A change during validation is refused. These reads write no records, Library selections or job state.
 
 This follows the existing cooperative immutable-store boundary. The before/after comparison is not an atomic transaction against external editors or pathname swaps that ignore that boundary.
 
 Null revision/digest explicitly resolves the current retained immutable snapshot. Preserve the returned complete reference to reopen that exact version. Mismatched non-null revision/digest returns `409 provider_record_changed`; no successor is substituted. Retained history is not automatically a saved Library answer. Memory-only content without a snapshot stays unavailable after restart. Successful private loopback reading grants no public/export authority; private data remains excluded from public assets.
+
+## Search the retained Library
+
+`GET provider/library?q=<Unicode text>&limit=<1..100>&kinds=<comma-separated kinds>&project_ref=<encoded RecordRef>&cursor=<opaque>` requires the same trusted owner headers as record reads. All filters are optional. Empty `q` returns recent saved records; default limit is 30, maximum 100. Supported kind filters are `answer`, `research_note`, `imported_answer`, `entity` and `lead`. A project filter must name a current Signals `project` ref; stale project digest/revision is refused. Unknown or repeated filters fail explicitly. Search reuses the owner Library's phrase, prefix and typo index; retrieval rank never becomes evidence strength.
+
+The K12 v1 page contains `records`, `next_cursor` and `owner_coverage`. Each summary contains an owner-qualified exact ref, title, bounded description, kind, associated project refs, visibility, qualification, observation time and `open_capability`. A missing or invalid original appears as `unavailable`, never regenerated content. The cursor binds the filters and current result snapshot; a changed or malformed cursor returns `409` for a fresh first-page search. A corrupt run can reduce answer coverage while valid unrelated stores remain searchable; `owner_coverage.reason` reports that gap. These aggregate summaries include no private answer text or personal notes. Unsaving removes an item from aggregate selection without deleting its original history or its previously issued exact ref.
 
 Missing owner bindings return `428 provider_owner_binding_required`. Wrong instance/epoch/reference owner returns `409`. Missing snapshots return `404 provider_record_not_found`. Malformed references/extra query fields return `400`. Unsafe, oversized, corrupt or unsupported snapshots return `503 provider_record_unavailable`. Errors provide bounded `code` and actionable `reason` without private paths. Unavailable transport never causes inference fallback or automatic owner rebinding.
 
@@ -66,3 +72,11 @@ node provider-consumer.mjs \
 ```
 
 Supply actual IDs from trusted registration and selected retained history. The consumer performs no install, native readiness probe or model call. This demonstrates the provider protocol, not actual Deep integration or live research quality. The unchanged dependency audit remains a separate release gate.
+
+Copy [library-consumer.mjs](../scripts/examples/library-consumer.mjs) alone into a Node 24 directory to search the owner and verify each returned exact read:
+
+```sh
+node library-consumer.mjs http://127.0.0.1:5178/signals-ai/__signals/api/ INSTANCE_UUID EPOCH_UUID "aurora"
+```
+
+The offline `library-built-demo.test.ts` runs an authored callback behind actual built Signals assets, restarts the HTTP owner with generation disabled, and exercises this external consumer plus standalone Library navigation. Its fixture observations are not native research-quality evidence.

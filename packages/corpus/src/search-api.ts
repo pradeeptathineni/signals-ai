@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
   providerCapabilities,
+  providerLibrary,
   providerRecord,
   ProviderError,
   validateProviderHeaders,
@@ -51,7 +52,12 @@ import {
 } from './search-followup.js';
 import { checkPrimaryMaterial } from './search-reuse.js';
 import { selectSavedEntity } from './search-selection.js';
-import { loadLibrary, setLibrarySaved, retainedIntroducingParent } from './library.js';
+import {
+  loadLibrary,
+  setLibrarySaved,
+  retainedIntroducingParent,
+  retainIncompleteNarrative,
+} from './library.js';
 import { libraryPreferences, librarySearchSchema, matchLibrary } from './library-meaning.js';
 import { saveQuery } from './research-store.js';
 import { saveLibraryLead } from './library-leads.js';
@@ -297,6 +303,17 @@ export function searchApi(
             request.headers['x-signals-owner-epoch'],
           ),
         );
+      else if (route === 'provider/library' && !mutation)
+        json(
+          200,
+          await providerLibrary(
+            root,
+            request.url!,
+            request.headers['x-signals-provider-version'],
+            request.headers['x-signals-instance-id'],
+            request.headers['x-signals-owner-epoch'],
+          ),
+        );
       else if (route === 'provider/processes' && !mutation) {
         await validateProcessObserver(
           root,
@@ -336,8 +353,10 @@ export function searchApi(
         json(found.receipt ? 200 : 404, found);
       } else if (route === 'settings')
         json(200, mutation ? await saveSettings(body, root) : await loadSettings(root));
-      else if (route === 'library' && !mutation) json(200, { findings: await loadLibrary(root) });
-      else if (route === 'question' && mutation) {
+      else if (route === 'library' && !mutation) {
+        const coverage: string[] = [];
+        json(200, { findings: await loadLibrary(root, { coverage }), coverage });
+      } else if (route === 'question' && mutation) {
         const schema = Type.Object(
           { question: Type.String({ minLength: 1, maxLength: 2000 }) },
           { additionalProperties: false },
@@ -942,9 +961,22 @@ export function searchApi(
           { additionalProperties: false },
         );
         if (!Value.Check(schema, body)) throw new Error('invalid_answer_selection');
-        const result = resultFor(body.runId);
+        const result = resultFor(body.runId) ?? (await loadRun(body.runId, root).catch(() => null));
+        if (!result?.brief?.text) throw new Error('unknown_answer_selection');
+        if (!result.answerReceipt && ['partial', 'failed', 'cancelled'].includes(result.status)) {
+          const key = `note:private:${result.runId}`;
+          try {
+            json(200, await retainIncompleteNarrative(root, result));
+          } catch (error) {
+            const retained = await loadRun(result.runId, root)
+              .then((run) => run.brief?.text === result.brief?.text)
+              .catch(() => false);
+            if (!retained) throw error;
+            json(500, { code: 'note_retained_library_update_failed', retained: true, key });
+          }
+          return true;
+        }
         if (
-          !result?.brief?.text ||
           result.answerReceipt?.state !== 'unassessed' ||
           result.answerReceipt.confidence !== 'unknown'
         )

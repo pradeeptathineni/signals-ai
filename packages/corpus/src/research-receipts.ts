@@ -1,4 +1,5 @@
 import { readdir, lstat, realpath } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import type { SearchResult } from '../../domain/src/search-contract.js';
 import { budgets } from '../../domain/src/search-contract.js';
@@ -80,12 +81,34 @@ export async function importedAnswers(root: string): Promise<SearchResult[]> {
   return results;
 }
 
-export async function loadAnswerLibrary(root: string): Promise<LibraryFinding[]> {
-  const imported = await importedAnswers(root);
+export async function loadAnswerLibrary(
+  root: string,
+  coverage: string[] = [],
+): Promise<LibraryFinding[]> {
+  const imported = await importedAnswers(root).catch((error: unknown) => {
+    if (
+      error instanceof Error &&
+      /^(?:unsafe_|symlink_|invalid_private_state_path)/.test(error.message)
+    )
+      throw error;
+    coverage.push('Imported answer store could not be fully validated; its records are excluded.');
+    return [];
+  });
   const runs: SearchResult[] = [];
   for (const name of await entries(root, 'runs')) {
-    const raw = (await readPrivateJson(root, `runs/${name}`, null)) as SearchResult | null;
-    if (raw?.answerReceipt) runs.push(await loadRun(name.slice(0, -5), root));
+    try {
+      const raw = (await readPrivateJson(root, `runs/${name}`, null)) as SearchResult | null;
+      if (raw?.answerReceipt) runs.push(await loadRun(name.slice(0, -5), root));
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        /^(?:unsafe_|symlink_|invalid_private_state_path)/.test(error.message)
+      )
+        throw error;
+      coverage.push(
+        `Retained run ${name} is unavailable or invalid; other records remain readable.`,
+      );
+    }
   }
   const identities = new Map<string, SearchResult>();
   for (const run of [...imported, ...runs]) {
@@ -131,4 +154,65 @@ export async function loadAnswerLibrary(root: string): Promise<LibraryFinding[]>
       },
     };
   });
+}
+
+/** Bookmark projection never upgrades an incomplete run to an answer receipt. */
+export async function loadRetainedNotes(root: string, ids: string[]): Promise<LibraryFinding[]> {
+  const findings: LibraryFinding[] = [];
+  for (const id of ids) {
+    let run: SearchResult | null;
+    let unavailableReason: string | null = null;
+    try {
+      if (!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(id))
+        throw new Error('invalid_run_identity');
+      const path = resolve(root, '.signals/runs', `${id}.json`);
+      if (!(await lstat(path)).isFile()) throw new Error('missing_original');
+      run = await loadRun(id, root);
+      if (
+        !['partial', 'failed', 'cancelled'].includes(run.status) ||
+        run.answerReceipt ||
+        !run.brief?.text.trim()
+      )
+        throw new Error('unsupported_incomplete_original');
+    } catch (error) {
+      run = null;
+      unavailableReason = error instanceof Error ? error.message : 'unavailable_original';
+    }
+    const status =
+      run?.status === 'partial' || run?.status === 'cancelled' || run?.status === 'failed'
+        ? run.status
+        : 'unknown';
+    findings.push({
+      key: `note:private:${id}`,
+      id,
+      title: run?.query ?? 'Unavailable retained note',
+      uri: '#',
+      description: run
+        ? `${status} research note; original evidence and cleanup remain as recorded.`
+        : 'Original retained note is unavailable; no research was restarted.',
+      kind: 'research-note',
+      aliases: [],
+      domains: [],
+      capabilities: [],
+      useCases: [],
+      technologies: [],
+      tags: [],
+      sourceNames: [],
+      intrinsicStrength: { policy: 'incomplete-note', score: null },
+      license: { state: 'unknown', values: [], openSource: null },
+      access: { state: 'unknown', freeToUse: null },
+      origin: { format: 'note', destination: 'private', recordId: id },
+      saved: true,
+      observedAt: null,
+      ...(run ? { answerText: run.brief!.text } : {}),
+      partialNote: {
+        runId: id,
+        sha256: run ? createHash('sha256').update(run.brief!.text).digest('hex') : null,
+        status,
+        unavailableReason,
+        limits: run?.gaps ?? ['Original missing or invalid; inspect owner history.'],
+      },
+    });
+  }
+  return findings;
 }
