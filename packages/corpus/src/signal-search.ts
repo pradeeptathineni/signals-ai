@@ -29,7 +29,7 @@ import type { SelectedPrimaryProducer } from './search-selected-source.js';
 import { atomicJson, saveEntities, retainRun, loadEntities, loadRun } from './search-store.js';
 import { planResearchRetention } from './research-answer.js';
 import { resolve } from 'node:path';
-import { loadAcquisitionConfig } from './search-acquisition.js';
+import { loadAcquisitionConfig, type AcquisitionConfig } from './search-acquisition.js';
 import { configuredDocumentFetch } from './search-extractors.js';
 import { contextualize, entityDelta } from '../../domain/src/search-priority.js';
 import { loadPersonal } from './search-personal.js';
@@ -778,6 +778,7 @@ export async function signalSearch(
     fetch?: typeof fetchEvidence;
     root?: string;
     acquisitionHints?: AcquisitionHints;
+    acquisition?: AcquisitionConfig;
   } = {},
 ): Promise<SearchResult> {
   const request = { ...parseRequest(input), route: 'native' as const };
@@ -835,7 +836,8 @@ export async function signalSearch(
   };
   let receivingBrief = true;
   try {
-    const acquisitionConfig = await loadAcquisitionConfig(dependencies.root ?? process.cwd());
+    const acquisitionConfig =
+      dependencies.acquisition ?? (await loadAcquisitionConfig(dependencies.root ?? process.cwd()));
     const runner =
       dependencies.runner ??
       codexRunner(undefined, undefined, {

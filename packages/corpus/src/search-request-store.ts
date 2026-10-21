@@ -42,6 +42,8 @@ const recordSchema = Type.Object(
     key,
     requestId: text,
     digest: Type.String({ pattern: '^[a-f0-9]{64}$' }),
+    payloadDigest: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$' })),
+    configurationDigest: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$' })),
     state: Type.Enum(['admitted', 'unknown', 'complete', 'partial', 'failed', 'cancelled']),
     reason: text,
     observedAt: Type.String({ format: 'date-time' }),
@@ -65,17 +67,37 @@ type Ledger = Omit<Static<typeof ledgerSchema>, 'checksum'>;
 const checksum = (ledger: Ledger) =>
   createHash('sha256').update(JSON.stringify(ledger)).digest('hex');
 
-// This closed envelope contains only strings, nulls and plain objects. Sorted UTF16
-// property names and JSON string encoding implement its JCS subset (no numbers).
-const canonical = (value: unknown): string =>
-  value === null || typeof value === 'string'
-    ? JSON.stringify(value)
-    : '{' +
-      Object.entries(value as Record<string, unknown>)
-        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-        .map(([name, child]) => JSON.stringify(name) + ':' + canonical(child))
-        .join(',') +
-      '}';
+// RFC8785 ordering/JSON primitive encoding, for validated JSON-only inputs.
+const canonical = (value: unknown): string => {
+  if (typeof value === 'string' && !value.isWellFormed())
+    throw new Error('invalid_request_unicode');
+  if (value === null || ['string', 'boolean', 'number'].includes(typeof value)) {
+    if (typeof value === 'number' && !Number.isFinite(value))
+      throw new Error('invalid_configuration_number');
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']';
+  if (!value || typeof value !== 'object') throw new Error('invalid_configuration_json');
+  return (
+    '{' +
+    Object.entries(value)
+      .filter(([, child]) => child !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([name, child]) => canonical(name) + ':' + canonical(child))
+      .join(',') +
+    '}'
+  );
+};
+export const requestConfigurationDigest = (snapshot: unknown) =>
+  createHash('sha256').update(canonical(snapshot)).digest('hex');
+const configurationRef = (digest?: string) =>
+  digest
+    ? {
+        schema_version: 'signals-execution-v1',
+        digest_algorithm: 'jcs-sha256-v1',
+        digest,
+      }
+    : null;
 export function parseResearchRequest(input: unknown): ResearchRequest {
   if (
     !Value.Check(requestSchema, input) ||
@@ -203,6 +225,7 @@ export function requestStore(root: string) {
     code: record ? 'request_found' : 'not_found',
     id: record?.id ?? null,
     receipt: record ? receipt(record) : null,
+    execution_configuration: configurationRef(record?.configurationDigest),
     deduplication: scope(ledger),
     reason: record
       ? null
@@ -296,36 +319,72 @@ export function requestStore(root: string) {
       );
     },
     async job(id: string) {
+      try {
+        await lstat(folder);
+      } catch (cause) {
+        if ((cause as NodeJS.ErrnoException).code === 'ENOENT') return null;
+        throw new Error('request_store_unavailable', { cause });
+      }
       const ledger = await load();
       return view(
         ledger,
         ledger.records.find((row) => row.id === id),
       );
     },
-    async admit(input: ResearchRequest, epoch: string) {
+    async admit(
+      input: ResearchRequest,
+      epoch: string,
+      configurationDigest?: string,
+      expectedConfigurationDigest?: string,
+    ) {
+      for (const digest of [configurationDigest, expectedConfigurationDigest]) {
+        if (digest !== undefined && !/^[a-f0-9]{64}$/.test(digest))
+          throw new Error('invalid_execution_configuration_digest');
+      }
       return write(
         (ledger) => {
           checkEpoch(ledger, epoch);
-          const digest = createHash('sha256')
-            .update(
-              canonical({
-                action: 'search',
-                owner: { identity: ledger.identity, epoch: ledger.epoch },
-                request: input,
-              }),
-            )
-            .digest('hex');
+          const semantic = { ...input } as Partial<ResearchRequest>;
+          delete semantic.request_id;
+          delete semantic.idempotency_key;
+          const binding = {
+            action: 'search',
+            owner: { identity: ledger.identity, epoch: ledger.epoch },
+            request: semantic,
+          };
+          const payloadDigest = requestConfigurationDigest(binding);
           const existing = ledger.records.find((row) => row.key === input.idempotency_key);
           if (existing) {
-            if (existing.digest !== digest) throw new Error('request_conflict');
+            if (
+              !existing.payloadDigest ||
+              (configurationDigest !== undefined && !existing.configurationDigest)
+            )
+              throw new Error('request_identity_version_requires_reconciliation');
+            if (existing.payloadDigest !== payloadDigest) throw new Error('request_conflict');
+            if (
+              expectedConfigurationDigest !== undefined &&
+              existing.configurationDigest !== expectedConfigurationDigest
+            )
+              throw new Error('request_configuration_conflict');
             return { created: false, record: existing, ...view(ledger, existing) };
           }
+          if (
+            expectedConfigurationDigest !== undefined &&
+            configurationDigest !== expectedConfigurationDigest
+          )
+            throw new Error('request_configuration_changed');
           if (ledger.records.length >= 2000) throw new Error('request_ledger_full');
+          const digest = requestConfigurationDigest({
+            ...binding,
+            execution_configuration: configurationRef(configurationDigest),
+          });
           const record: RequestRecord = {
             id: randomUUID().replaceAll('-', ''),
             key: input.idempotency_key,
             requestId: input.request_id,
             digest,
+            payloadDigest,
+            ...(configurationDigest ? { configurationDigest } : {}),
             state: 'admitted',
             reason: 'admitted_no_dispatch_intent',
             observedAt: new Date().toISOString(),

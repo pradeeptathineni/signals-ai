@@ -2,10 +2,15 @@ import { mkdtemp, readFile, realpath, rm, writeFile, open } from 'node:fs/promis
 import { spawn } from 'node:child_process';
 import type * as FileSystem from 'node:fs/promises';
 import { once } from 'node:events';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
-import { requestStore, parseResearchRequest } from './search-request-store.js';
+import {
+  requestStore,
+  parseResearchRequest,
+  requestConfigurationDigest,
+} from './search-request-store.js';
 
 const envelope = {
   schema_version: '1.0',
@@ -29,6 +34,92 @@ const envelope = {
 vi.mock('node:fs/promises', async (original) => {
   const actual = await original<typeof FileSystem>();
   return { ...actual, open: vi.fn(actual.open) };
+});
+
+it('matches the independent JCS golden and binds configuration while excluding transport identities', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'request-golden-')));
+  try {
+    const store = requestStore(root);
+    await store.initialize();
+    const ledger = {
+      version: 1,
+      identity: '11111111-1111-4111-8111-111111111111',
+      epoch: '22222222-2222-4222-8222-222222222222',
+      records: [],
+    };
+    const checksum = createHash('sha256').update(JSON.stringify(ledger)).digest('hex');
+    await writeFile(
+      join(root, '.signals/requests/ledger.json'),
+      JSON.stringify({ ...ledger, checksum }),
+    );
+    await writeFile(join(root, '.signals/requests/head'), checksum);
+    const snapshot = {
+      schema_version: 'signals-execution-v1',
+      runner: 'codex',
+      model: 'fixture-model',
+      effort: 'low',
+      acquisition: { publicApis: false },
+      followedSources: [],
+    };
+    const digest = requestConfigurationDigest(snapshot);
+    expect(digest).toBe('41c6f34fd9227b5187c0daf8e19c8b60ebcd54fbc33261a56b49a14b470c45da');
+    expect(
+      requestConfigurationDigest({
+        followedSources: [],
+        acquisition: { publicApis: false },
+        effort: 'low',
+        model: 'fixture-model',
+        runner: 'codex',
+        schema_version: 'signals-execution-v1',
+      }),
+    ).toBe(digest);
+    const first = await store.admit(parseResearchRequest(envelope), ledger.epoch, digest);
+    expect(first.receipt?.request_digest).toBe(
+      '8514648ba0206039e21c248c8a097040449f5785758f70d0f901ee73090b2226',
+    );
+    const reordered = await store.admit(
+      parseResearchRequest(Object.fromEntries(Object.entries(envelope).reverse())),
+      ledger.epoch,
+      digest,
+    );
+    expect(reordered.id).toBe(first.id);
+    expect(reordered.receipt?.request_digest).toBe(first.receipt?.request_digest);
+    const before = await readFile(join(root, '.signals/requests/ledger.json'));
+    const retry = await store.admit(
+      parseResearchRequest({ ...envelope, request_id: 'retry' }),
+      ledger.epoch,
+      'b'.repeat(64),
+      digest,
+    );
+    expect(retry.id).toBe(first.id);
+    expect(retry.execution_configuration).toEqual(first.execution_configuration);
+    expect(await readFile(join(root, '.signals/requests/ledger.json'))).toEqual(before);
+    await expect(
+      store.admit(parseResearchRequest(envelope), ledger.epoch, digest, 'c'.repeat(64)),
+    ).rejects.toThrow('request_configuration_conflict');
+    await expect(
+      store.admit(
+        parseResearchRequest({ ...envelope, idempotency_key: 'fresh' }),
+        ledger.epoch,
+        'b'.repeat(64),
+        digest,
+      ),
+    ).rejects.toThrow('request_configuration_changed');
+    const otherKey = await store.admit(
+      parseResearchRequest({ ...envelope, idempotency_key: 'fresh' }),
+      ledger.epoch,
+      digest,
+    );
+    expect(otherKey.receipt?.request_digest).toBe(first.receipt?.request_digest);
+    const otherConfiguration = await store.admit(
+      parseResearchRequest({ ...envelope, idempotency_key: 'changed-config' }),
+      ledger.epoch,
+      'b'.repeat(64),
+    );
+    expect(otherConfiguration.receipt?.request_digest).not.toBe(first.receipt?.request_digest);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 it('durably binds concurrent identical admissions before dispatch, without retaining question text', async () => {
@@ -62,13 +153,19 @@ it('durably binds concurrent identical admissions before dispatch, without retai
     for (const change of [
       { profile: 'wide' },
       { cache: 'none' },
-      { request_id: 'another' },
       { authority_ref: { ...envelope.authority_ref, revision: '2' } },
     ]) {
       await expect(
         reopened.admit(parseResearchRequest({ ...envelope, ...change }), scope.epoch),
       ).rejects.toThrow('request_conflict');
     }
+    const retry = await reopened.admit(
+      parseResearchRequest({ ...envelope, request_id: 'another' }),
+      scope.epoch,
+    );
+    expect(retry.id).toBe(admitted[0]!.id);
+    expect(retry.receipt?.request_id).toBe('question-1');
+    expect(retry.receipt?.request_digest).toBe(admitted[0]!.receipt?.request_digest);
     expect(
       (
         await reopened.admit(

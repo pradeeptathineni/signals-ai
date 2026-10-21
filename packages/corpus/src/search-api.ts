@@ -1,6 +1,10 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { requestStore, parseResearchRequest } from './search-request-store.js';
+import {
+  requestStore,
+  parseResearchRequest,
+  requestConfigurationDigest,
+} from './search-request-store.js';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { Type } from 'typebox';
@@ -132,6 +136,21 @@ export function searchApi(
   const token = randomBytes(32).toString('hex');
   const runs = new Map<string, ActiveRun>();
   const requests = requestStore(root);
+  const executionConfiguration = async () => {
+    const settings = await loadSettings(root);
+    const acquisition = await loadAcquisitionConfig(root);
+    if (!settings.model || !settings.effort)
+      throw new Error('explicit_execution_configuration_required');
+    const snapshot = {
+      schema_version: 'signals-execution-v1',
+      runner: settings.runner,
+      model: settings.model,
+      effort: settings.effort,
+      acquisition,
+      followedSources: settings.followedSources ?? [],
+    };
+    return { settings, acquisition, digest: requestConfigurationDigest(snapshot) };
+  };
   const previews = new Map<string, ProjectPreview>();
   const pruneRuns = () => {
     for (const [key, run] of runs) {
@@ -236,6 +255,13 @@ export function searchApi(
         if (mutation && !Value.Check(Type.Object({}, { additionalProperties: false }), body))
           throw new Error('invalid_request_scope_initialization');
         json(200, mutation ? await requests.initialize() : await requests.scope());
+      } else if (route === 'request-configuration' && !mutation) {
+        const configuration = await executionConfiguration();
+        json(200, {
+          schema_version: 'signals-execution-v1',
+          digest_algorithm: 'jcs-sha256-v1',
+          digest: configuration.digest,
+        });
       } else if (/^requests\/[A-Za-z0-9_.:-]{1,128}(\/reconcile)?$/.test(route)) {
         const reconcile = route.endsWith('/reconcile');
         if (
@@ -522,7 +548,16 @@ export function searchApi(
       ) {
         const input = parseResearchRequest(body);
         const epoch = String(request.headers['x-signals-owner-epoch'] ?? '');
-        const admission = await requests.admit(input, epoch);
+        const configuration = await executionConfiguration();
+        const expectedConfiguration = request.headers['x-signals-execution-digest'];
+        if (expectedConfiguration !== undefined && typeof expectedConfiguration !== 'string')
+          throw new Error('invalid_execution_configuration_digest');
+        const admission = await requests.admit(
+          input,
+          epoch,
+          configuration.digest,
+          expectedConfiguration,
+        );
         const { created, record, ...accepted } = admission;
         if (!created) {
           json(202, accepted);
@@ -542,10 +577,11 @@ export function searchApi(
             save: 'never',
             cache: 'memory',
           });
-          const settings = await loadSettings(root);
+          const { settings, acquisition } = configuration;
           const runner = codexRunner(settings.model || undefined, settings.effort || undefined, {
             root,
-            acquisition: await loadAcquisitionConfig(root),
+            acquisition,
+            settings,
             ...answerFirstOperation(query),
           });
           // Commit uncertainty BEFORE entering the research callback. No read or
@@ -562,6 +598,7 @@ export function searchApi(
               run.result = await search(query, {
                 root,
                 runner,
+                acquisition,
                 signal: run.controller.signal,
                 progress: (event) => {
                   run.events.push(event);
@@ -740,7 +777,7 @@ export function searchApi(
       } else if (/^runs\/[a-f0-9]{32}$/.test(route) && !mutation) {
         const run = runs.get(route.split('/')[1]!);
         if (!run) {
-          const durable = await requests.job(route.split('/')[1]!).catch(() => null);
+          const durable = await requests.job(route.split('/')[1]!);
           if (durable?.receipt) {
             json(200, {
               events: [],
@@ -1020,7 +1057,13 @@ export function searchApi(
     } catch (failure) {
       const code = failure instanceof Error ? failure.message : 'invalid_request';
       json(
-        ['request_conflict', 'owner_epoch_mismatch'].includes(code)
+        [
+          'request_conflict',
+          'owner_epoch_mismatch',
+          'request_configuration_changed',
+          'request_configuration_conflict',
+          'request_identity_version_requires_reconciliation',
+        ].includes(code)
           ? 409
           : code.startsWith('request_store_')
             ? 503

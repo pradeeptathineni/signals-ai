@@ -10,7 +10,7 @@ import { directSearch } from './search-direct.js';
 import { type GitHubPlan, privateGitHubCache, memoryGitHubCache } from './search-github.js';
 import { acquireConfigured, type AcquisitionConfig } from './search-acquisition.js';
 import { scanSourcesForResearch } from './search-sources.js';
-import { loadSettings } from './search-settings.js';
+import { loadSettings, type SearchSettings } from './search-settings.js';
 import { researchCorpusSlice } from './search-reuse.js';
 import { providerSchema, restoreOptionals } from './search-provider-schema.js';
 import { nativeBriefSchema, nativePrompt } from '../../domain/src/search-native.js';
@@ -168,6 +168,7 @@ export function codexRunner(
     extractionModel?: string;
     extractionEffort?: string;
     acquisition?: AcquisitionConfig;
+    settings?: SearchSettings;
     githubPlans?: GitHubPlan[];
     root?: string;
     maxResponseBytes?: number;
@@ -233,7 +234,7 @@ export function codexRunner(
           operation.live === false
             ? null
             : await scanSourcesForResearch(
-                await loadSettings(operation.root ?? process.cwd()),
+                operation.settings ?? (await loadSettings(operation.root ?? process.cwd())),
                 operation.root ?? process.cwd(),
                 { signal, persist: request.cache === 'private' },
               );
