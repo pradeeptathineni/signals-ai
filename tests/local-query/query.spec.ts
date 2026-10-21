@@ -83,6 +83,29 @@ test('canonical query/env exclusions, decoded paths and safe links preserve dev 
       expect(malformed.status()).toBe(403);
       expect(await malformed.text()).toBe('Forbidden');
     }
+    // Vite registers new public files asynchronously through its watcher.
+    // Wait only for this authored positive; private refusals above stay immediate.
+    const publicUrl = '/signals-ai/asset-guard-public.js';
+    await expect
+      .poll(
+        async () => {
+          const response = await request.get(publicUrl);
+          const body = await response.text();
+          const contentType = response.headers()['content-type'] ?? '';
+          const observation = {
+            url: publicUrl,
+            status: response.status(),
+            contentType,
+            javascript: /^(?:text|application)\/javascript(?:;|$)/.test(contentType),
+            marker: body.includes('public-module-control'),
+            html: /<!doctype html|<html/i.test(body),
+          };
+          console.log(JSON.stringify({ publicFixtureReadiness: observation }));
+          return observation;
+        },
+        { timeout: 3000, intervals: [25, 50, 100, 250] },
+      )
+      .toMatchObject({ status: 200, javascript: true, marker: true, html: false });
     for (const path of [
       'asset-guard-link.js?import',
       'asset-guard-public.js',
