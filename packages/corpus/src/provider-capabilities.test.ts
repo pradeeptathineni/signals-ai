@@ -89,7 +89,8 @@ it('negotiates a portable owner boundary and reads exact partial answer bytes wi
       };
     };
     expect(metadata.capabilities.instance_id).toBe(scope.identity);
-    expect(metadata.capabilities.process_observation).toBe(false);
+    expect(metadata.capabilities.process_observation).toBe(true);
+    expect(metadata.capabilities.contracts).toContainEqual({ id: 'K13', versions: ['1.0'] });
     expect(metadata.capabilities.contracts).toContainEqual({ id: 'K14', versions: ['1.0'] });
     const narrative = 'Original partial answer Ω\r\nQualification remains unknown.';
     const run: SearchResult = {

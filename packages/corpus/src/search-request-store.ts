@@ -310,6 +310,18 @@ export function requestStore(root: string) {
     async scope() {
       return scope(await load());
     },
+    async observe() {
+      const ledger = await load();
+      return {
+        scope: scope(ledger),
+        checksum: checksum(ledger),
+        requests: ledger.records.map((record) => ({
+          id: record.id,
+          requestId: record.requestId,
+          receipt: receipt(record),
+        })),
+      };
+    },
     async lookup(idempotencyKey: string, epoch: string) {
       const ledger = await load();
       checkEpoch(ledger, epoch);

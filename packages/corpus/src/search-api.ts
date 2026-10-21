@@ -5,12 +5,14 @@ import {
   providerRecord,
   ProviderError,
   validateProviderHeaders,
+  validateProcessObserver,
 } from './provider-capabilities.js';
 import {
   requestStore,
   parseResearchRequest,
   requestConfigurationDigest,
 } from './search-request-store.js';
+import { processObservation, type ObservedRun } from './process-observation.js';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { Type } from 'typebox';
@@ -115,7 +117,7 @@ const savedEntitySelection = Type.Object(
   },
   { additionalProperties: false },
 );
-interface ActiveRun {
+interface ActiveRun extends ObservedRun {
   controller: AbortController;
   requestEpoch?: string;
   events: string[];
@@ -142,6 +144,7 @@ export function searchApi(
   const token = randomBytes(32).toString('hex');
   const runs = new Map<string, ActiveRun>();
   const requests = requestStore(root);
+  const observation = processObservation(root, runs);
   const executionConfiguration = async () => {
     const settings = await loadSettings(root);
     const acquisition = await loadAcquisitionConfig(root);
@@ -201,18 +204,33 @@ export function searchApi(
       work: (run: ActiveRun, progress: (event: string) => void) => Promise<void>,
     ) => {
       if (!claim()) return json(409, { code: 'runner_busy' });
-      const run: ActiveRun = { controller: new AbortController(), events: [first] };
+      const startedAt = new Date().toISOString();
+      const run: ActiveRun = {
+        controller: new AbortController(),
+        events: [first],
+        startedAt,
+        lastEvidenceAt: startedAt,
+        settled: false,
+      };
       const id = randomBytes(16).toString('hex');
       runs.set(id, run);
+      observation.changed();
       void work(run, (event) => {
         run.events.push(event);
+        run.lastEvidenceAt = new Date().toISOString();
+        observation.changed();
         if (run.events.length > 100) run.events.shift();
       })
         .catch((failure: unknown) => {
           run.error = failure instanceof Error ? failure.message : fallback;
           run.events.push(run.error);
+          run.lastEvidenceAt = new Date().toISOString();
+          observation.changed();
         })
         .finally(() => {
+          run.settled = true;
+          run.settledAt = new Date().toISOString();
+          observation.changed();
           active = false;
           pruneRuns();
         });
@@ -276,7 +294,15 @@ export function searchApi(
             request.headers['x-signals-owner-epoch'],
           ),
         );
-      else if (route === 'session' && !mutation)
+      else if (route === 'provider/processes' && !mutation) {
+        await validateProcessObserver(
+          root,
+          request.headers['x-signals-provider-version'],
+          request.headers['x-signals-instance-id'],
+          request.headers['x-signals-owner-epoch'],
+        );
+        json(200, await observation.snapshot());
+      } else if (route === 'session' && !mutation)
         json(200, {
           token,
           capability: await codexRunner().readiness(),
@@ -554,10 +580,15 @@ export function searchApi(
           throw new Error('invalid_history_selection');
         const result = await loadRun(body.runId, root, (await loadSettings(root)).threshold);
         const id = randomBytes(16).toString('hex');
+        const reopenedAt = new Date().toISOString();
         runs.set(id, {
           controller: new AbortController(),
           events: ['Reopened frozen result; no inference or new acquisition.'],
           result,
+          startedAt: reopenedAt,
+          lastEvidenceAt: reopenedAt,
+          settled: true,
+          reopened: true,
         });
         pruneRuns();
         json(200, { id });
@@ -624,8 +655,12 @@ export function searchApi(
             controller: new AbortController(),
             requestEpoch: epoch,
             events: ['Starting research…'],
+            startedAt: new Date().toISOString(),
+            lastEvidenceAt: new Date().toISOString(),
+            settled: false,
           };
           runs.set(record.id, run);
+          observation.changed();
           void (async () => {
             try {
               run.result = await search(query, {
@@ -635,6 +670,8 @@ export function searchApi(
                 signal: run.controller.signal,
                 progress: (event) => {
                   run.events.push(event);
+                  run.lastEvidenceAt = new Date().toISOString();
+                  observation.changed();
                   if (run.events.length > 100) run.events.shift();
                 },
                 brief: (brief) => {
@@ -659,6 +696,9 @@ export function searchApi(
               // A failed persistence write cannot be called a settled effect.
               if (!run.result) await requests.settle(record.id, epoch, 'failed').catch(() => {});
             } finally {
+              run.settled = true;
+              run.settledAt = new Date().toISOString();
+              observation.changed();
               active = false;
               pruneRuns();
             }
@@ -874,13 +914,21 @@ export function searchApi(
       } else if (/^cancel\/[a-f0-9]{32}$/.test(route) && mutation) {
         const id = route.split('/')[1]!;
         const run = runs.get(id);
+        const markCancellation = () => {
+          if (run && !run.cancelRequestedAt) {
+            run.cancelRequestedAt = new Date().toISOString();
+            observation.changed();
+          }
+        };
         if (run?.requestEpoch && !run.result && !run.error) {
           try {
             await requests.cancel(id, run.requestEpoch);
+            markCancellation();
           } finally {
             run.controller.abort();
           }
         }
+        if (run && !run.requestEpoch && !run.settled) markCancellation();
         run?.controller.abort();
         json(200, { cancelled: !!run });
       } else if (route === 'retain-answer' && mutation) {
@@ -1102,7 +1150,7 @@ export function searchApi(
           'request_identity_version_requires_reconciliation',
         ].includes(code)
           ? 409
-          : code.startsWith('request_store_')
+          : code.startsWith('request_store_') || code === 'process_snapshot_too_large'
             ? 503
             : 400,
         { code },

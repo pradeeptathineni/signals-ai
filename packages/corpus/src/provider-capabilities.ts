@@ -134,6 +134,15 @@ export async function validateProviderHeaders(
   if (instance !== undefined) await ownerScope(root, version, instance, epoch, false);
 }
 
+export async function validateProcessObserver(
+  root: string,
+  version: unknown,
+  instance: unknown,
+  epoch: unknown,
+) {
+  await ownerScope(root, version, instance, epoch, true);
+}
+
 export async function providerCapabilities(
   root: string,
   version: unknown,
@@ -146,8 +155,14 @@ export async function providerCapabilities(
     owner: 'signals-ai',
     instance_id: scope.identity,
     product_version: manifest.version,
-    contracts: ['K01', 'K12', 'K14', 'K15'].map((id) => ({ id, versions: ['1.0'] })),
+    contracts: ['K01', 'K12', 'K13', 'K14', 'K15'].map((id) => ({ id, versions: ['1.0'] })),
     operations: [
+      {
+        name: 'observe_processes',
+        target_kinds: ['research_job', 'research_request'],
+        mutating: false,
+        authority_required: false,
+      },
       {
         name: 'read_record',
         target_kinds: ['answer', 'research_run'],
@@ -175,7 +190,7 @@ export async function providerCapabilities(
       { name: 'cancel', target_kinds: ['research_job'], mutating: true, authority_required: true },
     ],
     record_kinds: ['answer', 'research_run'],
-    process_observation: false,
+    process_observation: true,
     observed_at: new Date().toISOString(),
     availability: 'available',
     reason:
@@ -198,7 +213,7 @@ export async function providerCapabilities(
       record_owner_headers: ['x-signals-instance-id', 'x-signals-owner-epoch'],
       read_route: 'provider/records?ref=<encoded RecordRef>',
       supported_records:
-        'Private retained run snapshots only; no arbitrary file paths, commands, legacy query imports or process snapshots.',
+        'Private retained run snapshots only; process observations use provider/processes. No arbitrary file paths or commands.',
     },
   };
 }

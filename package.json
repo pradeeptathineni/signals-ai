@@ -35,6 +35,7 @@
     "security:secrets": "node scripts/secret-check.mjs",
     "test": "vitest run --config vitest.config.ts",
     "test:research-answer": "node --import tsx --test tests/unit/research-answer.test.ts",
+    "demo:processes": "node scripts/examples/process-demo.mjs",
     "research-answer": "node --import tsx scripts/research-answer.ts",
     "test:provenance": "node --import tsx packages/corpus/src/audit.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
