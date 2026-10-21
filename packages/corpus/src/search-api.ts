@@ -1,6 +1,12 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
+  providerCapabilities,
+  providerRecord,
+  ProviderError,
+  validateProviderHeaders,
+} from './provider-capabilities.js';
+import {
   requestStore,
   parseResearchRequest,
   requestConfigurationDigest,
@@ -231,6 +237,12 @@ export function searchApi(
       return true;
     }
     try {
+      await validateProviderHeaders(
+        root,
+        request.headers['x-signals-provider-version'],
+        request.headers['x-signals-instance-id'],
+        request.headers['x-signals-owner-epoch'],
+      );
       let body: unknown;
       if (mutation) {
         if (!request.headers['content-type']?.startsWith('application/json'))
@@ -243,7 +255,28 @@ export function searchApi(
         body = JSON.parse(raw);
       }
       const route = path.slice('/signals-ai/__signals/api/'.length);
-      if (route === 'session' && !mutation)
+      if (route === 'provider/capabilities' && !mutation)
+        json(
+          200,
+          await providerCapabilities(
+            root,
+            request.headers['x-signals-provider-version'],
+            request.headers['x-signals-instance-id'],
+            request.headers['x-signals-owner-epoch'],
+          ),
+        );
+      else if (route === 'provider/records' && !mutation)
+        json(
+          200,
+          await providerRecord(
+            root,
+            request.url!,
+            request.headers['x-signals-provider-version'],
+            request.headers['x-signals-instance-id'],
+            request.headers['x-signals-owner-epoch'],
+          ),
+        );
+      else if (route === 'session' && !mutation)
         json(200, {
           token,
           capability: await codexRunner().readiness(),
@@ -1055,6 +1088,10 @@ export function searchApi(
         json(200, { cleaned: true, retainedHistory: 'preserved' });
       } else json(404, { code: 'unknown_operation' });
     } catch (failure) {
+      if (failure instanceof ProviderError) {
+        json(failure.status, { code: failure.code, reason: failure.reason });
+        return true;
+      }
       const code = failure instanceof Error ? failure.message : 'invalid_request';
       json(
         [

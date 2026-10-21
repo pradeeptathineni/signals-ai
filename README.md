@@ -16,6 +16,8 @@ npm run start
 
 Open [the workbench](http://127.0.0.1:5178/signals-ai/). Browsing saved knowledge starts no research or source scan. For development, use `npm run dev`.
 
+Other installed applications can use the [local provider interface](docs/provider-interface.md) to negotiate owner capabilities and read exact retained records over loopback HTTP, without sibling source imports. Native readiness and permission to start research remain separate.
+
 Library returns immediate phrase, prefix and typo matches over retained metadata. In Settings → Personal Library, you can permit one no-web meaning match per submitted question. Its disclosure lists the metadata sent to your authenticated AI host; notes, projects, source text and credentials are excluded. Literal results remain available if matching is disabled, unavailable or cancelled. Public Pages uses literal retrieval only.
 
 ```sh
