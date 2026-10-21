@@ -164,7 +164,10 @@ export function searchApi(
   const pruneRuns = () => {
     for (const [key, run] of runs) {
       if (runs.size <= 30) break;
-      if (run.result || run.error || run.batch || run.due) runs.delete(key);
+      if (run.result || run.error || run.batch || run.due) {
+        runs.delete(key);
+        if (!run.reopened) observation.changed();
+      }
     }
   };
   const resultFor = (runId: string | undefined) =>
@@ -693,6 +696,8 @@ export function searchApi(
             } catch (failure) {
               run.error = failure instanceof Error ? failure.message : 'search_failed';
               run.events.push(run.error);
+              run.lastEvidenceAt = new Date().toISOString();
+              observation.changed();
               // A failed persistence write cannot be called a settled effect.
               if (!run.result) await requests.settle(record.id, epoch, 'failed').catch(() => {});
             } finally {
