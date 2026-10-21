@@ -20,8 +20,18 @@ for (const suffix of ['', '?raw', '?import', '?vite-wasm-instance', '?vite-wasm-
     try {
       for (const url of [`/signals-ai/@fs${file}`, '/signals-ai/privacy-probe.wasm']) {
         const response = await request.get(url + suffix);
-        expect(response.status(), url + suffix).toBe(403);
-        expect(await response.text()).not.toContain('private-asset-canary');
+        const body = await response.text();
+        console.log(
+          JSON.stringify({
+            url: url + suffix,
+            status: response.status(),
+            canary: body.includes('private-asset-canary'),
+            transform: body.includes('export '),
+          }),
+        );
+        expect.soft(response.status(), url + suffix).toBe(403);
+        expect.soft(body).not.toContain('private-asset-canary');
+        expect.soft(body).toBe('Forbidden');
       }
     } finally {
       await unlink(link);
@@ -29,6 +39,67 @@ for (const suffix of ['', '?raw', '?import', '?vite-wasm-instance', '?vite-wasm-
     }
   });
 }
+
+test('canonical query/env exclusions, decoded paths and safe links preserve dev modules', async ({
+  request,
+}) => {
+  await mkdir('private-query-probe', { recursive: true });
+  const privateFiles = [
+    resolve('private-query-probe/asset-guard.json'),
+    resolve('apps/corpus/.env.asset-guard'),
+  ];
+  const safe = resolve('apps/corpus/asset-guard-safe.js');
+  const safeLink = resolve('apps/corpus/asset-guard-link.js');
+  const publicLink = resolve('dist/public-data/asset-guard-public.js');
+  const privateLink = resolve('apps/corpus/asset-guard-private.json');
+  await writeFile(safe, 'export const safe = "public-module-control";\n', { flag: 'wx' });
+  await symlink(safe, safeLink);
+  await symlink(safe, publicLink);
+  try {
+    for (const file of privateFiles) {
+      await writeFile(file, '{"private":"canonical-private-canary"}', { flag: 'wx' });
+      await symlink(file, privateLink);
+      try {
+        for (const url of [`/signals-ai/@fs${file}`, '/signals-ai/asset-guard-private.json']) {
+          const blocked = await request.get(`${url}?raw`);
+          const body = await blocked.text();
+          console.log(
+            JSON.stringify({
+              url,
+              status: blocked.status(),
+              canary: body.includes('canonical-private-canary'),
+            }),
+          );
+          expect.soft(blocked.status()).toBe(403);
+          expect.soft(body).toBe('Forbidden');
+        }
+      } finally {
+        await unlink(privateLink);
+        await unlink(file);
+      }
+    }
+    for (const path of ['%ZZ', '%2eenv.asset-guard']) {
+      const malformed = await request.get(`/signals-ai/${path}`);
+      expect(malformed.status()).toBe(403);
+      expect(await malformed.text()).toBe('Forbidden');
+    }
+    for (const path of [
+      'asset-guard-link.js?import',
+      'asset-guard-public.js',
+      '@vite/client',
+      'src/main.tsx',
+    ]) {
+      const permitted = await request.get(`/signals-ai/${path}`);
+      expect(permitted.status(), path).toBe(200);
+      if (path.startsWith('asset-guard-'))
+        expect(await permitted.text()).toContain('public-module-control');
+    }
+  } finally {
+    await unlink(publicLink);
+    await unlink(safeLink);
+    await unlink(safe);
+  }
+});
 
 test('a local user saves an ordinary question without writing evidence artifacts', async ({
   page,
