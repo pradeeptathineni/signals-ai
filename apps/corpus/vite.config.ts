@@ -3,13 +3,15 @@ import { resolve } from 'node:path';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { searchApi } from '../../packages/corpus/src/search-api.js';
-import { assetGuard } from './asset-guard.js';
+import { assetGuard, privateAssetDenials } from './asset-guard.js';
 
 const queryDirectory = resolve(
   process.env.SIGNALS_QUERY_DIRECTORY || '.signals/queries',
 ).replaceAll('\\', '/');
-if (['[', ']', '{', '}', '*', '?', '!'].some((character) => queryDirectory.includes(character)))
-  throw new Error('Private query directory must be a literal path.');
+const privateDenials = await privateAssetDenials([
+  queryDirectory,
+  fileURLToPath(new URL('../../.codex', import.meta.url)),
+]);
 
 export default defineConfig({
   root: fileURLToPath(new URL('.', import.meta.url)),
@@ -24,7 +26,6 @@ export default defineConfig({
           : html;
       },
       async configureServer(server) {
-        server.middlewares.use(await assetGuard(server.config, queryDirectory));
         const api = searchApi();
         server.middlewares.use((request, response, next) => {
           void api(request, response)
@@ -33,6 +34,9 @@ export default defineConfig({
             })
             .catch(next);
         });
+        // The existing exact API boundary owns its grammar and authorization,
+        // including colon-containing request keys; it is not a filesystem path.
+        server.middlewares.use(await assetGuard(server.config, queryDirectory));
       },
       async configurePreviewServer(server) {
         server.middlewares.use(await assetGuard(server.config, queryDirectory, true));
@@ -54,8 +58,7 @@ export default defineConfig({
         '**/.signals/**',
         '**/.context-ai/lock.json',
         '**/.meta/**',
-        `${fileURLToPath(new URL('../../.codex', import.meta.url)).replaceAll('\\', '/')}/**`,
-        `${queryDirectory}/**`,
+        ...privateDenials,
       ],
     },
   },
