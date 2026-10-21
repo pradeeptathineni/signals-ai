@@ -9,9 +9,10 @@ npm run typecheck
 npm run context:verify
 npm run context:pack:test
 npm run quality:structure
+# The Library consumer exercises built assets from a fresh checkout.
+npm run build
 npm test
 npm run test:research-answer
-npm run build
 npm run test:provenance
 npm run security:dependencies
 node --test scripts/research-pin.test.mjs
