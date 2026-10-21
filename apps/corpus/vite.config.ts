@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { searchApi } from '../../packages/corpus/src/search-api.js';
+import { assetGuard } from './asset-guard.js';
 
 const queryDirectory = resolve(
   process.env.SIGNALS_QUERY_DIRECTORY || '.signals/queries',
@@ -22,7 +23,8 @@ export default defineConfig({
           ? html.replace('<head>', '<head><script>window.__SIGNALS_LOCAL__=true;</script>')
           : html;
       },
-      configureServer(server) {
+      async configureServer(server) {
+        server.middlewares.use(await assetGuard(server.config, queryDirectory));
         const api = searchApi();
         server.middlewares.use((request, response, next) => {
           void api(request, response)
@@ -31,6 +33,9 @@ export default defineConfig({
             })
             .catch(next);
         });
+      },
+      async configurePreviewServer(server) {
+        server.middlewares.use(await assetGuard(server.config, queryDirectory, true));
       },
     },
   ],
