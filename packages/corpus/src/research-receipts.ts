@@ -98,7 +98,11 @@ export async function loadAnswerLibrary(
   for (const name of await entries(root, 'runs')) {
     try {
       const raw = (await readPrivateJson(root, `runs/${name}`, null)) as SearchResult | null;
-      if (raw?.answerReceipt) runs.push(await loadRun(name.slice(0, -5), root));
+      if (raw?.answerReceipt) {
+        if (!['completed', 'partial', 'failed', 'cancelled', 'not_configured'].includes(raw.status))
+          throw new Error('unsupported_retained_status');
+        runs.push(await loadRun(name.slice(0, -5), root));
+      }
     } catch (error) {
       if (
         error instanceof Error &&

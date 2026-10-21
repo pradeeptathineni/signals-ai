@@ -317,6 +317,8 @@ async function ownedBytes(
     const bytes = await snapshotBytes(root, id);
     try {
       const run = await loadRun(id, root);
+      if (!['completed', 'partial', 'failed', 'cancelled', 'not_configured'].includes(run.status))
+        throw new Error('unsupported_retained_status');
       if (kind === 'answer' && !run.answerReceipt) throw new Error();
       if (
         kind === 'research_note' &&

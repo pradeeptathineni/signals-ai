@@ -21,6 +21,8 @@ import { retainRun } from './search-store.js';
 import { retainIncompleteNarrative } from './library.js';
 import { saveLibraryLead } from './library-leads.js';
 import { retainResearchAnswer } from './research-answer.js';
+import { requestStore } from './search-request-store.js';
+import { providerLibrary, providerRecord } from './provider-capabilities.js';
 import { previewProject } from './project-preview.js';
 import { attachOpportunity, registerProject } from './projects.js';
 import { budgets, type SearchResult } from '../../domain/src/search-contract.js';
@@ -517,5 +519,87 @@ it('negotiates a portable owner boundary and reads exact partial answer bytes wi
     await Promise.all(children.map((child) => stop(child)));
     await rm(root, { recursive: true, force: true });
     await rm(consumer, { recursive: true, force: true });
+  }
+}, 30000);
+
+it('keeps retained answer and run reads terminal while valid siblings remain searchable', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-provider-status-')));
+  try {
+    const scope = await requestStore(root).initialize();
+    const narrative = 'Authored status qualification Ω';
+    const original: SearchResult = {
+      schemaVersion: 2,
+      runId: randomUUID(),
+      query: 'status qualification original',
+      status: 'completed',
+      brief: { format: 'markdown', text: narrative },
+      answerReceipt: {
+        observedAt: '2026-10-21T05:00:00Z',
+        sha256: hash(narrative),
+        state: 'unassessed',
+        confidence: 'unknown',
+        provenance: { receipt: 'offline fixture', requestedModel: null, servedModel: null },
+      },
+      items: [],
+      sources: [],
+      coverage: [],
+      gaps: [],
+      usage: {
+        searches: 0,
+        documents: 0,
+        elapsedMs: 0,
+        modelCalls: 0,
+        providerUsage: null,
+        cost: null,
+      },
+      counts: { leads: 0, distinct: 0, duplicates: 0, omitted: 0 },
+      limits: budgets.quick,
+    };
+    const sibling = { ...original, runId: randomUUID(), query: 'status qualification sibling' };
+    await retainRun(original, root);
+    await retainRun(sibling, root);
+    const file = join(root, '.signals/runs', original.runId + '.json');
+    const headers = ['1.0', scope.identity, scope.epoch] as const;
+    for (const status of [
+      'completed',
+      'partial',
+      'failed',
+      'cancelled',
+      'not_configured',
+      'running',
+      null,
+    ] as const) {
+      const value: Record<string, unknown> = { ...original };
+      if (status === null) delete value.status;
+      else value.status = status;
+      const bytes = JSON.stringify(value);
+      await writeFile(file, bytes);
+      for (const kind of ['answer', 'research_run']) {
+        const ref = { owner: 'signals-ai', kind, id: original.runId, revision: null, digest: null };
+        const read = providerRecord(
+          root,
+          '/provider/records?ref=' + encodeURIComponent(JSON.stringify(ref)),
+          ...headers,
+        );
+        if (status === 'running' || status === null)
+          await expect(read).rejects.toMatchObject({
+            status: 503,
+            code: 'provider_record_unavailable',
+          });
+        else expect((await read).content).toBe(bytes);
+      }
+      if (status === 'running' || status === null) {
+        const page = await providerLibrary(root, '/provider/library?q=status', ...headers);
+        expect(page.records.find((row) => row.ref.id === original.runId)?.open_capability).not.toBe(
+          'owner_route',
+        );
+        expect(page.records.find((row) => row.ref.id === sibling.runId)?.open_capability).toBe(
+          'owner_route',
+        );
+        expect(page.owner_coverage[0]?.reason).toContain('Partial coverage');
+      }
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 }, 30000);
