@@ -1,6 +1,35 @@
 import { expect, test } from '@playwright/test';
-import { readFile, unlink, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, unlink, writeFile, mkdir, symlink } from 'node:fs/promises';
 import { resolve } from 'node:path';
+
+for (const suffix of ['', '?raw', '?import', '?vite-wasm-instance', '?vite-wasm-instance&import']) {
+  test(`private assets and their symlinks stay denied with ${suffix || 'no query'}`, async ({
+    request,
+  }) => {
+    const file = resolve('.signals/test-private/privacy-probe.wasm');
+    const link = resolve('apps/corpus/privacy-probe.wasm');
+    await mkdir('.signals/test-private', { recursive: true });
+    const canary = Buffer.from('private-asset-canary');
+    // Valid WASM with an inert custom section: parsing must not create a Vite
+    // error overlay that would mask later ordinary browser interactions.
+    await writeFile(
+      file,
+      Buffer.concat([Buffer.from([0, 97, 115, 109, 1, 0, 0, 0, 0, canary.length + 1, 0]), canary]),
+    );
+    await symlink(file, link);
+    try {
+      for (const url of [`/signals-ai/@fs${file}`, '/signals-ai/privacy-probe.wasm']) {
+        const response = await request.get(url + suffix);
+        expect(response.status(), url + suffix).toBe(403);
+        expect(await response.text()).not.toContain('private-asset-canary');
+      }
+    } finally {
+      await unlink(link);
+      await unlink(file);
+    }
+  });
+}
+
 test('a local user saves an ordinary question without writing evidence artifacts', async ({
   page,
   request,

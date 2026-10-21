@@ -24,7 +24,7 @@ Headless research supervises the user's installed authenticated Codex CLI; invok
 
 ## Development
 
-Vite 8.3.1, TypeScript 6.0.3, Playwright 1.63.0, Vitest 5.0.2 and Prettier 3.9.9 are pinned development tools. Prettier also encodes historical public downloads reproducibly. ESLint and axe check code/accessibility; Knip 6.38.0 and jscpd 5.3.3 inspect unused structure and duplication. Repomix 1.18.1 creates bounded source maps, and CCA 0.2.0 supports a reversible context hook. CCA recovery preserves normalized/redacted text rather than promising original stdout/stderr bytes. See [AI authoring context](../.meta/context/README.md) for use boundaries.
+Vite 8.3.3, TypeScript 6.0.3, Playwright 1.63.0, Vitest 5.0.2 and Prettier 3.9.9 are pinned development tools. Prettier also encodes historical public downloads reproducibly. ESLint and axe check code/accessibility; Knip 6.38.0 and jscpd 5.3.3 inspect unused structure and duplication. Repomix 1.18.1 creates bounded source maps; its SDK dependency is scoped to patched `@modelcontextprotocol/sdk@1.32.0` without enabling MCP. CCA 0.2.0 supports a reversible context hook. CCA recovery preserves normalized/redacted text rather than promising original stdout/stderr bytes. See [AI authoring context](../.meta/context/README.md) for use boundaries.
 
 GitHub Pages actions are pinned to reviewed upstream commits in `.github/workflows/pages.yml`. They upload validated static public output only. No database driver/service, crawler SDK, hosted authentication or general agent runtime is installed.
 
