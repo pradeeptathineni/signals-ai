@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomBytes, randomUUID } from 'node:crypto';
+import { requestStore, parseResearchRequest } from './search-request-store.js';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { Type } from 'typebox';
@@ -106,6 +107,7 @@ const savedEntitySelection = Type.Object(
 );
 interface ActiveRun {
   controller: AbortController;
+  requestEpoch?: string;
   events: string[];
   result?: SearchResult;
   provisional?: ProvisionalLead[];
@@ -129,6 +131,7 @@ export function searchApi(
 ) {
   const token = randomBytes(32).toString('hex');
   const runs = new Map<string, ActiveRun>();
+  const requests = requestStore(root);
   const previews = new Map<string, ProjectPreview>();
   const pruneRuns = () => {
     for (const [key, run] of runs) {
@@ -229,7 +232,21 @@ export function searchApi(
           active,
           limits: 'One AI job; quick 8 searches/20 documents/240s; wide 24/60/600s.',
         });
-      else if (route === 'settings')
+      else if (route === 'request-scope') {
+        if (mutation && !Value.Check(Type.Object({}, { additionalProperties: false }), body))
+          throw new Error('invalid_request_scope_initialization');
+        json(200, mutation ? await requests.initialize() : await requests.scope());
+      } else if (/^requests\/[A-Za-z0-9_.:-]{1,128}(\/reconcile)?$/.test(route)) {
+        const reconcile = route.endsWith('/reconcile');
+        if (
+          mutation !== reconcile ||
+          (mutation && !Value.Check(Type.Object({}, { additionalProperties: false }), body))
+        )
+          throw new Error('invalid_request_readback');
+        const epoch = String(request.headers['x-signals-owner-epoch'] ?? '');
+        const found = await requests.lookup(route.split('/')[1]!, epoch);
+        json(found.receipt ? 200 : 404, found);
+      } else if (route === 'settings')
         json(200, mutation ? await saveSettings(body, root) : await loadSettings(root));
       else if (route === 'library' && !mutation) json(200, { findings: await loadLibrary(root) });
       else if (route === 'question' && mutation) {
@@ -496,6 +513,91 @@ export function searchApi(
               ? checked.source?.digest
               : (material?.digest ?? null),
         });
+      } else if (
+        route === 'search' &&
+        mutation &&
+        body &&
+        typeof body === 'object' &&
+        'schema_version' in body
+      ) {
+        const input = parseResearchRequest(body);
+        const epoch = String(request.headers['x-signals-owner-epoch'] ?? '');
+        const admission = await requests.admit(input, epoch);
+        const { created, record, ...accepted } = admission;
+        if (!created) {
+          json(202, accepted);
+          return true;
+        }
+        if (!claim()) {
+          // This accepted identity is known not to have dispatched. A retry reads
+          // that same identity; it cannot become an implicit second execution.
+          json(409, { ...accepted, code: 'runner_busy' });
+          return true;
+        }
+        try {
+          const query = parseRequest({
+            query: input.query,
+            method: input.method,
+            profile: input.profile,
+            save: 'never',
+            cache: 'memory',
+          });
+          const settings = await loadSettings(root);
+          const runner = codexRunner(settings.model || undefined, settings.effort || undefined, {
+            root,
+            acquisition: await loadAcquisitionConfig(root),
+            ...answerFirstOperation(query),
+          });
+          // Commit uncertainty BEFORE entering the research callback. No read or
+          // repeated POST can cross this boundary for an existing identity.
+          const started = await requests.dispatch(record.id, epoch);
+          const run: ActiveRun = {
+            controller: new AbortController(),
+            requestEpoch: epoch,
+            events: ['Starting research…'],
+          };
+          runs.set(record.id, run);
+          void (async () => {
+            try {
+              run.result = await search(query, {
+                root,
+                runner,
+                signal: run.controller.signal,
+                progress: (event) => {
+                  run.events.push(event);
+                  if (run.events.length > 100) run.events.shift();
+                },
+                brief: (brief) => {
+                  run.brief = brief;
+                },
+                provisional: (leads) => {
+                  run.provisional = leads;
+                },
+              });
+              await requests.settle(
+                record.id,
+                epoch,
+                run.result.status === 'completed'
+                  ? 'complete'
+                  : run.result.status === 'not_configured'
+                    ? 'failed'
+                    : run.result.status,
+              );
+            } catch (failure) {
+              run.error = failure instanceof Error ? failure.message : 'search_failed';
+              run.events.push(run.error);
+              // A failed persistence write cannot be called a settled effect.
+              if (!run.result) await requests.settle(record.id, epoch, 'failed').catch(() => {});
+            } finally {
+              active = false;
+              pruneRuns();
+            }
+          })();
+          json(202, started);
+        } catch (failure) {
+          active = false;
+          throw failure;
+        }
       } else if ((route === 'search' || route === 'capture' || route === 'refresh') && mutation) {
         const settings = await loadSettings(root);
         let input = body;
@@ -637,6 +739,19 @@ export function searchApi(
         });
       } else if (/^runs\/[a-f0-9]{32}$/.test(route) && !mutation) {
         const run = runs.get(route.split('/')[1]!);
+        if (!run) {
+          const durable = await requests.job(route.split('/')[1]!).catch(() => null);
+          if (durable?.receipt) {
+            json(200, {
+              events: [],
+              result: null,
+              error: null,
+              ...durable,
+              resultAvailability: 'memory_result_unavailable_after_restart',
+            });
+            return true;
+          }
+        }
         let noteOriginalAvailable: boolean | null = null;
         if (run?.result?.claimCheck?.version === 3) {
           const origin = run.result.claimCheck.origin;
@@ -687,7 +802,15 @@ export function searchApi(
             : { code: 'unknown_run' },
         );
       } else if (/^cancel\/[a-f0-9]{32}$/.test(route) && mutation) {
-        const run = runs.get(route.split('/')[1]!);
+        const id = route.split('/')[1]!;
+        const run = runs.get(id);
+        if (run?.requestEpoch && !run.result && !run.error) {
+          try {
+            await requests.cancel(id, run.requestEpoch);
+          } finally {
+            run.controller.abort();
+          }
+        }
         run?.controller.abort();
         json(200, { cancelled: !!run });
       } else if (route === 'retain-answer' && mutation) {
@@ -895,7 +1018,15 @@ export function searchApi(
         json(200, { cleaned: true, retainedHistory: 'preserved' });
       } else json(404, { code: 'unknown_operation' });
     } catch (failure) {
-      json(400, { code: failure instanceof Error ? failure.message : 'invalid_request' });
+      const code = failure instanceof Error ? failure.message : 'invalid_request';
+      json(
+        ['request_conflict', 'owner_epoch_mismatch'].includes(code)
+          ? 409
+          : code.startsWith('request_store_')
+            ? 503
+            : 400,
+        { code },
+      );
     }
     return true;
   };
