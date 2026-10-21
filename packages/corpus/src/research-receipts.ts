@@ -92,32 +92,43 @@ export async function loadAnswerLibrary(root: string): Promise<LibraryFinding[]>
     if (identities.has(run.runId)) throw new Error('duplicate_answer_receipt');
     identities.set(run.runId, run);
   }
-  return [...identities.values()].map((run) => ({
-    key: `answer:private:${run.runId}`,
-    id: run.runId,
-    title: run.query,
-    uri: '#',
-    description: 'Complete retained research answer. Unassessed; confidence Unknown.',
-    kind: 'research-answer',
-    aliases: [],
-    domains: [],
-    capabilities: [],
-    useCases: [],
-    technologies: [],
-    tags: [],
-    sourceNames: (run.provisionalLeads ?? []).slice(0, 40).map((lead) => lead.name),
-    intrinsicStrength: { policy: 'unassessed-answer', score: null },
-    license: { state: 'unknown', values: [], openSource: null },
-    access: { state: 'unknown', freeToUse: null },
-    origin: { format: 'answer', destination: 'private', recordId: run.runId },
-    saved: true,
-    observedAt: run.answerReceipt!.observedAt,
-    answerText: run.brief!.text,
-    answer: {
-      runId: run.runId,
-      sha256: run.answerReceipt!.sha256,
-      provenance: run.answerReceipt!.provenance,
-      limits: run.gaps,
-    },
-  }));
+  return [...identities.values()].map((run) => {
+    const usage = run.usage.providerUsage;
+    const cleanup = usage && typeof usage === 'object' && 'cleanup' in usage && usage.cleanup;
+    const confirmed =
+      cleanup && typeof cleanup === 'object' && 'complete' in cleanup && cleanup.complete === true;
+    const cleanupLimit = confirmed
+      ? []
+      : [
+          'Execution cleanup is unconfirmed for this retained answer; its historical status and bytes are unchanged.',
+        ];
+    return {
+      key: `answer:private:${run.runId}`,
+      id: run.runId,
+      title: run.query,
+      uri: '#',
+      description: `${run.status === 'completed' ? 'Retained research answer' : 'Incomplete retained research answer'}. Unassessed; confidence Unknown.${confirmed ? '' : ' Execution cleanup unconfirmed.'}`,
+      kind: 'research-answer',
+      aliases: [],
+      domains: [],
+      capabilities: [],
+      useCases: [],
+      technologies: [],
+      tags: [],
+      sourceNames: (run.provisionalLeads ?? []).slice(0, 40).map((lead) => lead.name),
+      intrinsicStrength: { policy: 'unassessed-answer', score: null },
+      license: { state: 'unknown', values: [], openSource: null },
+      access: { state: 'unknown', freeToUse: null },
+      origin: { format: 'answer', destination: 'private', recordId: run.runId },
+      saved: true,
+      observedAt: run.answerReceipt!.observedAt,
+      answerText: run.brief!.text,
+      answer: {
+        runId: run.runId,
+        sha256: run.answerReceipt!.sha256,
+        provenance: run.answerReceipt!.provenance,
+        limits: [...run.gaps, ...cleanupLimit],
+      },
+    };
+  });
 }

@@ -14,6 +14,7 @@ npm run test:research-answer
 npm run build
 npm run test:provenance
 npm run security:dependencies
+node --test scripts/research-pin.test.mjs
 npm run security:secrets
 npm run security:audit:test
 npm run security:audit

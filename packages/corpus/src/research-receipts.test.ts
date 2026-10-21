@@ -101,7 +101,10 @@ it('reads earlier CLI answer receipts without migration and keeps repeated corre
     );
     expect((await loadRun(first.runId, directory)).brief?.text).toBe(prose);
     expect((await loadRun(second.runId, directory)).brief?.text).toContain('Correction');
-    expect((await loadLibrary(directory)).filter((row) => row.answer)).toHaveLength(2);
+    const historical = (await loadLibrary(directory)).filter((row) => row.answer);
+    expect(historical).toHaveLength(2);
+    expect(historical[0]!.answer!.limits.join(' ')).toContain('Execution cleanup is unconfirmed');
+    expect((await loadRun(first.runId, directory)).status).toBe('completed');
     expect(await runHistory(directory)).toHaveLength(2);
     expect(await readFile(first.answerPath, 'utf8')).toBe(bytes);
     expect(await readdir(join(directory, '.signals'))).not.toContain('runs');

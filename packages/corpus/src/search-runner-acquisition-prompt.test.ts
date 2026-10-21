@@ -34,8 +34,8 @@ vi.mock('node:child_process', async (original) => ({
   ...(await original<typeof ChildModule>()),
   spawn: () => {
     const child = Object.assign(new EventEmitter(), {
-      stdout: new EventEmitter(),
-      stderr: new EventEmitter(),
+      stdout: Object.assign(new EventEmitter(), { destroy: () => {} }),
+      stderr: Object.assign(new EventEmitter(), { destroy: () => {} }),
       pid: undefined,
       kill: () => true,
       stdin: {
@@ -51,9 +51,11 @@ vi.mock('node:child_process', async (original) => ({
                 }) + '\n',
               ),
             );
+            child.stdout.emit('data', Buffer.from('{"type":"turn.completed"}\n'));
             child.emit('close', 0, null);
           });
         },
+        destroy: () => {},
       },
     });
     return child;

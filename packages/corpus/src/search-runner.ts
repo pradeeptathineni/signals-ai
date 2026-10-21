@@ -313,6 +313,9 @@ export function codexRunner(
             ? { rejectedOutput: rejectedOutput ?? boundedTextReceipt(final) }
             : {}),
           termination,
+          terminal: session.terminal,
+          cleanup: session.cleanup,
+          failureReason: session.failureReason,
         });
         const rejectedFinal = () => {
           try {
@@ -332,7 +335,7 @@ export function codexRunner(
           );
         if (!sessionCompleted(session))
           throw new RunnerFailure(
-            `runner_failed:${session.diagnostic.slice(0, 300)}`,
+            `runner_failed:${session.failureReason ?? session.cleanup.error ?? session.diagnostic.slice(0, 300) ?? 'incomplete'}`,
             searches,
             receipt(rejectedFinal()),
             readable ?? recoverOriginalAnswer(final),
@@ -384,10 +387,13 @@ export function codexRunner(
                 characters: retained ? JSON.stringify(retained).length : 0,
               },
               stages,
-              nativeSessions: 1,
+              nativeSessions: session.nativeSessions,
               servedModel: null,
               actionCounts: session.actionCounts,
               termination,
+              terminal: session.terminal,
+              cleanup: session.cleanup,
+              failureReason: session.failureReason,
             },
             searches,
           };
