@@ -344,10 +344,12 @@ export function requestStore(root: string) {
       );
     },
     async admit(
-      input: ResearchRequest,
+      input: { request_id: string; idempotency_key: string },
       epoch: string,
       configurationDigest?: string,
       expectedConfigurationDigest?: string,
+      // Distinct closed operations share one identity scope; the action keeps their digests apart.
+      action: 'search' | 'frozen-followup' = 'search',
     ) {
       for (const digest of [configurationDigest, expectedConfigurationDigest]) {
         if (digest !== undefined && !/^[a-f0-9]{64}$/.test(digest))
@@ -356,11 +358,11 @@ export function requestStore(root: string) {
       return write(
         (ledger) => {
           checkEpoch(ledger, epoch);
-          const semantic = { ...input } as Partial<ResearchRequest>;
+          const semantic = { ...input } as Partial<typeof input>;
           delete semantic.request_id;
           delete semantic.idempotency_key;
           const binding = {
-            action: 'search',
+            action,
             owner: { identity: ledger.identity, epoch: ledger.epoch },
             request: semantic,
           };
@@ -417,13 +419,14 @@ export function requestStore(root: string) {
         record.reason = 'dispatch_may_have_started';
       });
     },
-    async settle(id: string, epoch: string, state: Terminal) {
+    async settle(id: string, epoch: string, state: Terminal, reason?: string) {
       return update(id, epoch, (record) => {
         if (record.state !== 'unknown' || record.expired)
           throw new Error('request_not_dispatching');
         record.state = state;
         record.reason =
-          state === 'complete' ? 'research_complete_result_memory_only' : 'research_' + state;
+          reason ??
+          (state === 'complete' ? 'research_complete_result_memory_only' : 'research_' + state);
         if (record.cancelRequested) record.reason += '_after_cancel_request';
       });
     },

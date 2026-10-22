@@ -384,6 +384,45 @@ export interface SearchResult {
   claimCheck?: ClaimReceipt;
   assessmentOf?: string;
   assessmentTargets?: string[];
+  /** A saved-context-only discussion child; validated by search-followup's closed closure. */
+  followupOf?: {
+    version: 1;
+    scope: 'saved-context-only';
+    parent: {
+      owner: 'signals-ai';
+      kind: 'answer' | 'research_note';
+      id: string;
+      revision: string;
+      digest: string;
+    };
+    parentQuery: string;
+    parentStatus: 'completed' | 'partial' | 'cancelled' | 'failed' | 'not_configured';
+    requestDigest: string;
+    frozen: {
+      material: {
+        entityId: string;
+        observationId: string;
+        evidenceId: string;
+        statement: string;
+        quote: string;
+        feature: string;
+        entityName: string;
+        status: string;
+      }[];
+      context: {
+        id: string;
+        name: string;
+        uri: string;
+        description: string;
+        capabilities: string[];
+        limits: string[];
+      }[];
+      priorSynthesis?: string;
+      gaps: string[];
+    };
+    frozenDigest: string;
+    cited: string[];
+  };
   answerReceipt?: {
     context?: string;
     observedAt: string;

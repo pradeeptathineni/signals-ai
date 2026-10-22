@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
+  exactOwnerRecord,
   providerCapabilities,
   providerLibrary,
   providerRecord,
@@ -27,7 +28,12 @@ import {
 } from '../../domain/src/search-contract.js';
 import { signalSearch } from './signal-search.js';
 import { directSearch } from './search-direct.js';
-import { codexRunner, answerFirstOperation, claimReviewOperation } from './search-runner.js';
+import {
+  codexRunner,
+  answerFirstOperation,
+  claimReviewOperation,
+  type SearchRunner,
+} from './search-runner.js';
 import { loadAcquisitionConfig, acquisitionReadiness } from './search-acquisition.js';
 import { scanSources } from './search-sources.js';
 import { loadPersonal, updatePersonal } from './search-personal.js';
@@ -48,7 +54,10 @@ import { runDueOnce, refreshRequest } from './search-scheduler.js';
 import {
   answerFromEvidence,
   answerFromRetainedMaterial,
+  followupChild,
   frozenLibraryMaterial,
+  parseFollowupRequest,
+  savedResearchMaterial,
 } from './search-followup.js';
 import { checkPrimaryMaterial } from './search-reuse.js';
 import { selectSavedEntity } from './search-selection.js';
@@ -146,6 +155,8 @@ export function searchApi(
   locate = directSearch,
   follow = answerFromEvidence,
   check = checkPrimaryMaterial,
+  // Saved-context discussion runner; the default is the no-web Codex runner.
+  discussionRunner?: (task: string, schema: unknown) => Pick<SearchRunner, 'discover'>,
 ) {
   const token = randomBytes(32).toString('hex');
   const runs = new Map<string, ActiveRun>();
@@ -178,6 +189,40 @@ export function searchApi(
   };
   const resultFor = (runId: string | undefined) =>
     [...runs.values()].find((run) => run.result && run.result.runId === runId)?.result;
+  // A follow-up child reuses its durable job ID as its run UUID, so readback needs no new ledger field.
+  const childRunId = (id: string) =>
+    `${id.slice(0, 8)}-${id.slice(8, 12)}-${id.slice(12, 16)}-${id.slice(16, 20)}-${id.slice(20)}`;
+  // Explicit fields only: admission internals never leave the owner.
+  const followupView = async (view: Awaited<ReturnType<typeof requests.lookup>>) => {
+    const reply = {
+      code: view.code,
+      id: view.id,
+      receipt: view.receipt,
+      execution_configuration: view.execution_configuration,
+      deduplication: view.deduplication,
+      reason: view.reason,
+    };
+    if (!view.id || !view.receipt) return { ...reply, result_ref: null };
+    try {
+      const exact = await exactOwnerRecord(root, {
+        owner: 'signals-ai',
+        kind: 'answer',
+        id: childRunId(view.id),
+        revision: null,
+        digest: null,
+      });
+      const child = JSON.parse(exact.bytes.toString('utf8')) as SearchResult;
+      return {
+        ...reply,
+        result_ref:
+          child.followupOf?.requestDigest === view.receipt.request_digest ? exact.ref : null,
+      };
+    } catch (error) {
+      if (!(error instanceof ProviderError)) throw error;
+      // Absence is not proof of no effect; the receipt state stays authoritative.
+      return { ...reply, result_ref: null, result_reason: error.code };
+    }
+  };
   // One in-process AI job at a time. Claiming is synchronous so no await separates the
   // check from the set; search-runner's filesystem lease separately guards other processes.
   let active = false;
@@ -351,6 +396,119 @@ export function searchApi(
         const epoch = String(request.headers['x-signals-owner-epoch'] ?? '');
         const found = await requests.lookup(route.split('/')[1]!, epoch);
         json(found.receipt ? 200 : 404, found);
+      } else if (/^followups\/[A-Za-z0-9_.:-]{1,128}$/.test(route) && !mutation) {
+        const epoch = String(request.headers['x-signals-owner-epoch'] ?? '');
+        const found = await requests.lookup(route.split('/')[1]!, epoch);
+        json(found.receipt ? 200 : 404, await followupView(found));
+      } else if (route === 'followups' && mutation) {
+        const input = parseFollowupRequest(body);
+        const epoch = String(request.headers['x-signals-owner-epoch'] ?? '');
+        const expectedConfiguration = request.headers['x-signals-execution-digest'];
+        if (expectedConfiguration !== undefined && typeof expectedConfiguration !== 'string')
+          throw new Error('invalid_execution_configuration_digest');
+        const configuration = await executionConfiguration();
+        const admit = () =>
+          requests.admit(
+            input,
+            epoch,
+            configuration.digest,
+            expectedConfiguration,
+            'frozen-followup',
+          );
+        if ((await requests.lookup(input.idempotency_key, epoch)).receipt) {
+          // Same key: compare its meaning and return the original identity. Never re-run.
+          json(202, await followupView(await admit()));
+          return true;
+        }
+        // The exact parent is verified before admission and before any model call.
+        const parent = await exactOwnerRecord(root, input.parent_ref);
+        const parentRun = JSON.parse(parent.bytes.toString('utf8')) as SearchResult;
+        const frozen = savedResearchMaterial(parentRun, input.parent_ref.kind);
+        if (!claim()) {
+          json(409, { code: 'runner_busy', reason: 'Another AI job is active; nothing admitted.' });
+          return true;
+        }
+        try {
+          const admission = await admit();
+          if (!admission.created) {
+            active = false;
+            json(202, await followupView(admission));
+            return true;
+          }
+          const { record } = admission;
+          const started = await requests.dispatch(record.id, epoch);
+          const startedAt = new Date().toISOString();
+          const run: ActiveRun = {
+            controller: new AbortController(),
+            requestEpoch: epoch,
+            events: ['Discussing saved research. No search, source access or verification.'],
+            startedAt,
+            lastEvidenceAt: startedAt,
+            settled: false,
+          };
+          runs.set(record.id, run);
+          observation.changed();
+          void (async () => {
+            let retaining = false;
+            try {
+              const { settings } = configuration;
+              const answer = await answerFromRetainedMaterial(
+                frozen,
+                input.question,
+                settings.model || undefined,
+                settings.effort || undefined,
+                { runner: discussionRunner, signal: run.controller.signal },
+              );
+              const child = followupChild({
+                runId: childRunId(record.id),
+                parent: parentRun,
+                parentRef: input.parent_ref,
+                question: input.question,
+                frozen,
+                requestDigest: record.digest,
+                answer,
+                requestedModel: settings.model || null,
+                elapsedMs: Date.now() - Date.parse(startedAt),
+              });
+              retaining = true;
+              await retainRun(child, root);
+              run.result = child;
+              run.events.push('Follow-up answer retained privately.');
+              await requests.settle(
+                record.id,
+                epoch,
+                'complete',
+                'followup_complete_child_retained',
+              );
+            } catch (failure) {
+              run.error = failure instanceof Error ? failure.message : 'followup_failed';
+              run.events.push(run.error);
+              // An interrupted retention write is not a settled effect; readback stays unknown.
+              if (!retaining) {
+                const cancelled = run.controller.signal.aborted;
+                await requests
+                  .settle(
+                    record.id,
+                    epoch,
+                    cancelled ? 'cancelled' : 'failed',
+                    cancelled ? 'followup_cancelled' : 'followup_failed',
+                  )
+                  .catch(() => {});
+              }
+            } finally {
+              run.lastEvidenceAt = new Date().toISOString();
+              run.settled = true;
+              run.settledAt = run.lastEvidenceAt;
+              observation.changed();
+              active = false;
+              pruneRuns();
+            }
+          })();
+          json(202, await followupView(started));
+        } catch (failure) {
+          active = false;
+          throw failure;
+        }
       } else if (route === 'settings')
         json(200, mutation ? await saveSettings(body, root) : await loadSettings(root));
       else if (route === 'library' && !mutation) {

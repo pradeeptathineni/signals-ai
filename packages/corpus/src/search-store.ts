@@ -45,6 +45,7 @@ import {
 import { digest, normalizeText, normalizeSpan } from './search-fetch.js';
 import { validateClaimReceipt } from './search-claim.js';
 import { partialNoteSelection } from './search-note.js';
+import { validateFollowupChild } from './search-followup.js';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
 import {
   signalBasisSchema,
@@ -869,6 +870,8 @@ export async function loadRun(
     )
       throw new Error('invalid_answer_receipt');
   }
+  // The copied closure is self-contained: a missing or changed parent never invalidates it.
+  if (result.followupOf !== undefined) validateFollowupChild(result);
   if (result.claimCheck) {
     const receipt = validateClaimReceipt(result);
     if (receipt.version === 1) {

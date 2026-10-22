@@ -134,7 +134,9 @@ export async function loadAnswerLibrary(
       id: run.runId,
       title: run.query,
       uri: '#',
-      description: `${run.status === 'completed' ? 'Retained research answer' : 'Incomplete retained research answer'}. Unassessed; confidence Unknown.${confirmed ? '' : ' Execution cleanup unconfirmed.'}`,
+      description: run.followupOf
+        ? `Follow-up about saved research: ${run.followupOf.parentQuery.slice(0, 200)}. Saved context only; no new search or verification. Unassessed; confidence Unknown.`
+        : `${run.status === 'completed' ? 'Retained research answer' : 'Incomplete retained research answer'}. Unassessed; confidence Unknown.${confirmed ? '' : ' Execution cleanup unconfirmed.'}`,
       kind: 'research-answer',
       aliases: [],
       domains: [],

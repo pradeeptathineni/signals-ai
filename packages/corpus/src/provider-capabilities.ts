@@ -214,6 +214,18 @@ export async function providerCapabilities(
         authority_required: true,
       },
       { name: 'cancel', target_kinds: ['research_job'], mutating: true, authority_required: true },
+      {
+        name: 'ask_saved_research',
+        target_kinds: ['answer', 'research_note'],
+        mutating: true,
+        authority_required: true,
+      },
+      {
+        name: 'lookup_followup',
+        target_kinds: ['followup_request'],
+        mutating: false,
+        authority_required: false,
+      },
     ],
     record_kinds: [
       'answer',
@@ -248,6 +260,8 @@ export async function providerCapabilities(
       read_route: 'provider/records?ref=<encoded RecordRef>',
       library_route:
         'provider/library?q=<literal Unicode text>&limit=<1..100>&kinds=<comma-separated supported kinds>&project_ref=<encoded RecordRef>&cursor=<opaque>',
+      followup_route:
+        'followups (frozen-followup-request-v1, session token and owner epoch); followups/<idempotency_key> reads it back',
       supported_records:
         'Qualified retained runs, imported answers, native entities, selected leads and project records. Library summaries are bounded; process observations use provider/processes. No arbitrary paths or commands.',
     },
@@ -386,6 +400,28 @@ async function ownedBytes(
   }
   return fail(400, 'unsupported_record_kind', 'This owner does not read that record kind.');
 }
+/** Exact validated bytes of one owner record; a changed revision is refused, never substituted. */
+export async function exactOwnerRecord(root: string, ref: OwnerRef) {
+  const { bytes, storage } = await ownedBytes(root, ref.kind, ref.id);
+  const sha256 = createHash('sha256').update(bytes).digest('hex');
+  const revision = 'sha256:' + sha256;
+  if (
+    (ref.digest !== null && ref.digest !== sha256) ||
+    (ref.revision !== null && ref.revision !== revision)
+  )
+    fail(
+      409,
+      'provider_record_changed',
+      'The exact requested revision/digest is unavailable. Resolve a successor explicitly; no substitution was made.',
+    );
+  if (!(await ownedBytes(root, ref.kind, ref.id)).bytes.equals(bytes))
+    fail(
+      409,
+      'provider_record_changed',
+      'Snapshot changed while it was being validated. Retry the exact reference after owner reconciliation.',
+    );
+  return { bytes, storage, ref: { ...ref, revision, digest: sha256 } };
+}
 export async function providerRecord(
   root: string,
   url: string,
@@ -415,33 +451,16 @@ export async function providerRecord(
       'provider_owner_mismatch',
       'The reference belongs to another owner. Use its explicitly registered endpoint.',
     );
-  const { bytes, storage } = await ownedBytes(root, ref.kind, ref.id);
-  const sha256 = createHash('sha256').update(bytes).digest('hex');
-  const revision = 'sha256:' + sha256;
-  if (
-    (ref.digest !== null && ref.digest !== sha256) ||
-    (ref.revision !== null && ref.revision !== revision)
-  )
-    fail(
-      409,
-      'provider_record_changed',
-      'The exact requested revision/digest is unavailable. Resolve a successor explicitly; no substitution was made.',
-    );
-  if (!(await ownedBytes(root, ref.kind, ref.id)).bytes.equals(bytes))
-    fail(
-      409,
-      'provider_record_changed',
-      'Snapshot changed while it was being validated. Retry the exact reference after owner reconciliation.',
-    );
+  const exact = await exactOwnerRecord(root, ref);
   const result = {
     schema_version: '1.0',
-    ref: { ...ref, revision, digest: sha256 },
+    ref: exact.ref,
     instance_id: scope.identity,
     owner_epoch: scope.epoch,
     content_type: 'application/json',
     encoding: 'utf8',
-    content: bytes.toString('utf8'),
-    storage,
+    content: exact.bytes.toString('utf8'),
+    storage: exact.storage,
   };
   if (!Value.Check(recordSchema, result))
     fail(503, 'provider_record_unavailable', 'Stored record response failed its runtime contract.');
