@@ -6,6 +6,7 @@ import { digest } from './search-fetch.js';
 import { activeObservations } from '../../domain/src/search-score.js';
 import type { LibraryFinding } from '../../domain/src/library-search.js';
 import type { Entity } from '../../domain/src/search-contract.js';
+import { selectPassages } from './passage-rank.js';
 
 function retainedStatements(entity: Entity) {
   return activeObservations(entity, entity.assessment.policy)
@@ -253,6 +254,41 @@ const followupRequestSchema = Type.Object(
 );
 export type FollowupRequest = Static<typeof followupRequestSchema>;
 
+const followupRequestV2Schema = Type.Object(
+  {
+    schema_version: Type.Literal('2.0'),
+    request_id: followupRequestSchema.properties.request_id,
+    idempotency_key: followupRequestSchema.properties.idempotency_key,
+    parent_refs: Type.Array(parentRef, { minItems: 2, maxItems: 4 }),
+    question: followupRequestSchema.properties.question,
+    scope: followupRequestSchema.properties.scope,
+    retention: followupRequestSchema.properties.retention,
+    authority_ref: followupRequestSchema.properties.authority_ref,
+  },
+  closed,
+);
+export type FollowupRequestV2 = Static<typeof followupRequestV2Schema>;
+
+/** Two to four exact retained parents; this does not widen the frozen v1 request. */
+export function parseFollowupRequestV2(input: unknown): FollowupRequestV2 {
+  const strings = (value: unknown): string[] =>
+    typeof value === 'string'
+      ? [value]
+      : value && typeof value === 'object'
+        ? Object.values(value).flatMap(strings)
+        : [];
+  if (
+    !Value.Check(followupRequestV2Schema, input) ||
+    !input.question.trim() ||
+    new Set(input.parent_refs.map((ref) => ref.id)).size !== input.parent_refs.length ||
+    input.parent_refs.some((ref) => ref.revision !== `sha256:${ref.digest}`)
+  )
+    throw new Error('unsupported_followup_request_v2');
+  if (strings(input).some((value) => !value.isWellFormed()))
+    throw new Error('invalid_request_unicode');
+  return { ...input, question: input.question.trim() };
+}
+
 /** frozen-followup-request-v1: one exact saved parent, discussion only, private retention. */
 export function parseFollowupRequest(input: unknown): FollowupRequest {
   const strings = (value: unknown): string[] =>
@@ -351,11 +387,159 @@ const followupClosureSchema = Type.Object(
 );
 export type FollowupClosure = Static<typeof followupClosureSchema>;
 
+const followupClosureV2Schema = Type.Object(
+  {
+    version: Type.Literal(2),
+    scope: followupClosureSchema.properties.scope,
+    parents: Type.Array(
+      Type.Object(
+        {
+          ref: parentRef,
+          query: bounded(100000),
+          status: followupClosureSchema.properties.parentStatus,
+        },
+        closed,
+      ),
+      { minItems: 2, maxItems: 4 },
+    ),
+    selection: Type.Object(
+      {
+        method: Type.Literal('bm25-v1'),
+        question_sha256: sha256,
+        per_parent: Type.Array(
+          Type.Object(
+            {
+              parent_id: Type.String({ pattern: uuid }),
+              total: Type.Integer({ minimum: 0 }),
+              kept: Type.Integer({ minimum: 0, maximum: 40 }),
+            },
+            closed,
+          ),
+          { minItems: 2, maxItems: 4 },
+        ),
+      },
+      closed,
+    ),
+    requestDigest: sha256,
+    frozen: followupClosureSchema.properties.frozen,
+    frozenDigest: sha256,
+    cited: followupClosureSchema.properties.cited,
+  },
+  closed,
+);
+export type FollowupClosureV2 = Static<typeof followupClosureV2Schema>;
+type SavedParent = { ref: FollowupRequestV2['parent_refs'][number]; run: SearchResult };
+
+/** Rank source statements before trimming; never turn an answer's narrative into evidence. */
+export function savedResearchMaterialV2(parents: SavedParent[], question: string) {
+  const statements = parents.map(({ ref, run }) =>
+    run.items.flatMap(({ entity }) =>
+      retainedStatements(entity).map((row) => {
+        const identity = `native:private:${ref.id}_${row.entityId}`;
+        return {
+          ...row,
+          entityId: identity,
+          observationId: `${identity}:${row.observationId}`,
+          evidenceId: `${identity}:${row.evidenceId}`,
+        };
+      }),
+    ),
+  );
+  const selected = selectPassages(question, statements, (row) => `${row.statement}\n${row.quote}`);
+  const context = parents.flatMap(({ ref, run }) =>
+    frozenFollowupMaterial(run, [])
+      .context.slice(0, Math.floor(20 / parents.length))
+      .map((row) => ({ ...row, id: `native:private:${ref.id}_${row.id}` })),
+  );
+  const originalContexts = parents.reduce((sum, { run }) => sum + run.items.length, 0);
+  while (JSON.stringify(context).length > 12000) context.pop();
+  const synthesis = parents
+    .filter(({ run }) => run.brief?.text)
+    .map(({ ref, run }) => ({
+      parent_id: ref.id,
+      kind: ref.kind,
+      text: run.brief!.text,
+    }));
+  const priorSynthesis = synthesis.length
+    ? synthesis
+        .map(
+          ({ parent_id, kind, text }) =>
+            `Saved ${kind} ${parent_id} (unassessed prior synthesis):\n${text}`,
+        )
+        .join('\n\n')
+    : undefined;
+  // Refuse before admission rather than silently dropping one of the selected narratives.
+  if (priorSynthesis && priorSynthesis.length > 110000)
+    throw new Error('followup_synthesis_budget_exceeded');
+  const selection: FollowupClosureV2['selection'] = {
+    method: 'bm25-v1',
+    question_sha256: digest(question),
+    per_parent: parents.map(({ ref }, index) => ({
+      parent_id: ref.id,
+      ...selected.perParent[index]!,
+    })),
+  };
+  const frozen = JSON.parse(
+    JSON.stringify({
+      material: selected.material,
+      context,
+      priorSynthesis,
+      gaps: [
+        'Frozen saved context only: no search, source access, execution or verification. Source currentness and contradictions have not been renewed.',
+        'Selected narratives are unassessed prior synthesis, not independently verified evidence. Confidence Unknown. Lexical ranking does not establish support.',
+        ...parents.flatMap(({ ref, run }, index) => [
+          `${ref.id}: ${selected.perParent[index]!.kept}/${selected.perParent[index]!.total} retained statements selected by bm25-v1 within the discussion budget.`,
+          ...(ref.kind === 'research_note' || run.status !== 'completed'
+            ? [
+                `${ref.id}: original ${run.status} research remains incomplete; this discussion does not complete it.`,
+              ]
+            : []),
+          ...run.gaps.slice(0, 3).map((gap) => `${ref.id}: ${gap}`),
+        ]),
+        ...(context.length < originalContexts
+          ? [
+              `${originalContexts - context.length} record descriptions omitted by the context budget.`,
+            ]
+          : []),
+      ],
+    }),
+  ) as ReturnType<typeof frozenFollowupMaterial>;
+  return { frozen, selection };
+}
+
+export function followupChildV2(input: {
+  runId: string;
+  parents: SavedParent[];
+  question: string;
+  frozen: ReturnType<typeof frozenFollowupMaterial>;
+  selection: FollowupClosureV2['selection'];
+  requestDigest: string;
+  answer: Awaited<ReturnType<typeof answerFromRetainedMaterial>>;
+  requestedModel: string | null;
+  elapsedMs: number;
+}): SearchResult {
+  const first = input.parents[0]!;
+  const child = followupChild({ ...input, parent: first.run, parentRef: first.ref });
+  return {
+    ...child,
+    followupOf: {
+      version: 2,
+      scope: 'saved-context-only',
+      parents: input.parents.map(({ ref, run }) => ({ ref, query: run.query, status: run.status })),
+      selection: input.selection,
+      requestDigest: input.requestDigest,
+      frozen: input.frozen,
+      frozenDigest: digest(JSON.stringify(input.frozen)),
+      cited: input.answer.statements.map((row) => row.observationId),
+    },
+  };
+}
+
 /** A retained child answer copies its scope; it never depends on the parent still existing. */
 export function followupChild(input: {
   runId: string;
   parent: SearchResult;
-  parentRef: FollowupRequest['parent_ref'];
+  parentRef: FollowupClosure['parent'];
   question: string;
   frozen: ReturnType<typeof frozenFollowupMaterial>;
   requestDigest: string;
@@ -409,6 +593,54 @@ export function followupChild(input: {
 
 export function validateFollowupChild(result: SearchResult) {
   const closure = result.followupOf;
+  if (closure?.version === 2) {
+    if (
+      !Value.Check(followupClosureV2Schema, closure) ||
+      !result.answerReceipt ||
+      result.answerReceipt.provenance.receipt !== result.runId ||
+      result.status !== 'completed' ||
+      result.items.length ||
+      result.sources.length ||
+      result.claimCheck ||
+      result.assessmentOf ||
+      result.provisionalLeads?.length ||
+      result.usage.searches !== 0 ||
+      result.usage.documents !== 0 ||
+      new Set(closure.parents.map((parent) => parent.ref.id)).size !== closure.parents.length ||
+      closure.parents.some(
+        ({ ref }) => ref.id === result.runId || ref.revision !== `sha256:${ref.digest}`,
+      ) ||
+      closure.selection.question_sha256 !== digest(result.query) ||
+      closure.selection.per_parent.length !== closure.parents.length ||
+      closure.selection.per_parent.some(
+        (counts, index) =>
+          counts.parent_id !== closure.parents[index]!.ref.id ||
+          counts.kept > counts.total ||
+          counts.kept !==
+            closure.frozen.material.filter((row) =>
+              row.entityId.startsWith(`native:private:${counts.parent_id}_`),
+            ).length,
+      ) ||
+      closure.selection.per_parent.reduce((sum, counts) => sum + counts.kept, 0) !==
+        closure.frozen.material.length ||
+      closure.frozen.material.some(
+        (row) =>
+          !row.observationId.startsWith(row.entityId + ':') ||
+          !row.evidenceId.startsWith(row.entityId + ':'),
+      ) ||
+      closure.frozen.context.some(
+        (row) => !closure.parents.some(({ ref }) => row.id.startsWith(`native:private:${ref.id}_`)),
+      ) ||
+      Buffer.byteLength(JSON.stringify(closure.frozen.material)) > 18000 ||
+      digest(JSON.stringify(closure.frozen)) !== closure.frozenDigest
+    )
+      throw new Error('invalid_followup_closure');
+    validateRetainedAnswer(closure.frozen.material, {
+      answer: result.brief?.text ?? '',
+      observations: closure.cited,
+    });
+    return;
+  }
   if (
     !Value.Check(followupClosureSchema, closure) ||
     !result.answerReceipt ||

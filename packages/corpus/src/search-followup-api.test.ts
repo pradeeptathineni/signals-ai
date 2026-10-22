@@ -1,15 +1,19 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { spawn, type ChildProcess } from 'node:child_process';
+import { once } from 'node:events';
+import { fileURLToPath } from 'node:url';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { expect, it, vi } from 'vitest';
-import { budgets, type SearchResult } from '../../domain/src/search-contract.js';
+import { budgets, type SearchResult, type Proposal } from '../../domain/src/search-contract.js';
 import { digest } from './search-fetch.js';
 import { requestStore } from './search-request-store.js';
 import { loadRun, retainRun } from './search-store.js';
 import { searchApi } from './search-api.js';
+import { acceptDiscovery } from './signal-search.js';
 import type * as RunnerModule from './search-runner.js';
 import {
   extractiveDiscussionRunner,
@@ -45,7 +49,7 @@ type Body = {
   receipt: { state: string; reason: string; request_digest: string };
   result_ref: Ref;
   ref: Ref;
-  capabilities: { operations: { name: string }[] };
+  capabilities: { operations: { name: string }[]; contracts: { id: string; versions: string[] }[] };
   records: {
     ref: Ref;
     kind: string;
@@ -447,3 +451,483 @@ it('keeps a stopped note incomplete, and leaves an interrupted follow-up unknown
     await rm(t.root, { recursive: true, force: true });
   }
 });
+
+function across(refs: Ref[], question: string, key = randomUUID()) {
+  return {
+    schema_version: '2.0',
+    request_id: `across:${key}`,
+    idempotency_key: key,
+    parent_refs: refs,
+    question,
+    scope: 'saved-context-only',
+    retention: 'private',
+    authority_ref: {
+      owner: 'signals-ai',
+      kind: 'authority',
+      id: 'offline-user',
+      revision: '1',
+      digest: null,
+    },
+  };
+}
+
+it('supports two and four parents while keeping selected stopped notes incomplete', async () => {
+  const t = await setup();
+  try {
+    const refs = [await t.exact('answer', t.answerId), await t.exact('research_note', t.noteId)];
+    for (const count of [2, 4]) {
+      while (refs.length < count) {
+        const parent = run(randomUUID(), `Extra authored parent ${refs.length}`, tankAnswer, true);
+        await retainRun(parent, t.root);
+        refs.push(await t.exact('answer', parent.runId));
+      }
+      const body = across(refs.slice(0, count), 'Which part needs monthly cleaning?');
+      expect((await t.ask(t.api, body)).status).toBe(202);
+      const done = await t.settled(t.api, body.idempotency_key);
+      expect(done.receipt.state).toBe('complete');
+      const child = await loadRun(done.result_ref.id, t.root);
+      expect(child.followupOf).toMatchObject({
+        version: 2,
+        parents: expect.arrayContaining([
+          expect.objectContaining({ ref: refs[1], status: 'cancelled' }),
+        ]),
+      });
+      expect(child.gaps.join(' ')).toContain('does not complete it');
+      expect((await loadRun(t.noteId, t.root)).status).toBe('cancelled');
+    }
+    expect(t.calls).toHaveLength(2);
+  } finally {
+    await rm(t.root, { recursive: true, force: true });
+  }
+});
+
+it('refuses a second multi-parent admission while a discussion is active', async () => {
+  const t = await setup();
+  let release: () => void = () => {};
+  try {
+    const refs = [await t.exact('answer', t.answerId), await t.exact('research_note', t.noteId)];
+    const hanging = searchApi(t.root, undefined, undefined, undefined, undefined, () => ({
+      discover: (_request, signal) =>
+        new Promise<never>((_, reject) => {
+          release = () => reject(new Error('cancelled'));
+          signal.addEventListener('abort', release, { once: true });
+        }),
+    }));
+    const token = (await call(hanging, 'GET', 'session')).body.token;
+    const firstBody = across(refs, 'first question');
+    const first = await t.ask(hanging, firstBody, { 'x-signals-token': token });
+    expect(first.status).toBe(202);
+    const second = across(refs, 'second question');
+    expect(await t.ask(hanging, second, { 'x-signals-token': token })).toMatchObject({
+      status: 409,
+      body: { code: 'runner_busy' },
+    });
+    expect(
+      (await call(hanging, 'GET', 'followups/' + second.idempotency_key, undefined, t.owner))
+        .status,
+    ).toBe(404);
+    await call(hanging, 'POST', 'cancel/' + first.body.id, {}, { 'x-signals-token': token });
+    release();
+    expect((await t.settled(hanging, firstBody.idempotency_key)).receipt.state).toBe('cancelled');
+  } finally {
+    release();
+    await rm(t.root, { recursive: true, force: true });
+  }
+});
+
+it('refuses invalid multi-parent selections, drift and missing parents before admission', async () => {
+  const t = await setup();
+  try {
+    const refs = [await t.exact('answer', t.answerId), await t.exact('research_note', t.noteId)];
+    const inputs = [
+      across(refs.slice(0, 1), 'q'),
+      across(
+        Array.from({ length: 5 }, () => ({ ...refs[0]!, id: randomUUID() })),
+        'q',
+      ),
+      across([refs[0]!, refs[0]!], 'q'),
+      across(refs, '\ud800'),
+      across([refs[0]!, { ...refs[1]!, revision: 'sha256:' + '0'.repeat(64) }], 'q'),
+      across([refs[0]!, { ...refs[1]!, kind: 'entity' }], 'q'),
+    ];
+    for (const body of inputs) {
+      expect((await t.ask(t.api, body)).status).toBe(400);
+      expect(
+        (await call(t.api, 'GET', 'followups/' + body.idempotency_key, undefined, t.owner)).status,
+      ).toBe(404);
+    }
+    const changed = across(
+      [refs[0]!, { ...refs[1]!, digest: '0'.repeat(64), revision: 'sha256:' + '0'.repeat(64) }],
+      'q',
+    );
+    expect((await t.ask(t.api, changed)).status).toBe(409);
+    expect(
+      (await call(t.api, 'GET', 'followups/' + changed.idempotency_key, undefined, t.owner)).status,
+    ).toBe(404);
+    const largeRefs: Ref[] = [];
+    for (let index = 0; index < 2; index++) {
+      const parent = run(randomUUID(), `Large selected answer ${index}`, 'x'.repeat(60000), true);
+      await retainRun(parent, t.root);
+      largeRefs.push(await t.exact('answer', parent.runId));
+    }
+    const large = across(largeRefs, 'q');
+    expect((await t.ask(t.api, large)).body.code).toBe('followup_synthesis_budget_exceeded');
+    expect(
+      (await call(t.api, 'GET', 'followups/' + large.idempotency_key, undefined, t.owner)).status,
+    ).toBe(404);
+    await rm(join(t.root, '.signals/runs', `${t.noteId}.json`));
+    const missing = across(refs, 'q');
+    expect((await t.ask(t.api, missing)).status).toBe(404);
+    expect(
+      (await call(t.api, 'GET', 'followups/' + missing.idempotency_key, undefined, t.owner)).status,
+    ).toBe(404);
+    expect(t.calls).toHaveLength(0);
+  } finally {
+    await rm(t.root, { recursive: true, force: true });
+  }
+});
+
+/** Authored source passages enter through the real evidence decoder; no user Corpus is read. */
+async function savedFixture(index: number, count: number): Promise<SearchResult> {
+  const passages = Array.from({ length: count }, (_, ordinal) =>
+    index === 0 && ordinal >= 45 && ordinal <= 50
+      ? `Battery export requirement ${ordinal}: retain signed portable bundles.`
+      : index === 0
+        ? `Gardening filler ${ordinal}: inspect soil texture.`
+        : `Battery export constraint ${index}-${ordinal}: ${index === 1 ? 'permissions remain unknown' : 'archive costs remain unknown'}.`,
+  );
+  const source = `https://example.org/fixture-${index}`;
+  const proposal: Proposal = {
+    sources: [
+      {
+        uri: source,
+        title: `Authored source ${index}`,
+        publisher: 'Offline fixture',
+        family: 'primary',
+        origin: 'maintainer',
+        publishedAt: '2026-10-20T00:00:00Z',
+      },
+    ],
+    candidates: [
+      {
+        uri: source,
+        name: `Authored option ${index}`,
+        kind: 'software',
+        identity: 'resolved',
+        aliases: [],
+        description: 'Synthetic source-selection fixture.',
+        facets: {
+          domains: [],
+          capabilities: [],
+          interfaces: [],
+          deliveryForms: [],
+          platforms: [],
+          licenses: [],
+          tags: [],
+        },
+        observations: passages.map((text) => ({
+          source: 0,
+          feature: 'defining',
+          indicator: 'defines',
+          statement: text,
+          quote: text,
+          independent: false,
+          origin: 'maintainer',
+          status: 'supported',
+        })),
+        match: { level: 'direct', reason: 'Authored test scope only.', sources: [0] },
+        limits: ['Synthetic; no research quality claim.'],
+      },
+    ],
+    coverage: [],
+    gaps: [],
+  };
+  const acquired = await acceptDiscovery(
+    proposal,
+    { query: `Authored saved option ${index}` },
+    {
+      asOf: '2026-10-21T00:00:00Z',
+      evidenceClass: 'fixture',
+      fetch: async (uri) => ({
+        uri,
+        text: passages.join('\n'),
+        digest: digest(passages.join('\n')),
+      }),
+    },
+  );
+  const narrative =
+    index === 0
+      ? 'Battery export uses signed portable bundles.'
+      : index === 1
+        ? 'Battery export permissions remain unknown.'
+        : 'Battery export archive costs remain unknown.';
+  return {
+    ...run(randomUUID(), `Saved battery option ${index}`, narrative, true),
+    ...acquired,
+    status: 'completed' as const,
+    usage: {
+      searches: 0,
+      documents: 1,
+      elapsedMs: 0,
+      modelCalls: 0,
+      providerUsage: { fixture: 'authored-source' },
+      cost: null,
+    },
+    brief: { format: 'markdown' as const, text: narrative },
+    answerReceipt: {
+      observedAt: '2026-10-21T00:00:00Z',
+      sha256: digest(narrative),
+      state: 'unassessed' as const,
+      confidence: 'unknown' as const,
+      provenance: { receipt: 'authored offline fixture', requestedModel: null, servedModel: null },
+    },
+  };
+}
+
+it('asks across three actual HTTP records, selects late relevant sources, and cold-reopens a Plan-readable child', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-ask-across-http-')));
+  const children: ChildProcess[] = [];
+  const stop = async (child: ChildProcess) => {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    const closed = once(child, 'close');
+    child.kill('SIGTERM');
+    await closed;
+  };
+  try {
+    const scope = await requestStore(root).initialize();
+    const parents = await Promise.all([
+      savedFixture(0, 60),
+      savedFixture(1, 3),
+      savedFixture(2, 4),
+    ]);
+    for (const parent of parents) await retainRun(parent, root);
+    const parentBytes = await Promise.all(
+      parents.map((parent) => readFile(join(root, '.signals/runs', `${parent.runId}.json`))),
+    );
+    await mkdir(join(root, 'bin'));
+    await writeFile(
+      join(root, 'bin/codex'),
+      '#!/bin/sh\ncase "$*" in\n--version) echo "codex offline fixture";;\n"login status") echo "Logged in fixture";;\n*) exit 91;;\nesac\n',
+      { mode: 0o700 },
+    );
+    const launch = async (cold: boolean) => {
+      const child = spawn(
+        process.execPath,
+        [
+          '--import',
+          'tsx',
+          fileURLToPath(
+            new URL('../../../tests/fixtures/followup-owner-server.ts', import.meta.url),
+          ),
+          root,
+        ],
+        {
+          env: {
+            PATH: `${join(root, 'bin')}:${process.execPath.slice(0, process.execPath.lastIndexOf('/'))}:/usr/bin:/bin`,
+            HOME: root,
+            TMPDIR: root,
+            FOLLOWUP_COLD: cold ? '1' : '0',
+          },
+          stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+        },
+      );
+      children.push(child);
+      let stderr = '';
+      child.stderr!.on('data', (data: Buffer) => {
+        stderr += data.toString();
+      });
+      const port = await new Promise<number>((resolve, reject) => {
+        child.on('message', (message: { type: string; port: number }) => {
+          if (message.type === 'ready') resolve(message.port);
+        });
+        child.once('exit', (code) => reject(new Error(`fixture_exit_${code}: ${stderr}`)));
+        child.once('error', reject);
+      });
+      return `http://127.0.0.1:${port}/signals-ai/__signals/api/`;
+    };
+    const owner = {
+      'x-signals-provider-version': '1.0',
+      'x-signals-instance-id': scope.identity,
+      'x-signals-owner-epoch': scope.epoch,
+    };
+    const request = async (base: string, route: string, body?: unknown, token?: string) => {
+      const reply = await fetch(base + route, {
+        method: body === undefined ? 'GET' : 'POST',
+        headers: {
+          ...owner,
+          ...(body === undefined
+            ? {}
+            : { 'content-type': 'application/json', 'x-signals-token': token! }),
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      return { status: reply.status, body: (await reply.json()) as Body };
+    };
+    const first = await launch(false);
+    const capabilities = (await request(first, 'provider/capabilities')).body.capabilities;
+    expect(capabilities.contracts).toContainEqual({
+      id: 'frozen-followup-request',
+      versions: ['1.0', '2.0'],
+    });
+    expect(capabilities.operations).toContainEqual({
+      name: 'ask_across_saved_research',
+      target_kinds: ['answer', 'research_note'],
+      mutating: true,
+      authority_required: true,
+    });
+    const token = (await request(first, 'session')).body.token;
+    const refs: Ref[] = [];
+    for (const parent of parents)
+      refs.push(
+        (
+          await request(
+            first,
+            'provider/records?ref=' +
+              encodeURIComponent(
+                JSON.stringify({
+                  owner: 'signals-ai',
+                  kind: 'answer',
+                  id: parent.runId,
+                  revision: null,
+                  digest: null,
+                }),
+              ),
+          )
+        ).body.ref,
+      );
+    const body = across(
+      refs,
+      'Which battery export requirements, permissions and archive costs remain?',
+    );
+    const admitted = await request(first, 'followups', body, token);
+    expect(admitted.status).toBe(202);
+    let done: Body | undefined;
+    for (let attempt = 0; attempt < 150; attempt++) {
+      const read = await request(first, 'followups/' + body.idempotency_key);
+      if (read.status === 200 && read.body.receipt.state === 'complete') {
+        done = read.body;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect(done?.result_ref.kind).toBe('answer');
+    const original = await request(
+      first,
+      'provider/records?ref=' + encodeURIComponent(JSON.stringify(done!.result_ref)),
+    );
+    expect(original.status).toBe(200);
+    const child = JSON.parse(original.body.content) as SearchResult;
+    if (child.followupOf?.version !== 2) throw new Error('missing_v2_closure');
+    const closure = child.followupOf;
+    expect(closure.parents.map((parent) => parent.ref)).toEqual(refs);
+    // Qualified source IDs consume the byte budget before all 40 slots fit.
+    expect(closure.selection).toMatchObject({
+      method: 'bm25-v1',
+      question_sha256: digest(body.question),
+      per_parent: [
+        { total: 60, kept: 24 },
+        { total: 3, kept: 3 },
+        { total: 4, kept: 4 },
+      ],
+    });
+    for (let ordinal = 45; ordinal <= 50; ordinal++)
+      expect(closure.frozen.material.map((row) => row.statement)).toContain(
+        `Battery export requirement ${ordinal}: retain signed portable bundles.`,
+      );
+    expect(closure.cited.length).toBeGreaterThan(0);
+    expect(
+      closure.cited.every((id) => closure.frozen.material.some((row) => row.observationId === id)),
+    ).toBe(true);
+    expect(child.brief!.text).toContain('permissions remain unknown');
+    expect(child.gaps.join(' ')).toContain('24/60 retained statements');
+    expect(Buffer.byteLength(JSON.stringify(closure.frozen.material))).toBeLessThanOrEqual(18000);
+    for (const row of closure.frozen.material) {
+      const parent = parents.find((entry) =>
+        row.entityId.startsWith(`native:private:${entry.runId}_`),
+      )!;
+      const observation = parent.items
+        .flatMap((item) => item.entity.observations)
+        .find((entry) => row.observationId.endsWith(':' + entry.id))!;
+      expect(row.statement).toBe(observation.statement);
+      expect(row.quote).toBe(observation.quote);
+      expect(row.evidenceId.endsWith(':' + observation.evidenceId)).toBe(true);
+    }
+    for (let index = 0; index < parents.length; index++)
+      expect(await readFile(join(root, '.signals/runs', `${parents[index]!.runId}.json`))).toEqual(
+        parentBytes[index],
+      );
+    const calls = () =>
+      readFile(join(root, 'discussion-calls.jsonl'), 'utf8').then((text) =>
+        text.trim().split('\n').filter(Boolean),
+      );
+    const callsBefore = (await calls()).length;
+    expect(callsBefore).toBe(1);
+    await stop(children[0]!);
+    const cold = await launch(true);
+    const coldToken = (await request(cold, 'session')).body.token;
+    for (const parent of parents) await rm(join(root, '.signals/runs', `${parent.runId}.json`));
+    const restored = await request(cold, 'followups/' + body.idempotency_key);
+    expect(restored.body.result_ref).toEqual(done!.result_ref);
+    const read = await request(
+      cold,
+      'provider/records?ref=' + encodeURIComponent(JSON.stringify(done!.result_ref)),
+    );
+    expect(read.body.content).toBe(original.body.content);
+    const library = await request(cold, 'provider/library?q=battery&kinds=answer');
+    expect(library.body.records.find((row) => row.ref.id === child.runId)?.open_capability).toBe(
+      'owner_route',
+    );
+    const repeated = await request(
+      cold,
+      'followups',
+      { ...body, request_id: 'retry-after-lost-reply' },
+      coldToken,
+    );
+    expect(repeated.body.id).toBe(admitted.body.id);
+    expect(repeated.body.result_ref).toEqual(done!.result_ref);
+    expect(
+      (await request(cold, 'followups', { ...body, question: 'different meaning' }, coldToken)).body
+        .code,
+    ).toBe('request_conflict');
+    const missing = across(refs, 'new request after parent deletion');
+    expect((await request(cold, 'followups', missing, coldToken)).status).toBe(404);
+    expect((await request(cold, 'followups/' + missing.idempotency_key)).status).toBe(404);
+    expect(await calls()).toHaveLength(1);
+    const ledger = JSON.parse(
+      await readFile(join(root, '.signals/requests/ledger.json'), 'utf8'),
+    ) as { records: { key: string }[] };
+    expect(ledger.records.filter((record) => record.key === body.idempotency_key)).toHaveLength(1);
+    if (process.env.P3_EVIDENCE) {
+      await writeFile(join(process.env.P3_EVIDENCE, 'child.json'), original.body.content);
+      await writeFile(
+        join(process.env.P3_EVIDENCE, 'demo.json'),
+        JSON.stringify(
+          {
+            request: body,
+            result_ref: done!.result_ref,
+            parents: refs,
+            selection: closure.selection,
+            cited: closure.cited,
+            first_pid: children[0]!.pid,
+            restarted_pid: children[1]!.pid,
+            discussion_calls_before_restart: callsBefore,
+            discussion_calls_after_restart: (await calls()).length,
+            admitted_records_for_original_key: ledger.records.filter(
+              (record) => record.key === body.idempotency_key,
+            ).length,
+            native_model_calls: 0,
+            child_sha256: digest(original.body.content),
+            restored_result_ref: restored.body.result_ref,
+            existing_child_readable_after_parent_deletion:
+              read.body.content === original.body.content,
+          },
+          null,
+          2,
+        ) + '\n',
+      );
+    }
+  } finally {
+    for (const child of children) await stop(child);
+    await rm(root, { recursive: true, force: true });
+  }
+}, 30000);

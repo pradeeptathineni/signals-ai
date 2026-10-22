@@ -55,9 +55,12 @@ import {
   answerFromEvidence,
   answerFromRetainedMaterial,
   followupChild,
+  followupChildV2,
   frozenLibraryMaterial,
   parseFollowupRequest,
+  parseFollowupRequestV2,
   savedResearchMaterial,
+  savedResearchMaterialV2,
 } from './search-followup.js';
 import { checkPrimaryMaterial } from './search-reuse.js';
 import { selectSavedEntity } from './search-selection.js';
@@ -401,7 +404,13 @@ export function searchApi(
         const found = await requests.lookup(route.split('/')[1]!, epoch);
         json(found.receipt ? 200 : 404, await followupView(found));
       } else if (route === 'followups' && mutation) {
-        const input = parseFollowupRequest(body);
+        const input =
+          body &&
+          typeof body === 'object' &&
+          'schema_version' in body &&
+          body.schema_version === '2.0'
+            ? parseFollowupRequestV2(body)
+            : parseFollowupRequest(body);
         const epoch = String(request.headers['x-signals-owner-epoch'] ?? '');
         const expectedConfiguration = request.headers['x-signals-execution-digest'];
         if (expectedConfiguration !== undefined && typeof expectedConfiguration !== 'string')
@@ -420,10 +429,20 @@ export function searchApi(
           json(202, await followupView(await admit()));
           return true;
         }
-        // The exact parent is verified before admission and before any model call.
-        const parent = await exactOwnerRecord(root, input.parent_ref);
-        const parentRun = JSON.parse(parent.bytes.toString('utf8')) as SearchResult;
-        const frozen = savedResearchMaterial(parentRun, input.parent_ref.kind);
+        // Every exact parent is verified before admission and before any model call.
+        const parentRefs = input.schema_version === '2.0' ? input.parent_refs : [input.parent_ref];
+        const parents = await Promise.all(
+          parentRefs.map(async (ref) => ({
+            ref,
+            run: JSON.parse(
+              (await exactOwnerRecord(root, ref)).bytes.toString('utf8'),
+            ) as SearchResult,
+          })),
+        );
+        const selected =
+          input.schema_version === '2.0' ? savedResearchMaterialV2(parents, input.question) : null;
+        const frozen =
+          selected?.frozen ?? savedResearchMaterial(parents[0]!.run, parents[0]!.ref.kind);
         if (!claim()) {
           json(409, { code: 'runner_busy', reason: 'Another AI job is active; nothing admitted.' });
           return true;
@@ -459,17 +478,22 @@ export function searchApi(
                 settings.effort || undefined,
                 { runner: discussionRunner, signal: run.controller.signal },
               );
-              const child = followupChild({
+              const childInput = {
                 runId: childRunId(record.id),
-                parent: parentRun,
-                parentRef: input.parent_ref,
                 question: input.question,
                 frozen,
                 requestDigest: record.digest,
                 answer,
                 requestedModel: settings.model || null,
                 elapsedMs: Date.now() - Date.parse(startedAt),
-              });
+              };
+              const child = selected
+                ? followupChildV2({ ...childInput, parents, selection: selected.selection })
+                : followupChild({
+                    ...childInput,
+                    parent: parents[0]!.run,
+                    parentRef: parents[0]!.ref,
+                  });
               retaining = true;
               await retainRun(child, root);
               run.result = child;

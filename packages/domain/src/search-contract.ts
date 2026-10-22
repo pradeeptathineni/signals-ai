@@ -380,49 +380,66 @@ export interface SearchItem {
     evidenceIds: string[];
   };
 }
+interface SingleParentFollowup {
+  version: 1;
+  scope: 'saved-context-only';
+  parent: {
+    owner: 'signals-ai';
+    kind: 'answer' | 'research_note';
+    id: string;
+    revision: string;
+    digest: string;
+  };
+  parentQuery: string;
+  parentStatus: 'completed' | 'partial' | 'cancelled' | 'failed' | 'not_configured';
+  requestDigest: string;
+  frozen: {
+    material: {
+      entityId: string;
+      observationId: string;
+      evidenceId: string;
+      statement: string;
+      quote: string;
+      feature: string;
+      entityName: string;
+      status: string;
+    }[];
+    context: {
+      id: string;
+      name: string;
+      uri: string;
+      description: string;
+      capabilities: string[];
+      limits: string[];
+    }[];
+    priorSynthesis?: string;
+    gaps: string[];
+  };
+  frozenDigest: string;
+  cited: string[];
+}
+type MultiParentFollowup = Omit<
+  SingleParentFollowup,
+  'version' | 'parent' | 'parentQuery' | 'parentStatus'
+> & {
+  version: 2;
+  parents: {
+    ref: SingleParentFollowup['parent'];
+    query: string;
+    status: SingleParentFollowup['parentStatus'];
+  }[];
+  selection: {
+    method: 'bm25-v1';
+    question_sha256: string;
+    per_parent: { parent_id: string; total: number; kept: number }[];
+  };
+};
 export interface SearchResult {
   claimCheck?: ClaimReceipt;
   assessmentOf?: string;
   assessmentTargets?: string[];
   /** A saved-context-only discussion child; validated by search-followup's closed closure. */
-  followupOf?: {
-    version: 1;
-    scope: 'saved-context-only';
-    parent: {
-      owner: 'signals-ai';
-      kind: 'answer' | 'research_note';
-      id: string;
-      revision: string;
-      digest: string;
-    };
-    parentQuery: string;
-    parentStatus: 'completed' | 'partial' | 'cancelled' | 'failed' | 'not_configured';
-    requestDigest: string;
-    frozen: {
-      material: {
-        entityId: string;
-        observationId: string;
-        evidenceId: string;
-        statement: string;
-        quote: string;
-        feature: string;
-        entityName: string;
-        status: string;
-      }[];
-      context: {
-        id: string;
-        name: string;
-        uri: string;
-        description: string;
-        capabilities: string[];
-        limits: string[];
-      }[];
-      priorSynthesis?: string;
-      gaps: string[];
-    };
-    frozenDigest: string;
-    cited: string[];
-  };
+  followupOf?: SingleParentFollowup | MultiParentFollowup;
   answerReceipt?: {
     context?: string;
     observedAt: string;

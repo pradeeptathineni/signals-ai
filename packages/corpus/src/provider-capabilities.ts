@@ -167,7 +167,10 @@ export async function providerCapabilities(
     owner: 'signals-ai',
     instance_id: scope.identity,
     product_version: manifest.version,
-    contracts: ['K01', 'K12', 'K13', 'K14', 'K15'].map((id) => ({ id, versions: ['1.0'] })),
+    contracts: [
+      ...['K01', 'K12', 'K13', 'K14', 'K15'].map((id) => ({ id, versions: ['1.0'] })),
+      { id: 'frozen-followup-request', versions: ['1.0', '2.0'] },
+    ],
     operations: [
       {
         name: 'observe_processes',
@@ -221,6 +224,12 @@ export async function providerCapabilities(
         authority_required: true,
       },
       {
+        name: 'ask_across_saved_research',
+        target_kinds: ['answer', 'research_note'],
+        mutating: true,
+        authority_required: true,
+      },
+      {
         name: 'lookup_followup',
         target_kinds: ['followup_request'],
         mutating: false,
@@ -261,7 +270,7 @@ export async function providerCapabilities(
       library_route:
         'provider/library?q=<literal Unicode text>&limit=<1..100>&kinds=<comma-separated supported kinds>&project_ref=<encoded RecordRef>&cursor=<opaque>',
       followup_route:
-        'followups (frozen-followup-request-v1, session token and owner epoch); followups/<idempotency_key> reads it back',
+        'followups (frozen-followup-request-v1 or v2, session token and owner epoch); followups/<idempotency_key> reads it back',
       supported_records:
         'Qualified retained runs, imported answers, native entities, selected leads and project records. Library summaries are bounded; process observations use provider/processes. No arbitrary paths or commands.',
     },
