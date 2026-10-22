@@ -2,13 +2,13 @@ import { createHash } from 'node:crypto';
 import { lstat, readFile, realpath } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 
-// Accepted R04 source c362b33a544bce8e3f4cce7f305bc32cddb90342; this archive is unpublished.
+// Grounded-answer candidate; local and unpublished, pending integrator acceptance.
 export const researchArchive = {
-  version: '0.3.0-rc.1',
-  sourceCommit: 'c362b33a544bce8e3f4cce7f305bc32cddb90342',
-  sha256: '51ed349c4a3553153374891829918a2fd8354979187bf6bf0a2615cb9d7f743e',
+  version: '0.4.0-rc.1',
+  sourceCommit: '165713c10478a5b68d949dadb922de9c08af1a51',
+  sha256: 'c434781745dae9bcc9ab7f525d73bf78ad0a794c3f36e8e1dd1d209c9d3c1022',
   integrity:
-    'sha512-enbCWisZ0GrY3fm/jZZ4JLdN2DXcJxdCwfrlscU9Odl2nA1NdGI42/s9k1DXb9tpvBUijLgHC778FBTcW+joZQ==',
+    'sha512-JdYmcQ1wivWE9pMaQ9FZ6uOZMdgTUBH4KSiskg2YP8JIANOPJHm1z0qZtD+xBC1WlkewIx60mtKnJ2jHTHM9MQ==',
 };
 export const researchSpec = `file:vendor/research-ai/${researchArchive.sha256}.tgz`;
 

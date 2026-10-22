@@ -36,6 +36,13 @@ Null revision/digest explicitly resolves the current retained immutable snapshot
 
 ## Search the retained Library
 
+An answer/import may optionally carry Research's `claim-support-v1` closure.
+Native runs use `grounding`; imports retain it at `result.input.grounding` in
+their exact original bytes. Signals replays Research's validator on reading;
+consumers display the supplied annotations without deriving support judgments.
+Absence means unavailable assessment, not unsupported claims. See
+[grounded answers](grounded-answers.md) for creation, retention and limits.
+
 `GET provider/library?q=<Unicode text>&limit=<1..100>&kinds=<comma-separated kinds>&project_ref=<encoded RecordRef>&cursor=<opaque>` requires the same trusted owner headers as record reads. All filters are optional. Empty `q` returns recent saved records; default limit is 30, maximum 100. Supported kind filters are `answer`, `research_note`, `imported_answer`, `entity` and `lead`. A project filter must name a current Signals `project` ref; stale project digest/revision is refused. Unknown or repeated filters fail explicitly. Search reuses the owner Library's phrase, prefix and typo index; retrieval rank never becomes evidence strength.
 
 The K12 v1 page contains `records`, `next_cursor` and `owner_coverage`. Each summary contains an owner-qualified exact ref, title, bounded description, kind, associated project refs, visibility, qualification, observation time and `open_capability`. A missing or invalid original appears as `unavailable`, never regenerated content. The cursor binds the filters and current result snapshot; a changed or malformed cursor returns `409` for a fresh first-page search. A corrupt run can reduce answer coverage while valid unrelated stores remain searchable; `owner_coverage.reason` reports that gap. These aggregate summaries include no private answer text or personal notes. Unsaving removes an item from aggregate selection without deleting its original history or its previously issued exact ref.

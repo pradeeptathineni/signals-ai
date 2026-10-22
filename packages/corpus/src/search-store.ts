@@ -12,6 +12,7 @@ import {
 import { resolve, join, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
+import { validateGrounding } from '@pradeeptathineni/research-ai';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 import {
@@ -764,6 +765,7 @@ export async function saveEntities(
   });
 }
 export async function retainRun(result: SearchResult, root = process.cwd()) {
+  if (result.grounding !== undefined) validateGrounding(result.brief?.text ?? '', result.grounding);
   if (!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(result.runId))
     throw new Error('invalid_run_identity');
   if (result.claimCheck?.version === 3 || result.claimCheck?.version === 4)
@@ -853,6 +855,7 @@ export async function loadRun(
       result.brief.text.length > (result.answerReceipt ? 100000 : 24000))
   )
     throw new Error('invalid_run_brief');
+  if (result.grounding !== undefined) validateGrounding(result.brief?.text ?? '', result.grounding);
   if (result.answerReceipt) {
     const receipt = result.answerReceipt;
     if (

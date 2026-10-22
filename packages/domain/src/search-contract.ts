@@ -20,6 +20,7 @@ import type { budgets } from './search-vocabulary.js';
 import type { ClaimReceipt } from './claim-check.js';
 import { claimCitationSchema } from './claim-check.js';
 import type { SourceText } from './source-text.js';
+import type { Grounding } from '@pradeeptathineni/research-ai';
 export { channels, budgets } from './search-vocabulary.js';
 const enumOf = <const T extends string>(values: readonly T[]) => Type.Enum<T[]>(values);
 export const indicators = {
@@ -435,6 +436,8 @@ type MultiParentFollowup = Omit<
   };
 };
 export interface SearchResult {
+  /** Owner-produced self-contained claim/source closure; absence is unassessed history. */
+  grounding?: Grounding;
   claimCheck?: ClaimReceipt;
   assessmentOf?: string;
   assessmentTargets?: string[];

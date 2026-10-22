@@ -80,7 +80,7 @@ it('resolves the extracted accepted archive and maps one completed producer sess
   const installed = await realpath(resolve('node_modules/@pradeeptathineni/research-ai'));
   expect(installed).toContain('node_modules/@pradeeptathineni/research-ai');
   expect(JSON.parse(await readFile(join(installed, 'package.json'), 'utf8')).version).toBe(
-    '0.3.0-rc.1',
+    '0.4.0-rc.1',
   );
   await cli('complete');
   const result = await signalSearch(

@@ -13,6 +13,7 @@ const { values } = parseArgs({
   options: {
     query: { type: 'string' },
     'answer-file': { type: 'string' },
+    'grounded-file': { type: 'string' },
     'observed-at': { type: 'string' },
     select: { type: 'string', multiple: true },
     retain: { type: 'boolean' },
@@ -28,15 +29,39 @@ if (values.rediscover) {
     JSON.stringify(await rediscoverResearch(root, values.rediscover), null, 2) + '\n',
   );
 } else {
-  if (!values.query || !values['answer-file'] || !values['observed-at'])
-    throw new Error('query_answer_file_and_original_observation_time_required');
+  if (
+    !values.query ||
+    !values['observed-at'] ||
+    Boolean(values['answer-file']) === Boolean(values['grounded-file'])
+  )
+    throw new Error('query_original_observation_time_and_one_answer_or_grounded_file_required');
   if (values.select?.length && !values.retain)
     throw new Error('explicit_retain_required_for_selection');
+  const grounded: unknown = values['grounded-file']
+    ? JSON.parse(await readFile(values['grounded-file'], 'utf8'))
+    : undefined;
+  if (
+    values['grounded-file'] &&
+    (!grounded ||
+      typeof grounded !== 'object' ||
+      !('status' in grounded) ||
+      grounded.status !== 'complete' ||
+      !('grounding' in grounded) ||
+      !('answer' in grounded))
+  )
+    throw new Error('complete_grounded_result_required');
+  const resultInput = grounded as
+    { answer: string; grounding: ResearchAnswer['grounding'] } | undefined;
   const input: ResearchAnswer = {
     query: values.query,
-    answer: await readFile(values['answer-file'], 'utf8'),
+    answer: resultInput?.answer ?? (await readFile(values['answer-file']!, 'utf8')),
+    ...(resultInput ? { grounding: resultInput.grounding } : {}),
     observedAt: values['observed-at'],
-    provenance: { receipt: values['answer-file'], requestedModel: null, servedModel: null },
+    provenance: {
+      receipt: (values['answer-file'] ?? values['grounded-file'])!,
+      requestedModel: null,
+      servedModel: null,
+    },
   };
   const result = values.retain
     ? await retainResearchAnswer(root, input, values.select ?? [])
@@ -44,6 +69,7 @@ if (values.rediscover) {
   const comparison = values['compare-answer-file']
     ? compareResearchAnswers(input, {
         ...input,
+        grounding: undefined,
         answer: await readFile(values['compare-answer-file'], 'utf8'),
       })
     : undefined;

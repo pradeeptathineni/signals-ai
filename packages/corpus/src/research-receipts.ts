@@ -44,6 +44,7 @@ export async function importedAnswers(root: string): Promise<SearchResult[]> {
       query: input.query,
       status: 'completed',
       brief: { format: 'markdown', text: input.answer },
+      ...(input.grounding ? { grounding: input.grounding } : {}),
       answerReceipt: {
         observedAt: input.observedAt,
         sha256: plan.answerSha256,
