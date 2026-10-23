@@ -20,6 +20,8 @@
 
 Node HTTPS/DNS/filesystem/child-process primitives own safe acquisition, bounded project previews, file writes, the loopback API, headless supervision and interval scheduling. Linkedom does not grant transport authority; original outlinks are harvested before Readability. RSS entity declarations are rejected. Ajv does not coerce or insert defaults; domain checks own semantic references/privacy. Frozen schema bytes are excluded from formatting to preserve their digest.
 
+Optional local PDF document import uses `pypdf==6.15.0` from `requirements-private-documents.txt` (BSD-3-Clause; upstream commit `7f226a2771da4b71ed0b72d414f0e59d76a3dae9`). It is not installed by npm and is not needed for Markdown, HTML or plain text. The project calls the dependency API through a fixed stdin-only helper; no pypdf implementation is copied into this repository. Install it only in a Python environment you control and pass its executable with the private-document CLI when needed.
+
 Headless research supervises the user's installed authenticated Codex CLI; invoking Agent Skills hosts use their own permitted tools. Optional external acquisition/extraction providers have [separate reviewed pins and constraints](providers.md). Cataloging a tool never installs it.
 
 ## Development

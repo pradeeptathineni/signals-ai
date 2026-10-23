@@ -51,4 +51,6 @@ The installed CLI owns authentication. The disposable read-only headless runner 
 
 Local API mutations require loopback Host, same Origin and a random session token. Closed operations select server-owned results rather than arbitrary commands or paths. Development and built serving share the handler. Asset allowlists deny private files and symlink escapes. Public Pages contains approved public records only and cannot invoke a local runner.
 
+Private document import is an explicit local Signals owner operation. It stores immutable original bytes and validated per-page text under `.signals`; list/open return metadata or page text without raw bytes. PDF extraction uses the exact optional pypdf 6.15.0 helper over stdin with bounded input/output/time, and text/HTML import stays inert. Selecting exact pages supplies the existing frozen Research boundary; import itself has no model or network call.
+
 There is no database service, general agent runtime or candidate executor. [Product intent](docs/product.yaml) defines required capabilities; [AI authoring context](.meta/context/README.md) governs repository work. Evidence replay, fixtures, configured-live research, independent review and human usefulness remain distinct.

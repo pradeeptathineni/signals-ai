@@ -77,7 +77,8 @@ features:
     type: storage
     intent:
       Own and retain findings, sources, assessments, project links, and personal notes locally in
-      portable, searchable records.
+      portable, searchable records. Let people explicitly import private local documents, reopen
+      readable pages, and select bounded page text for frozen research.
   - id: inbox
     name: Capture & inbox
     role: core
