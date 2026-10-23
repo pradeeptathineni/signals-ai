@@ -100,4 +100,54 @@ The optional `source-capture` v1 contract stores bounded immutable source observ
 
 The owner routes are `GET/POST source-captures`, `GET source-captures/{capture_uuid}`, `GET source-captures/compare?left={uuid}&right={uuid}`, `POST source-captures/selection`, and `POST source-annotations`. They use the trusted provider version, instance, epoch, origin and session guards. POST bodies and query parameters are closed. Selection returns the exact capture and only explicitly requested exact annotation refs, suitable as a private research-source handoff; it is not an answer or support judgment. `read_record` supports exact `source_capture` and `source_annotation` refs.
 
+### Request shapes and anchors
+
+Every POST accepts only the fields shown. `EXACT_SOURCE_REF` is a complete current Signals `entity` or `lead` ref; `EXACT_CAPTURE_REF` and `EXACT_ANNOTATION_REF` are complete retained refs with matching digest and revision. Fetch mode accepts no caller text or observation time. Paste mode requires both exact text and an ISO observation time, and does not acquire or verify the source. Either mode may include an exact prior capture ref in `supersedes`:
+
+In these illustrative JSON bodies, each quoted `EXACT_*_REF` token stands for the full RecordRef object, not a string value to send literally.
+
+```json
+{
+  "source_ref": "EXACT_SOURCE_REF",
+  "mode": "fetch",
+  "supersedes": "EXACT_CAPTURE_REF"
+}
+```
+
+```json
+{
+  "source_ref": "EXACT_SOURCE_REF",
+  "mode": "paste",
+  "text": "Exact caller-supplied source text",
+  "observed_at": "2026-10-23T12:00:00Z"
+}
+```
+
+An annotation points to one exact capture and one exact substring. `text_sha256` is lowercase SHA256 of the capture's exact UTF8 text; `start` is inclusive and `end` exclusive, both measured in UTF16 code units (JavaScript string offsets). `quote` must equal that slice exactly, and an offset may not split a surrogate pair. A note is personal interpretation, not source evidence. An optional annotation `supersedes` must name an exact prior annotation on the same capture:
+
+```json
+{
+  "capture_ref": "EXACT_CAPTURE_REF",
+  "anchor": {
+    "text_sha256": "SHA256_OF_EXACT_CAPTURE_TEXT_UTF8",
+    "start": 15,
+    "end": 34,
+    "quote": "A quoted condition."
+  },
+  "note": "My interpretation of this passage",
+  "supersedes": "EXACT_ANNOTATION_REF"
+}
+```
+
+Selection carries no arbitrary text or source lookup: it names one exact capture and the exact annotation versions to include (or an empty list):
+
+```json
+{
+  "capture_ref": "EXACT_CAPTURE_REF",
+  "annotation_refs": ["EXACT_ANNOTATION_REF"]
+}
+```
+
+Capture text is limited to 48,000 UTF16 units and 96,000 UTF8 bytes; retained history is bounded. Responses disclose transport/freshness provenance, extraction and capture truncation scope, and qualifications. Fetch records an observation time, not continuing freshness. Paste provenance is unverified, and annotations never upgrade evidence or support status. Predecessor links preserve prior versions; a second successor to the same version is rejected rather than silently rebased.
+
 From the installed Signals root, `npm run source-captures -- --root PRIVATE_ROOT list` and `open CAPTURE_UUID` inspect local history. `capture EXACT_SOURCE_REF_JSON` fetches; `capture EXACT_SOURCE_REF_JSON --paste-file FILE --observed-at ISO` imports a bounded local UTF8 text file. `annotate REQUEST_JSON`, `compare LEFT_UUID RIGHT_UUID`, and `select REQUEST_JSON` accept the same closed request shapes as the HTTP contract. The standalone [consumer](../scripts/examples/source-capture-consumer.mjs) demonstrates exact selection and UTF16 quote-anchor verification without importing Signals modules. It requires a running trusted provider endpoint.
