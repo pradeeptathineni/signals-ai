@@ -247,7 +247,7 @@ it('imports, reopens and returns a valid PDF at the original-byte limit', async 
     document_ref: reopened.ref,
     raw_sha256: reopened.document.raw_sha256,
   });
-  expect(Buffer.from(original.bytes_base64, 'base64')).toEqual(bytes);
+  expect(Buffer.from(original.bytes_base64, 'base64').equals(bytes)).toBe(true);
 }, 15_000);
 
 it('refuses malformed base64 padding and nonalphabet characters without decoding them as bytes', async () => {
