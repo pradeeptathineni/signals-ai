@@ -89,32 +89,50 @@ const lockfile = {
 };
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
+const clean = {
+  auditReportVersion: 2,
+  vulnerabilities: {},
+  metadata: {
+    vulnerabilities: { info: 0, low: 0, moderate: 0, high: 0, critical: 0, total: 0 },
+  },
+};
 
-test('accepts only the exact reviewed development-only advisory path', () => {
-  assert.deepEqual(assessDependencyAudit(report, manifest, lockfile), {
+test('rejects the formerly waived advisory after its reviewed withdrawal', () => {
+  assert.equal(assessDependencyAudit(report, manifest, lockfile).accepted, false);
+  assert.equal(assessDependencyAudit(report, manifest, lockfile).waived, false);
+});
+
+test('accepts a clean report for the exact reviewed development-only path without a waiver', () => {
+  assert.deepEqual(assessDependencyAudit(clean, manifest, lockfile), {
     accepted: true,
-    waived: true,
+    waived: false,
     errors: [],
   });
 });
 
-test('rejects a clean report while the known vulnerable path remains installed', () => {
-  const clean = {
-    auditReportVersion: 2,
-    vulnerabilities: {},
-    metadata: {
-      vulnerabilities: { info: 0, low: 0, moderate: 0, high: 0, critical: 0, total: 0 },
-    },
-  };
-  assert.equal(assessDependencyAudit(clean, manifest, lockfile).accepted, false);
+test('rejects critical findings even without the withdrawn chain', () => {
+  const changed = clone(clean);
+  changed.vulnerabilities.critical = { severity: 'critical', via: [] };
+  changed.metadata.vulnerabilities.critical = 1;
+  changed.metadata.vulnerabilities.total = 1;
+  assert.equal(assessDependencyAudit(changed, manifest, lockfile).accepted, false);
 });
 
 test('fails closed on malformed audit output', () => {
   assert.equal(assessDependencyAudit({}, manifest, lockfile).accepted, false);
+  const unknown = clone(clean);
+  unknown.vulnerabilities.unknown = { via: [] };
+  unknown.metadata.vulnerabilities.total = 1;
+  assert.equal(assessDependencyAudit(unknown, manifest, lockfile).accepted, false);
+  const invalidCause = clone(clean);
+  invalidCause.vulnerabilities.wrapper = { severity: 'moderate', via: [{}] };
+  invalidCause.metadata.vulnerabilities.moderate = 1;
+  invalidCause.metadata.vulnerabilities.total = 1;
+  assert.equal(assessDependencyAudit(invalidCause, manifest, lockfile).accepted, false);
 });
 
 test('rejects an additional high advisory', () => {
-  const changed = clone(report);
+  const changed = clone(clean);
   changed.vulnerabilities.unexpected = {
     severity: 'high',
     isDirect: true,
@@ -122,22 +140,22 @@ test('rejects an additional high advisory', () => {
     effects: [],
     nodes: ['node_modules/unexpected'],
   };
-  changed.metadata.vulnerabilities.high = 6;
-  changed.metadata.vulnerabilities.total = 6;
+  changed.metadata.vulnerabilities.high = 1;
+  changed.metadata.vulnerabilities.total = 1;
   assert.equal(assessDependencyAudit(changed, manifest, lockfile).accepted, false);
 });
 
 test('rejects runtime reachability or dependency-tree drift', () => {
   const runtimeManifest = clone(manifest);
   runtimeManifest.dependencies.repomix = '1.18.1';
-  assert.equal(assessDependencyAudit(report, runtimeManifest, lockfile).accepted, false);
+  assert.equal(assessDependencyAudit(clean, runtimeManifest, lockfile).accepted, false);
 
   const changedLock = clone(lockfile);
   changedLock.packages['node_modules/braces'].version = '3.0.4';
-  assert.equal(assessDependencyAudit(report, manifest, changedLock).accepted, false);
+  assert.equal(assessDependencyAudit(clean, manifest, changedLock).accepted, false);
 });
 
-test('rejects changed fix metadata so a future patch requires review', () => {
+test('rejects returned high advisories even if fix metadata changes', () => {
   const changed = clone(report);
   changed.vulnerabilities.braces.fixAvailable = true;
   assert.equal(assessDependencyAudit(changed, manifest, lockfile).accepted, false);
@@ -157,7 +175,7 @@ test('rejects metadata that reports a high advisory missing from the entries', (
 });
 
 test('rejects a lower-severity wrapper around a high-severity advisory', () => {
-  const nested = clone(report);
+  const nested = clone(clean);
   nested.vulnerabilities.wrapper = {
     name: 'wrapper',
     severity: 'moderate',
@@ -169,8 +187,20 @@ test('rejects a lower-severity wrapper around a high-severity advisory', () => {
     fixAvailable: false,
   };
   nested.metadata.vulnerabilities.moderate = 1;
-  nested.metadata.vulnerabilities.total = 6;
+  nested.metadata.vulnerabilities.total = 1;
   assert.equal(assessDependencyAudit(nested, manifest, lockfile).accepted, false);
+});
+
+test('preserves the high/critical threshold for an otherwise valid moderate-only report', () => {
+  const moderate = clone(clean);
+  moderate.vulnerabilities.wrapper = { severity: 'moderate', via: [] };
+  moderate.metadata.vulnerabilities.moderate = 1;
+  moderate.metadata.vulnerabilities.total = 1;
+  assert.deepEqual(assessDependencyAudit(moderate, manifest, lockfile), {
+    accepted: true,
+    waived: false,
+    errors: [],
+  });
 });
 
 test('rejects runtime and invocation drift even when the report is empty', () => {
