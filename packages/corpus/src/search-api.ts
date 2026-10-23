@@ -16,6 +16,7 @@ import {
   openPrivateDocument,
   selectPrivateDocument,
   PrivateDocumentError,
+  readPrivatePdfBytes,
 } from './private-documents.js';
 import {
   listPrivateCollection,
@@ -24,6 +25,14 @@ import {
   selectPrivateCollection,
   PrivateCollectionError,
 } from './private-collection.js';
+import {
+  createPrivateReader,
+  listPrivateReaders,
+  openPrivateReader,
+  revisePrivateReader,
+  selectPrivateReaderAnnotations,
+  PrivateReaderError,
+} from './private-reader.js';
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
   exactOwnerRecord,
@@ -430,6 +439,33 @@ export function searchApi(
           json(200, await listPrivateCollection(root));
         else if (/^private-collection\/[a-f0-9-]{36}$/.test(route) && !mutation && !params.size)
           json(200, await openPrivateCollection(root, route.slice('private-collection/'.length)));
+        else json(404, { code: 'unknown_operation' });
+      } else if (route === 'private-reader' || route.startsWith('private-reader/')) {
+        await validateProcessObserver(
+          root,
+          request.headers['x-signals-provider-version'],
+          request.headers['x-signals-instance-id'],
+          request.headers['x-signals-owner-epoch'],
+        );
+        const params = new URL(request.url!, 'http://127.0.0.1').searchParams;
+        if (params.size)
+          throw new PrivateReaderError(
+            400,
+            'invalid_private_reader_request',
+            'Reader routes do not accept query fields.',
+          );
+        if (route === 'private-reader/bytes' && mutation) {
+          response.setHeader('pragma', 'no-cache');
+          json(200, await readPrivatePdfBytes(root, body));
+        } else if (route === 'private-reader' && mutation)
+          json(201, await createPrivateReader(root, body));
+        else if (route === 'private-reader' && !mutation) json(200, await listPrivateReaders(root));
+        else if (route === 'private-reader/revise' && mutation)
+          json(200, await revisePrivateReader(root, body));
+        else if (route === 'private-reader/selection' && mutation)
+          json(200, await selectPrivateReaderAnnotations(root, body, `http://${host}`));
+        else if (/^private-reader\/[a-f0-9-]{36}$/.test(route) && !mutation)
+          json(200, await openPrivateReader(root, route.slice('private-reader/'.length)));
         else json(404, { code: 'unknown_operation' });
       } else if (
         route === 'source-captures' ||
@@ -1566,6 +1602,10 @@ export function searchApi(
         return true;
       }
       if (failure instanceof PrivateCollectionError) {
+        json(failure.status, { code: failure.code, reason: failure.reason });
+        return true;
+      }
+      if (failure instanceof PrivateReaderError) {
         json(failure.status, { code: failure.code, reason: failure.reason });
         return true;
       }

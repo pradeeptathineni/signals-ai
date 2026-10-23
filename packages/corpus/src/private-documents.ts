@@ -552,6 +552,41 @@ export async function openPrivateDocument(root: string, id: string) {
   }
 }
 
+/** Return original bytes only after the caller's full owner ref and digest still match. */
+export async function readPrivatePdfBytes(root: string, input: unknown) {
+  const shape = Type.Object({ document_ref: recordRefSchema, raw_sha256: sha }, closed);
+  if (!Value.Check(shape, input))
+    invalid('PDF byte reads require only a complete document ref and exact raw SHA-256.');
+  const request = input as { document_ref: RecordRef; raw_sha256: string };
+  if (
+    request.document_ref.owner !== 'signals-ai' ||
+    request.document_ref.kind !== 'private_document' ||
+    request.document_ref.revision !== `sha256:${request.document_ref.digest}`
+  )
+    invalid('PDF byte reads require an exact Signals private-document ref.');
+  try {
+    const store = await loadStore(root);
+    const record = store.documents.find((row) => row.id === request.document_ref.id);
+    if (!record) return notFound();
+    if (
+      !sameRef(refOf(record.id, record), request.document_ref) ||
+      record.raw_sha256 !== request.raw_sha256
+    )
+      return changed();
+    if (record.media_type !== 'application/pdf')
+      invalid('Original bytes are available through this operation only for PDFs.');
+    return {
+      document_ref: refOf(record.id, record),
+      raw_sha256: record.raw_sha256,
+      page_count: record.pages.length,
+      media_type: 'application/pdf' as const,
+      bytes_base64: record.raw_base64,
+    };
+  } catch (error) {
+    return privateDocumentError(error);
+  }
+}
+
 /** Freeze exact selected pages for the existing Research source-only boundary. */
 export async function selectPrivateDocument(
   root: string,

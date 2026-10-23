@@ -174,6 +174,7 @@ export async function providerCapabilities(
       ...['K01', 'K12', 'K13', 'K14', 'K15'].map((id) => ({ id, versions: ['1.0'] })),
       { id: 'source-capture', versions: ['1.0'] },
       { id: 'private-collection', versions: ['1.0'] },
+      { id: 'private-pdf-reader', versions: ['1.0'] },
       { id: 'frozen-followup-request', versions: ['1.0', '2.0'] },
     ],
     operations: [
@@ -267,6 +268,30 @@ export async function providerCapabilities(
         authority_required: false,
       },
       {
+        name: 'read_private_pdf_bytes',
+        target_kinds: ['private_document'],
+        mutating: false,
+        authority_required: false,
+      },
+      {
+        name: 'read_private_pdf',
+        target_kinds: ['private_document', 'private_reader'],
+        mutating: false,
+        authority_required: false,
+      },
+      {
+        name: 'revise_private_pdf_reader',
+        target_kinds: ['private_reader', 'private_pdf_annotation'],
+        mutating: true,
+        authority_required: true,
+      },
+      {
+        name: 'select_private_pdf_passages',
+        target_kinds: ['private_reader', 'private_pdf_annotation', 'frozen_research_source'],
+        mutating: false,
+        authority_required: false,
+      },
+      {
         name: 'search_library',
         target_kinds: ['answer', 'research_note', 'imported_answer', 'entity', 'lead'],
         mutating: false,
@@ -320,6 +345,8 @@ export async function providerCapabilities(
       'project',
       'source_capture',
       'source_annotation',
+      'private_pdf_reader',
+      'private_pdf_annotation',
     ],
     process_observation: true,
     observed_at: new Date().toISOString(),
@@ -351,6 +378,8 @@ export async function providerCapabilities(
         'followups (frozen-followup-request-v1 or v2, session token and owner epoch); followups/<idempotency_key> reads it back',
       private_collection_route:
         'private-collection/preview searches exact imported document refs locally; private-collection and private-collection/<uuid> reopen previews; private-collection/selection freezes explicitly selected exact passage IDs. All routes retain session, loopback origin and owner epoch guards.',
+      private_reader_route:
+        'private-reader/bytes returns original PDF bytes only for a current exact document ref and raw hash; private-reader creates/reopens by UUID; private-reader/revise uses expected revision/digest CAS; private-reader/selection freezes only explicitly selected annotations. Routes retain session, loopback origin and owner epoch guards.',
       supported_records:
         'Qualified retained runs, imported answers, native entities, selected leads and project records. Library summaries are bounded; process observations use provider/processes. No arbitrary paths or commands.',
     },
