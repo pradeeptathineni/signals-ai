@@ -15,6 +15,7 @@
     "knowledge": "node --import tsx scripts/knowledge.ts",
     "source-captures": "node --import tsx scripts/source-captures.ts",
     "private-documents": "node --import tsx scripts/private-documents.ts",
+    "private-collection": "node --import tsx scripts/private-collection.ts",
     "test:corpus": "playwright test --config playwright.corpus.config.ts",
     "corpus:build": "npm run corpus -- build && vite build --config apps/corpus/vite.config.ts",
     "corpus:preview": "vite preview --config apps/corpus/vite.config.ts",
