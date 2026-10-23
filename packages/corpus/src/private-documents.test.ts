@@ -224,12 +224,14 @@ it('refuses malformed, encrypted, image-only, oversized and unavailable-parser P
 it('imports, reopens and returns a valid PDF at the original-byte limit', async () => {
   const root = await privateRoot();
   const limit = 4 * 1024 * 1024;
-  const content = pdf(['A valid PDF at the byte limit']);
-  const trailingWhitespace = Buffer.alloc(limit - content.length, 0x20);
-  for (let offset = 16_383; offset < trailingWhitespace.length; offset += 16_384)
-    trailingWhitespace[offset] = 0x0a;
-  trailingWhitespace[trailingWhitespace.length - 1] = 0x0a;
-  const bytes = Buffer.concat([content, trailingWhitespace]);
+  const pages = ['A valid PDF at the byte limit'];
+  let bytes = pdf(pages);
+  let padding = limit - bytes.length;
+  // Keep inert padding before xref so EOF lookup does not scan megabytes of whitespace.
+  for (let attempt = 0; attempt < 3 && bytes.length !== limit; attempt++) {
+    bytes = pdf(pages, `%${'x'.repeat(padding - 2)}\n`);
+    padding += limit - bytes.length;
+  }
   expect(bytes.length).toBe(limit);
 
   const imported = await importPrivateDocument(root, encoded(bytes));
