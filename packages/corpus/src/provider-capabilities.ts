@@ -173,6 +173,31 @@ export async function providerCapabilities(
     ],
     operations: [
       {
+        name: 'search_knowledge',
+        target_kinds: [
+          'answer',
+          'research_note',
+          'imported_answer',
+          'entity',
+          'lead',
+          'decision',
+          'review',
+          'reflection',
+          'principle',
+          'study-session',
+        ],
+        mutating: false,
+        authority_required: false,
+      },
+      {
+        name: 'read_knowledge',
+        target_kinds: ['owner_reference'],
+        mutating: false,
+        authority_required: false,
+      },
+      { name: 'read_topics', target_kinds: ['topic'], mutating: false, authority_required: false },
+      { name: 'edit_topics', target_kinds: ['topic'], mutating: true, authority_required: true },
+      {
         name: 'observe_processes',
         target_kinds: ['research_job', 'research_request'],
         mutating: false,
@@ -269,6 +294,8 @@ export async function providerCapabilities(
       read_route: 'provider/records?ref=<encoded RecordRef>',
       library_route:
         'provider/library?q=<literal Unicode text>&limit=<1..100>&kinds=<comma-separated supported kinds>&project_ref=<encoded RecordRef>&cursor=<opaque>',
+      knowledge_route:
+        'provider/knowledge?q=<literal text>&limit=<1..100>; knowledge/record reads an exact selected owner reference; topics supports private named collections. Foreign readers are operator-configured frozen export files.',
       followup_route:
         'followups (frozen-followup-request-v1 or v2, session token and owner epoch); followups/<idempotency_key> reads it back',
       supported_records:

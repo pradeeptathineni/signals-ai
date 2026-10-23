@@ -37,20 +37,21 @@ Direct checks use a closed version-2 `claimCheck` with `origin.kind:"request"` a
 
 All of `.signals/` is ignored, excluded from public assets and denied by local/static serving. Public admission additionally rejects private bytes. Private history may retain source text containing credential-shaped documentation placeholders; structure, identity and evidence bindings still validate.
 
-| State                                             | Purpose                                                                                                                                  |
-| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `settings.json`                                   | Interests, website scopes, acquisition groups, followed sources, runner references, budgets, disabled-default recurrence and publication |
-| `runs/` and `queries/`                            | Original answers, valid items, provisional leads, source text, gaps, usage and saved outcomes; saved questions need no retrieval receipt |
-| `acquisitions/`, `extractions/`, `source-cache/`  | Private original proposals and review receipts; fetched-text cache expires after one hour                                                |
-| `library-leads.json`                              | Unassessed URI identities and append-only saved contexts; never manufactured scored entities                                             |
-| `library-preferences.json`                        | Explicit metadata-egress permission and disabled-default personal autosaving                                                             |
-| `library-state.json`, `personal.json`             | Qualified saved selections, historical/native annotations and personal feedback                                                          |
-| `selections.json`                                 | Saved identities associated with run/question/interest/concepts, including unchanged entities                                            |
-| `projects.json` and project history               | Registrations, current context, immutable imported originals and personal opportunity decisions                                          |
-| `inbox.json`                                      | Promising leads and dismissals, separate from Corpus admission                                                                           |
-| `source-state.json`                               | Last successful material, checks, scans, result exposures and verified per-entity parent feedback                                        |
-| `providers.json`                                  | Optional closed provider settings; see [providers](../providers.md)                                                                      |
-| Discovery/batch state, attempts, locks and leases | Frozen lists/pools, due slots, overlap control, resume and interrupted uncertainty                                                       |
+| State                                             | Purpose                                                                                                                                                                             |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `settings.json`                                   | Interests, website scopes, acquisition groups, followed sources, runner references, budgets, disabled-default recurrence and publication                                            |
+| `runs/` and `queries/`                            | Original answers, valid items, provisional leads, source text, gaps, usage and saved outcomes; saved questions need no retrieval receipt                                            |
+| `acquisitions/`, `extractions/`, `source-cache/`  | Private original proposals and review receipts; fetched-text cache expires after one hour                                                                                           |
+| `library-leads.json`                              | Unassessed URI identities and append-only saved contexts; never manufactured scored entities                                                                                        |
+| `library-preferences.json`                        | Explicit metadata-egress permission and disabled-default personal autosaving                                                                                                        |
+| `library-state.json`, `personal.json`             | Qualified saved selections, historical/native annotations and personal feedback                                                                                                     |
+| `selections.json`                                 | Saved identities associated with run/question/interest/concepts, including unchanged entities                                                                                       |
+| `projects.json` and project history               | Registrations, current context, immutable imported originals and personal opportunity decisions                                                                                     |
+| `inbox.json`                                      | Promising leads and dismissals, separate from Corpus admission                                                                                                                      |
+| `source-state.json`                               | Last successful material, checks, scans, result exposures and verified per-entity parent feedback                                                                                   |
+| `providers.json`                                  | Optional closed provider settings; see [providers](../providers.md)                                                                                                                 |
+| `knowledge-owners.json`, `topics.json`            | Explicit operator-owned foreign export reader registrations; private named topics containing selected exact references, metadata, links and open questions (no foreign body corpus) |
+| Discovery/batch state, attempts, locks and leases | Frozen lists/pools, due slots, overlap control, resume and interrupted uncertainty                                                                                                  |
 
 Format/destination-qualified Library keys prevent native/historical or public/private collisions. Meaning matching hydrates original records and changes no evidence or intrinsic scores. Automatic private-saving receipts retain item-level admission/exclusion reasons. No-save memory mode bypasses private persistence.
 

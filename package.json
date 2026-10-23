@@ -12,6 +12,7 @@
     "npm": ">=12.1.0 <13"
   },
   "scripts": {
+    "knowledge": "node --import tsx scripts/knowledge.ts",
     "test:corpus": "playwright test --config playwright.corpus.config.ts",
     "corpus:build": "npm run corpus -- build && vite build --config apps/corpus/vite.config.ts",
     "corpus:preview": "vite preview --config apps/corpus/vite.config.ts",

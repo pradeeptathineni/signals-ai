@@ -4,6 +4,12 @@ Signals has one bounded research operation shared by the local workbench, CLI, q
 
 ## Owners
 
+Connected knowledge reuses exact Library reads and adds explicit producer export files in
+`packages/corpus/src/knowledge.ts`. Foreign bytes remain with the producer; only reference
+metadata and topic annotations persist in private `.signals` state. Its CLI configures readers;
+HTTP consumers share the existing owner, session and origin boundary. See
+[connected knowledge](docs/connected-knowledge.md) for snapshot semantics and limits.
+
 | Location              | Responsibility                                                                                                          |
 | --------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | `packages/domain/src` | Closed protocols, evidence decoding, identity, literal retrieval, bounded query interpretation and pure policy reducers |

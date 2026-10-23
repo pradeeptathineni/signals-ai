@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { knowledgeRoute } from './knowledge.js';
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
   exactOwnerRecord,
@@ -330,7 +331,20 @@ export function searchApi(
         body = JSON.parse(raw);
       }
       const route = path.slice('/signals-ai/__signals/api/'.length);
-      if (route === 'provider/capabilities' && !mutation)
+      if (
+        route === 'provider/knowledge' ||
+        route.startsWith('knowledge/') ||
+        route === 'topics' ||
+        route.startsWith('topics/')
+      ) {
+        await validateProcessObserver(
+          root,
+          request.headers['x-signals-provider-version'],
+          request.headers['x-signals-instance-id'],
+          request.headers['x-signals-owner-epoch'],
+        );
+        json(200, await knowledgeRoute(root, route, mutation, request.url!, body));
+      } else if (route === 'provider/capabilities' && !mutation)
         json(
           200,
           await providerCapabilities(
