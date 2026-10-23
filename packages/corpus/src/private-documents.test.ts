@@ -11,6 +11,7 @@ import {
   importPrivateDocument,
   listPrivateDocuments,
   openPrivateDocument,
+  readPrivatePdfBytes,
   selectPrivateDocument,
 } from './private-documents.js';
 import { searchApi } from './search-api.js';
@@ -218,6 +219,48 @@ it('refuses malformed, encrypted, image-only, oversized and unavailable-parser P
   await expect(
     importPrivateDocument(root, encoded(pdf(['Text'])), { python: join(root, 'missing-python') }),
   ).rejects.toMatchObject({ code: 'pdf_parser_unavailable' });
+});
+
+it('imports, reopens and returns a valid PDF at the original-byte limit', async () => {
+  const root = await privateRoot();
+  const limit = 4 * 1024 * 1024;
+  const pages = ['A valid PDF at the byte limit'];
+  let bytes = pdf(pages);
+  let padding = limit - bytes.length;
+  // Keep inert padding before xref so EOF lookup does not scan megabytes of whitespace.
+  for (let attempt = 0; attempt < 3 && bytes.length !== limit; attempt++) {
+    bytes = pdf(pages, `%${'x'.repeat(padding - 2)}\n`);
+    padding += limit - bytes.length;
+  }
+  expect(bytes.length).toBe(limit);
+
+  const imported = await importPrivateDocument(root, encoded(bytes));
+  expect(imported.document.raw_sha256).toBe(createHash('sha256').update(bytes).digest('hex'));
+  expect(imported.document.pages).toMatchObject([
+    { number: 1, text: 'A valid PDF at the byte limit' },
+  ]);
+
+  const reopened = await openPrivateDocument(root, imported.document.id);
+  expect(reopened.ref).toEqual(imported.ref);
+  expect(reopened.document.raw_sha256).toBe(imported.document.raw_sha256);
+  const original = await readPrivatePdfBytes(root, {
+    document_ref: reopened.ref,
+    raw_sha256: reopened.document.raw_sha256,
+  });
+  expect(Buffer.from(original.bytes_base64, 'base64').equals(bytes)).toBe(true);
+}, 15_000);
+
+it('refuses malformed base64 padding and nonalphabet characters without decoding them as bytes', async () => {
+  const root = await privateRoot();
+  for (const bytes_base64 of ['eA===', 'eA$=']) {
+    await expect(
+      importPrivateDocument(root, {
+        name: 'invalid.pdf',
+        media_type: 'application/pdf',
+        bytes_base64,
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_private_document' });
+  }
 });
 
 it('rejects rehashed inconsistent private state and stale exact document refs', async () => {

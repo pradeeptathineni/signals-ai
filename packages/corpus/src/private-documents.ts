@@ -287,8 +287,7 @@ function decodeInput(input: unknown) {
   if (!Value.Check(shape, input))
     invalid('Use only name, media_type and canonical base64 bytes within the 4 MiB limit.');
   const data = input as PrivateDocumentInput;
-  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data.bytes_base64))
-    invalid('Document bytes must use canonical base64.');
+  // Check canonical encoding by re-encoding the bounded decode; a large regex can overflow.
   const bytes = Buffer.from(data.bytes_base64, 'base64');
   if (bytes.length > MAX_FILE_BYTES || bytes.toString('base64') !== data.bytes_base64)
     invalid('Decoded document bytes exceed 4 MiB or are not canonical base64.');
@@ -547,6 +546,41 @@ export async function openPrivateDocument(root: string, id: string) {
     const record = store.documents.find((row) => row.id === id);
     if (!record) return notFound();
     return { ref: refOf(record.id, record), document: publicRecord(record) };
+  } catch (error) {
+    return privateDocumentError(error);
+  }
+}
+
+/** Return original bytes only after the caller's full owner ref and digest still match. */
+export async function readPrivatePdfBytes(root: string, input: unknown) {
+  const shape = Type.Object({ document_ref: recordRefSchema, raw_sha256: sha }, closed);
+  if (!Value.Check(shape, input))
+    invalid('PDF byte reads require only a complete document ref and exact raw SHA-256.');
+  const request = input as { document_ref: RecordRef; raw_sha256: string };
+  if (
+    request.document_ref.owner !== 'signals-ai' ||
+    request.document_ref.kind !== 'private_document' ||
+    request.document_ref.revision !== `sha256:${request.document_ref.digest}`
+  )
+    invalid('PDF byte reads require an exact Signals private-document ref.');
+  try {
+    const store = await loadStore(root);
+    const record = store.documents.find((row) => row.id === request.document_ref.id);
+    if (!record) return notFound();
+    if (
+      !sameRef(refOf(record.id, record), request.document_ref) ||
+      record.raw_sha256 !== request.raw_sha256
+    )
+      return changed();
+    if (record.media_type !== 'application/pdf')
+      invalid('Original bytes are available through this operation only for PDFs.');
+    return {
+      document_ref: refOf(record.id, record),
+      raw_sha256: record.raw_sha256,
+      page_count: record.pages.length,
+      media_type: 'application/pdf' as const,
+      bytes_base64: record.raw_base64,
+    };
   } catch (error) {
     return privateDocumentError(error);
   }
