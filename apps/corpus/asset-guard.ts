@@ -36,9 +36,10 @@ export async function privateAssetDenials(roots: string[]): Promise<string[]> {
 
 // sirv tries p and p/index even with extensions:[]; HTML fallback also tries
 // p.html and p/index.html. resolve() normalizes both trailing-slash spellings.
-const fileCandidates = (file: string): string[] => [
+const fileCandidates = (file: string, mountRoot = false): string[] => [
   file,
-  `${file}.html`,
+  // A mount-root request never names its sibling root.html.
+  ...(!mountRoot ? [`${file}.html`] : []),
   resolve(file, 'index'),
   resolve(file, 'index.html'),
 ];
@@ -99,7 +100,8 @@ export async function assetGuard(
               resolve(config.root, `.${path}`),
               ...(config.publicDir ? [resolve(config.publicDir, `.${path}`)] : []),
             ];
-      const files = targets.flatMap(fileCandidates);
+      const mountRoots = [output, config.root, config.publicDir];
+      const files = targets.flatMap((file) => fileCandidates(file, mountRoots.includes(file)));
       files.push(resolve(preview ? output : config.root, 'index.html'));
       for (const file of files) if (!(await allowed(file))) throw new Error('private_asset');
       next();

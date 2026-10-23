@@ -359,9 +359,19 @@ export function Workbench({
     assessmentOf?: string,
     claim?: string,
     method: 'native' | 'answer-first' | 'primary-check' = 'native',
-    selection: Pick<SearchRequest, 'parentSnapshotDigest' | 'claimCitations' | 'suggestChecks' | 'suggestionIndex' | 'offeredDigest'> = {},
+    selection: Pick<
+      SearchRequest,
+      | 'parentSnapshotDigest'
+      | 'claimCitations'
+      | 'suggestChecks'
+      | 'suggestionIndex'
+      | 'offeredDigest'
+    > = {},
   ) {
-    const note = selection.parentSnapshotDigest !== undefined || selection.claimCitations !== undefined ? selection : undefined;
+    const note =
+      selection.parentSnapshotDigest !== undefined || selection.claimCitations !== undefined
+        ? selection
+        : undefined;
     const starting = ++openingEpoch.current;
     clearNoteSelection();
     const direct = method === 'primary-check';

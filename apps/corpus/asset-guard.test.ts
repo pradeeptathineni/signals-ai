@@ -91,7 +91,8 @@ async function close(f: Awaited<ReturnType<typeof fixture>>) {
     probes
       .split('\n')
       .filter(Boolean)
-      .every((line) => ['--version', 'login status'].includes(line)),
+      // Research readiness also probes supported execution flags; no research invocation is allowed.
+      .every((line) => ['--version', 'login status', 'exec --help'].includes(line)),
   ).toBe(true);
   await rm(f.root, { recursive: true, force: true });
 }
@@ -128,6 +129,22 @@ function get(
     req.end(body);
   });
 }
+it.each(['dev', 'preview'])('keeps the public mount root usable in %s', async (mode) => {
+  const f = await fixture(mode);
+  try {
+    // root.html is outside the mount and cannot be its HTML fallback.
+    await symlink(
+      resolve(f.root, '.signals/private/canary.json'),
+      resolve(f.root, mode === 'dev' ? 'app.html' : 'output.html'),
+    );
+    const index = await get(f.port, '/signals-ai/');
+    expect(index.status).toBe(200);
+    expect(index.body).toContain('public-shell');
+    expect(index.body).not.toContain(marker);
+  } finally {
+    await close(f);
+  }
+});
 it.each(['dev', 'preview'])(
   'authorizes downstream fallback and encoded targets in %s',
   async (mode) => {
