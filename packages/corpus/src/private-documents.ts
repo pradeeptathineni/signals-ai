@@ -287,8 +287,7 @@ function decodeInput(input: unknown) {
   if (!Value.Check(shape, input))
     invalid('Use only name, media_type and canonical base64 bytes within the 4 MiB limit.');
   const data = input as PrivateDocumentInput;
-  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data.bytes_base64))
-    invalid('Document bytes must use canonical base64.');
+  // Check canonical encoding by re-encoding the bounded decode; a large regex can overflow.
   const bytes = Buffer.from(data.bytes_base64, 'base64');
   if (bytes.length > MAX_FILE_BYTES || bytes.toString('base64') !== data.bytes_base64)
     invalid('Decoded document bytes exceed 4 MiB or are not canonical base64.');
