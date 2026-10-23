@@ -17,6 +17,13 @@ import {
   selectPrivateDocument,
   PrivateDocumentError,
 } from './private-documents.js';
+import {
+  listPrivateCollection,
+  openPrivateCollection,
+  previewPrivateCollection,
+  selectPrivateCollection,
+  PrivateCollectionError,
+} from './private-collection.js';
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
   exactOwnerRecord,
@@ -407,6 +414,23 @@ export function searchApi(
           } else if (documentMatch) json(200, await openPrivateDocument(root, documentMatch[1]!));
           else json(404, { code: 'unknown_operation' });
         }
+      } else if (route === 'private-collection' || route.startsWith('private-collection/')) {
+        await validateProcessObserver(
+          root,
+          request.headers['x-signals-provider-version'],
+          request.headers['x-signals-instance-id'],
+          request.headers['x-signals-owner-epoch'],
+        );
+        const params = new URL(request.url!, 'http://127.0.0.1').searchParams;
+        if (route === 'private-collection/preview' && mutation && !params.size)
+          json(200, await previewPrivateCollection(root, body));
+        else if (route === 'private-collection/selection' && mutation && !params.size)
+          json(200, await selectPrivateCollection(root, body, `http://${host}`));
+        else if (route === 'private-collection' && !mutation && !params.size)
+          json(200, await listPrivateCollection(root));
+        else if (/^private-collection\/[a-f0-9-]{36}$/.test(route) && !mutation && !params.size)
+          json(200, await openPrivateCollection(root, route.slice('private-collection/'.length)));
+        else json(404, { code: 'unknown_operation' });
       } else if (
         route === 'source-captures' ||
         route.startsWith('source-captures/') ||
@@ -1538,6 +1562,10 @@ export function searchApi(
         return true;
       }
       if (failure instanceof PrivateDocumentError) {
+        json(failure.status, { code: failure.code, reason: failure.reason });
+        return true;
+      }
+      if (failure instanceof PrivateCollectionError) {
         json(failure.status, { code: failure.code, reason: failure.reason });
         return true;
       }

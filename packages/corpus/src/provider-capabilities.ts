@@ -173,6 +173,7 @@ export async function providerCapabilities(
     contracts: [
       ...['K01', 'K12', 'K13', 'K14', 'K15'].map((id) => ({ id, versions: ['1.0'] })),
       { id: 'source-capture', versions: ['1.0'] },
+      { id: 'private-collection', versions: ['1.0'] },
       { id: 'frozen-followup-request', versions: ['1.0', '2.0'] },
     ],
     operations: [
@@ -244,6 +245,24 @@ export async function providerCapabilities(
       {
         name: 'select_source_capture',
         target_kinds: ['source_capture', 'source_annotation'],
+        mutating: false,
+        authority_required: false,
+      },
+      {
+        name: 'search_private_collection',
+        target_kinds: ['private_document'],
+        mutating: true,
+        authority_required: true,
+      },
+      {
+        name: 'read_private_collection',
+        target_kinds: ['private_document', 'private_collection_preview'],
+        mutating: false,
+        authority_required: false,
+      },
+      {
+        name: 'select_private_collection_passages',
+        target_kinds: ['private_document', 'frozen_research_source'],
         mutating: false,
         authority_required: false,
       },
@@ -330,6 +349,8 @@ export async function providerCapabilities(
         'provider/knowledge?q=<literal text>&limit=<1..100>; knowledge/record reads an exact selected owner reference; topics supports private named collections. Foreign readers are operator-configured frozen export files.',
       followup_route:
         'followups (frozen-followup-request-v1 or v2, session token and owner epoch); followups/<idempotency_key> reads it back',
+      private_collection_route:
+        'private-collection/preview searches exact imported document refs locally; private-collection and private-collection/<uuid> reopen previews; private-collection/selection freezes explicitly selected exact passage IDs. All routes retain session, loopback origin and owner epoch guards.',
       supported_records:
         'Qualified retained runs, imported answers, native entities, selected leads and project records. Library summaries are bounded; process observations use provider/processes. No arbitrary paths or commands.',
     },
