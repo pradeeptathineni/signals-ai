@@ -4,13 +4,18 @@ import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it } from 'vitest';
+import { researchQuestion } from '@pradeeptathineni/research-ai';
 import {
   importPrivateDocument,
   listPrivateDocuments,
   readPrivatePdfBytes,
 } from './private-documents.js';
-import { createPrivateReader, revisePrivateReader } from './private-reader.js';
-import type { openPrivateReader, selectPrivateReaderAnnotations } from './private-reader.js';
+import {
+  createPrivateReader,
+  openPrivateReader,
+  revisePrivateReader,
+  selectPrivateReaderAnnotations,
+} from './private-reader.js';
 import { searchApi } from './search-api.js';
 
 const roots: string[] = [];
@@ -364,4 +369,148 @@ it('refuses non-PDF bytes and code-point-splitting offsets', async () => {
       ],
     }),
   ).rejects.toMatchObject({ status: 400 });
+});
+
+it('rejects whitespace-only quotes before storage and when reopening retained annotations', async () => {
+  const workspace = await root();
+  const imported = await importPrivateDocument(workspace, {
+    name: 'whitespace.pdf',
+    media_type: 'application/pdf',
+    bytes_base64: pdf(['Page one', 'Text page']).toString('base64'),
+  });
+  const documentPath = join(workspace, '.signals/private-documents.json');
+  const sourceStore = JSON.parse(await readFile(documentPath, 'utf8')) as {
+    documents: Array<{
+      id: string;
+      pages: Array<{ text: string; text_sha256: string }>;
+      record_sha256: string;
+      [key: string]: unknown;
+    }>;
+  };
+  const source = sourceStore.documents.find((row) => row.id === imported.document.id)!;
+  const pageText = 'left \n\u2003 right';
+  const page = source.pages[1];
+  if (!page) throw new Error('synthetic_pdf_page_missing');
+  page.text = pageText;
+  page.text_sha256 = sha(pageText);
+  const sourceProjection: Record<string, unknown> = { ...source };
+  delete sourceProjection.record_sha256;
+  source.record_sha256 = sha(JSON.stringify(sourceProjection));
+  await writeFile(documentPath, JSON.stringify(sourceStore, null, 2) + '\n');
+
+  const documentRef = (await listPrivateDocuments(workspace)).documents.find(
+    (row) => row.ref.id === imported.document.id,
+  )!.ref;
+  const readerId = 'a32db7a3-56e4-48d0-85f1-ef1e15a6b2ea';
+  const reader = await createPrivateReader(workspace, {
+    id: readerId,
+    document_ref: documentRef,
+    raw_sha256: imported.document.raw_sha256,
+    page: 2,
+  });
+  const expectedRevision = reader.reader.revision;
+  const expectedDigest = reader.reader.digest;
+  const whitespace = [' ', '\n', '\u2003', ' \n\u2003'];
+  const start = pageText.indexOf('left') + 'left'.length;
+  for (const [index, quote] of whitespace.entries()) {
+    await expect(
+      revisePrivateReader(workspace, {
+        id: readerId,
+        expected_revision: expectedRevision,
+        expected_digest: expectedDigest,
+        add_annotations: [
+          {
+            id: `b32db7a3-56e4-48d0-85f1-ef1e15a6b2e${index}`,
+            page: 2,
+            start,
+            end: start + quote.length,
+            quote,
+            page_sha256: page.text_sha256,
+            note: 'Whitespace is not a passage',
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      researchQuestion('Check this source', {
+        sources: [{ uri: `http://127.0.0.1:5178/whitespace/${index}`, text: quote }],
+        model: 'must-not-run',
+        lease: join(workspace, 'invalid-source-must-not-acquire'),
+      }),
+    ).rejects.toThrow(/invalid_sources/u);
+  }
+  expect((await openPrivateReader(workspace, readerId)).reader).toMatchObject({
+    revision: expectedRevision,
+    digest: expectedDigest,
+    annotations: [],
+  });
+  await expect(readFile(join(workspace, 'invalid-source-must-not-acquire'))).rejects.toMatchObject({
+    code: 'ENOENT',
+  });
+
+  const validQuote = 'left';
+  const valid = await revisePrivateReader(workspace, {
+    id: readerId,
+    expected_revision: expectedRevision,
+    expected_digest: expectedDigest,
+    add_annotations: [
+      {
+        id: 'c32db7a3-56e4-48d0-85f1-ef1e15a6b2ea',
+        page: 2,
+        start: 0,
+        end: validQuote.length,
+        quote: validQuote,
+        page_sha256: page.text_sha256,
+        note: '',
+      },
+    ],
+  });
+  const selected = await selectPrivateReaderAnnotations(
+    workspace,
+    {
+      id: readerId,
+      expected_revision: valid.reader.revision,
+      expected_digest: valid.reader.digest,
+      annotation_ids: ['c32db7a3-56e4-48d0-85f1-ef1e15a6b2ea'],
+    },
+    'http://127.0.0.1:5178',
+  );
+  expect(selected.sources[0]?.text).toBe(validQuote);
+  expect(selected.manifest).toMatchObject({ selections: [{ start: 0, end: 4, quote: 'left' }] });
+
+  const readerPath = join(workspace, '.signals/private-reader.json');
+  const retainedStore = JSON.parse(await readFile(readerPath, 'utf8')) as {
+    readers: Array<{
+      digest: string;
+      annotations: Array<{
+        start: number;
+        end: number;
+        quote: string;
+        [key: string]: unknown;
+      }>;
+      [key: string]: unknown;
+    }>;
+  };
+  const retained = retainedStore.readers[0]!;
+  const saved = retained.annotations[0]!;
+  saved.start = start;
+  saved.end = start + 3;
+  saved.quote = pageText.slice(start, start + 3);
+  const readerProjection: Record<string, unknown> = { ...retained };
+  delete readerProjection.digest;
+  retained.digest = sha(JSON.stringify(readerProjection));
+  await writeFile(readerPath, JSON.stringify(retainedStore, null, 2) + '\n');
+  await expect(openPrivateReader(workspace, readerId)).rejects.toMatchObject({ status: 503 });
+  await expect(
+    selectPrivateReaderAnnotations(
+      workspace,
+      {
+        id: readerId,
+        expected_revision: valid.reader.revision,
+        expected_digest: retained.digest,
+        annotation_ids: ['c32db7a3-56e4-48d0-85f1-ef1e15a6b2ea'],
+      },
+      'http://127.0.0.1:5178',
+    ),
+  ).rejects.toMatchObject({ status: 503 });
 });

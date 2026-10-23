@@ -132,6 +132,7 @@ function annotationMatches(
     page &&
     item.page_sha256 === page.text_sha256 &&
     isWellFormedUnicode(item.quote) &&
+    Boolean(item.quote.trim()) &&
     isWellFormedUnicode(item.note) &&
     item.end > item.start &&
     codePointBoundary(page.text, item.start) &&
