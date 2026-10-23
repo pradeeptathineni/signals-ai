@@ -9,16 +9,19 @@ import { signalSearch } from './signal-search.js';
 import { loadRun } from './search-store.js';
 import { frozenFollowupMaterial } from './search-followup.js';
 import { budgets } from '../../domain/src/search-contract.js';
+import { digest } from './search-fetch.js';
 
 type FakeChild = EventEmitter & {
   stdout: EventEmitter;
   stderr: EventEmitter;
   stdin: { end: () => void };
 };
-const state = vi.hoisted<{ home: string; script: (child: FakeChild) => void }>(() => ({
-  home: '',
-  script: () => {},
-}));
+const state = vi.hoisted<{ home: string; pid?: number; script: (child: FakeChild) => void }>(
+  () => ({
+    home: '',
+    script: () => {},
+  }),
+);
 vi.mock('node:os', async (original) => ({
   ...(await original<typeof Os>()),
   homedir: () => state.home,
@@ -28,14 +31,23 @@ vi.mock('node:child_process', async (original) => ({
   ...(await original<typeof Child>()),
   spawn: () => {
     const child = Object.assign(new EventEmitter(), {
-      stdout: new EventEmitter(),
-      stderr: new EventEmitter(),
-      pid: undefined,
+      stdout: Object.assign(new EventEmitter(), { destroy: () => {} }),
+      stderr: Object.assign(new EventEmitter(), { destroy: () => {} }),
+      pid: state.pid,
+      unref: () => {},
       kill: () => {
         queueMicrotask(() => child.emit('close', null, 'SIGKILL'));
         return true;
       },
-      stdin: { end: () => queueMicrotask(() => state.script(child)) },
+      stdin: {
+        end: () =>
+          queueMicrotask(() => {
+            state.script(child);
+            // A producer stop resolves only after the child close is observed.
+            queueMicrotask(() => child.emit('close', null, 'SIGKILL'));
+          }),
+        destroy: () => {},
+      },
     });
     return child;
   },
@@ -73,10 +85,38 @@ const fixtureRunner = () => {
 beforeEach(async () => {
   state.home = await realpath(await mkdtemp('/tmp/signals-partial-'));
   state.script = () => {};
+  state.pid = undefined;
 });
 afterEach(async () => {
   vi.restoreAllMocks();
   await rm(state.home, { recursive: true, force: true });
+  await rm(join('/tmp', `signals-ai-${digest(state.home).slice(0, 24)}.ai-lease`), {
+    recursive: true,
+    force: true,
+  });
+});
+
+it('retains a note and the failed cleanup evidence when group absence cannot be confirmed', async () => {
+  state.pid = 900001;
+  const kill = process.kill.bind(process);
+  vi.spyOn(process, 'kill').mockImplementation((pid, signal) => {
+    if (pid === -state.pid!)
+      throw Object.assign(new Error('denied group probe'), { code: 'EPERM' });
+    return kill(pid, signal);
+  });
+  state.script = (child) => {
+    emit(child, answer);
+    child.stdout.emit('data', Buffer.from('{"type":"turn.completed"}\n'));
+    child.emit('close', 0, null);
+  };
+  const result = await signalSearch(request, { root: state.home, runner: fixtureRunner() });
+  expect(result.status).toBe('failed');
+  expect(result.brief?.text).toBe(answer);
+  expect(result.answerReceipt).toBeUndefined();
+  expect(result.usage.providerUsage).toMatchObject({
+    cleanup: { complete: false, error: 'process_group_cleanup_failed' },
+    terminal: { completed: 1 },
+  });
 });
 
 it('accounts for received narrative exclusions without retaining dropped message text', async () => {
@@ -358,6 +398,7 @@ it('does not emit structured claim-operation output as an interim research answe
   const notes = vi.fn();
   state.script = (child) => {
     emit(child, '{"answer":"private check result"}');
+    child.stdout.emit('data', Buffer.from('{"type":"turn.completed"}\n'));
     child.emit('close', 0, null);
   };
   const result = await codexRunner('fixture', 'high', {
@@ -377,6 +418,7 @@ it('keeps only the exact completed final answer in its answer receipt', async ()
   state.script = (child) => {
     emit(child, 'Interim only.');
     emit(child, answer);
+    child.stdout.emit('data', Buffer.from('{"type":"turn.completed"}\n'));
     child.emit('close', 0, null);
   };
   const native = codexRunner('fixture', 'high', {

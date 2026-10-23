@@ -14,7 +14,13 @@ import {
 } from '../../domain/src/search-contract.js';
 import { normalizeConsiderUrl } from '../../domain/src/url.js';
 import { assessEntity, filterSearchItems, saveDecision } from '../../domain/src/search-score.js';
-import { digest, fetchEvidence, normalizeText, normalizeSpan } from './search-fetch.js';
+import {
+  digest,
+  fetchEvidence,
+  normalizeText,
+  normalizeSpan,
+  boundedTextReceipt,
+} from './search-fetch.js';
 import { materialOmissions } from './search-document.js';
 import {
   codexRunner,
@@ -28,8 +34,13 @@ import { runClaimCheck } from './search-claim.js';
 import type { SelectedPrimaryProducer } from './search-selected-source.js';
 import { atomicJson, saveEntities, retainRun, loadEntities, loadRun } from './search-store.js';
 import { planResearchRetention } from './research-answer.js';
+import {
+  checkSuggestions,
+  offeredPayload,
+  rejectedSuggestionsSchema,
+} from '../../domain/src/search-suggestions.js';
 import { resolve } from 'node:path';
-import { loadAcquisitionConfig } from './search-acquisition.js';
+import { loadAcquisitionConfig, type AcquisitionConfig } from './search-acquisition.js';
 import { configuredDocumentFetch } from './search-extractors.js';
 import { contextualize, entityDelta } from '../../domain/src/search-priority.js';
 import { loadPersonal } from './search-personal.js';
@@ -778,6 +789,7 @@ export async function signalSearch(
     fetch?: typeof fetchEvidence;
     root?: string;
     acquisitionHints?: AcquisitionHints;
+    acquisition?: AcquisitionConfig;
   } = {},
 ): Promise<SearchResult> {
   const request = { ...parseRequest(input), route: 'native' as const };
@@ -835,7 +847,8 @@ export async function signalSearch(
   };
   let receivingBrief = true;
   try {
-    const acquisitionConfig = await loadAcquisitionConfig(dependencies.root ?? process.cwd());
+    const acquisitionConfig =
+      dependencies.acquisition ?? (await loadAcquisitionConfig(dependencies.root ?? process.cwd()));
     const runner =
       dependencies.runner ??
       codexRunner(undefined, undefined, {
@@ -915,6 +928,56 @@ export async function signalSearch(
           'Answer and citation references are unassessed. Confidence Unknown. Select a cited resource for an explicit evidence assessment.',
           ...plan.limits,
         ];
+        if (request.suggestChecks) {
+          const present = Object.hasOwn(discovery.proposal, 'suggestions');
+          const offered =
+            'suggestions' in discovery.proposal ? discovery.proposal.suggestions : undefined;
+          try {
+            base.checkSuggestions = checkSuggestions(
+              {
+                version: 1,
+                state: 'unverified',
+                answerDigest: plan.answerSha256,
+                offered,
+                offeredDigest: digest(
+                  offeredPayload(offered as Parameters<typeof offeredPayload>[0]),
+                ),
+              },
+              plan.answerSha256,
+              base.provisionalLeads.map((lead) => lead.uri),
+            );
+            base.gaps.push(
+              'Suggested checks are unverified hypotheses; no proposition has been checked.',
+            );
+          } catch (error) {
+            const reason = error instanceof Error ? error.message : '';
+            base.rejectedCheckSuggestions = {
+              version: 1,
+              answerDigest: plan.answerSha256,
+              scope: 'parsed-final-suggestions',
+              presence: present ? 'nonserializable' : 'missing',
+              reason: rejectedSuggestionsSchema.properties.reason.enum.some(
+                (value) => value === reason,
+              )
+                ? (reason as NonNullable<SearchResult['rejectedCheckSuggestions']>['reason'])
+                : 'invalid_check_suggestions',
+            };
+            if (present) {
+              try {
+                const parsed = JSON.stringify(offered);
+                if (parsed !== undefined) {
+                  base.rejectedCheckSuggestions.presence = 'serializable';
+                  base.rejectedCheckSuggestions.diagnostic = boundedTextReceipt(parsed);
+                }
+              } catch {
+                // No payload is claimed when the supplied parsed field cannot serialize.
+              }
+            }
+            base.gaps.push(
+              `Suggested checks omitted (${base.rejectedCheckSuggestions.reason}): invalid metadata or uncited references. The complete answer remains available for manual selection.`,
+            );
+          }
+        }
         if (plan.rejectedReferences.length)
           base.gaps.push(
             `${plan.rejectedReferences.length} unsafe or unsupported citation destinations rejected; original text retained.`,

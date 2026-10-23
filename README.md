@@ -16,6 +16,8 @@ npm run start
 
 Open [the workbench](http://127.0.0.1:5178/signals-ai/). Browsing saved knowledge starts no research or source scan. For development, use `npm run dev`.
 
+Other installed applications can use the [local provider interface](docs/provider-interface.md) to negotiate owner capabilities and read exact retained records over loopback HTTP, without sibling source imports. Native readiness and permission to start research remain separate.
+
 Library returns immediate phrase, prefix and typo matches over retained metadata. In Settings → Personal Library, you can permit one no-web meaning match per submitted question. Its disclosure lists the metadata sent to your authenticated AI host; notes, projects, source text and credentials are excluded. Literal results remain available if matching is disabled, unavailable or cancelled. Public Pages uses literal retrieval only.
 
 ```sh
@@ -61,7 +63,11 @@ In the local workbench, a newly typed question starts with **Answer first; asses
 npm run signal-search -- --query 'Your research question' --method answer-first --cache private --save never
 ```
 
-This uses one authenticated Codex session to obtain ordinary Markdown without the assessment schema. The complete answer appears before citation assessment, with **Confidence Unknown** and an explicit unassessed state. Private Library indexes the entire answer locally; reopen it from Library or Activity and discuss a selected answer as prior synthesis. Whole answer text is excluded from remote meaning-match metadata. Automatic public admission is unavailable on this route. Select **Assess this citation** to obtain a separate source-grounded assessment linked to the immutable answer. Assessing does not rewrite the earlier narrative. This route has no demonstrated research-quality or speed advantage yet.
+Within Answer first, **Suggest a few decision-critical checks (unverified)** optionally offers up to three editable hypotheses in the same answer session. It performs no checks automatically. The CLI adds `--suggest-checks`; ordinary answer-first keeps its plain-answer prompt. Suggestions should concern currently identified resources that cited material can resolve; missing user requirements remain questions. Malformed suggestion metadata is omitted while a valid complete answer remains available for manual selection. Private history retains a bounded diagnostic of the parsed rejected suggestion field, with explicit omissions or missing payload; this does not capture runner output or reasoning. Confidence stays Unknown; the whole answer and whole-item Signal remain unassessed.
+
+Each explicit suggestion check uses its own retained answer and original cited URLs through the existing linked checker. The private history preserves the ordered offered list and records the submitted proposition, including edits. For a CLI linked selection, supply `--assessment-of RUN_ID --claim 'Edited proposition' --url ORIGINAL_CITATION --suggestion-index INDEX --offered-digest DIGEST --profile quick --cache private`; the index starts at zero and the digest comes from that answer's `checkSuggestions`. Nominations and their rationale are unverified metadata, not primary evidence or source independence. A memory-only answer is not silently saved to enable linked checks; an already retained private parent is required.
+
+Without suggestions, this uses one authenticated Codex session to obtain ordinary Markdown without the assessment schema. The complete answer appears before citation assessment, with **Confidence Unknown** and an explicit unassessed state. Private Library indexes the entire answer locally; reopen it from Library or Activity and discuss a selected answer as prior synthesis. Whole answer text is excluded from remote meaning-match metadata. Automatic public admission is unavailable on this route. Select **Assess this citation** to obtain a separate source-grounded assessment linked to the immutable answer. Assessing does not rewrite the earlier narrative. This route has no demonstrated research-quality or speed advantage yet.
 
 For a narrower check, enter a **Proposition to check** and select its citation. The same route is available in the CLI:
 

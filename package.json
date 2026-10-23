@@ -35,6 +35,8 @@
     "security:secrets": "node scripts/secret-check.mjs",
     "test": "vitest run --config vitest.config.ts",
     "test:research-answer": "node --import tsx --test tests/unit/research-answer.test.ts",
+    "demo:processes": "node scripts/examples/process-demo.mjs",
+    "demo:grounding": "node --import tsx scripts/examples/grounded-demo.ts",
     "research-answer": "node --import tsx scripts/research-answer.ts",
     "test:provenance": "node --import tsx packages/corpus/src/audit.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -51,7 +53,7 @@
   },
   "dependencies": {
     "@mozilla/readability": "0.6.0",
-    "@pradeeptathineni/research-ai": "https://github.com/pradeeptathineni/research-ai/archive/b8a7b068dd4aacd3916e04647b9eaf5b13d0a4de.tar.gz",
+    "@pradeeptathineni/research-ai": "file:vendor/research-ai/c434781745dae9bcc9ab7f525d73bf78ad0a794c3f36e8e1dd1d209c9d3c1022.tgz",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
     "linkedom": "0.18.13",
@@ -78,7 +80,12 @@
     "tsx": "4.23.15",
     "typescript": "6.0.3",
     "typescript-eslint": "8.70.1",
-    "vite": "8.3.1",
+    "vite": "8.3.3",
     "vitest": "5.0.2"
+  },
+  "overrides": {
+    "repomix": {
+      "@modelcontextprotocol/sdk": "1.32.0"
+    }
   }
 }

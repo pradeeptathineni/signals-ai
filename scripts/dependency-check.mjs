@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, URL } from 'node:url';
+import { checkResearchPin } from './research-pin.mjs';
 
 const rootPath = fileURLToPath(new URL('../', import.meta.url));
 const manifest = JSON.parse(await readFile(join(rootPath, 'package.json'), 'utf8'));
@@ -29,18 +30,14 @@ for (const [name, declaredVersion] of Object.entries(direct)) {
   const pinned = firstParty.get(name);
   if (pinned) {
     const locked = lock.packages?.[`node_modules/${name}`];
-    if (!pinned.source.test(declaredVersion)) {
-      errors.push(`${name}: ${declaredVersion} is not a public commit archive pin`);
-    }
-    if (locked?.resolved !== declaredVersion || !/^sha512-/.test(locked?.integrity ?? '')) {
-      errors.push(`${name}: lockfile must resolve the declared archive with sha512 integrity`);
-    }
-    if (installed.version !== pinned.version || locked?.version !== pinned.version) {
-      errors.push(`${name}: expected ${pinned.version}, installed ${installed.version}`);
-    }
-    if (installed.license !== pinned.license) {
-      errors.push(`${name}: unreviewed first-party license ${JSON.stringify(installed.license)}`);
-    }
+    if (pinned.source.test(declaredVersion)) {
+      if (locked?.resolved !== declaredVersion || !/^sha512-/.test(locked?.integrity ?? ''))
+        errors.push(`${name}: lockfile must resolve the declared archive with sha512 integrity`);
+      if (installed.version !== pinned.version || locked?.version !== pinned.version)
+        errors.push(`${name}: expected ${pinned.version}, installed ${installed.version}`);
+      if (installed.license !== pinned.license)
+        errors.push(`${name}: unreviewed first-party license ${JSON.stringify(installed.license)}`);
+    } else errors.push(...(await checkResearchPin(rootPath, declaredVersion, locked, installed)));
     continue;
   }
   if (installed.version !== declaredVersion) {

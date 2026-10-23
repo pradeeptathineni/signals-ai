@@ -1,4 +1,5 @@
 import { resolve } from 'node:path';
+import { createHash } from 'node:crypto';
 import { lstat } from 'node:fs/promises';
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
@@ -14,11 +15,14 @@ import {
   atomicJson,
   selectionHistory,
   loadRun,
+  retainRun,
 } from './search-store.js';
 import { loadPublicCorpus } from './public-corpus.js';
 import { loadPersonal, updatePersonal } from './search-personal.js';
 import { loadLibraryLeads } from './library-leads.js';
 import { loadAnswerLibrary } from './research-receipts.js';
+import { loadRetainedNotes } from './research-receipts.js';
+import type { SearchResult } from '../../domain/src/search-contract.js';
 
 const annotationSchema = Type.Object(
   {
@@ -34,7 +38,7 @@ const collectionSchema = Type.Object(
     version: Type.Literal(1),
     collection: Type.Record(
       Type.String({
-        pattern: '^(?:native|legacy|lead|answer):(?:public|private):[a-zA-Z0-9._:-]{1,200}$',
+        pattern: '^(?:native|legacy|lead|answer|note):(?:public|private):[a-zA-Z0-9._:-]{1,200}$',
       }),
       Type.Object(
         {
@@ -98,21 +102,53 @@ export async function loadResearchLibrary(root: string) {
 /** Canonical facts are the only corpus; normalized rows are disposable browser projections. */
 export async function loadLibrary(
   root: string,
-  options: { scope?: 'local' | 'public' | 'research' } = {},
+  options: { scope?: 'local' | 'public' | 'research'; coverage?: string[] } = {},
 ): Promise<LibraryFinding[]> {
   if (options.scope === 'research') return (await loadResearchLibrary(root)).findings;
-  const publicRecords = await loadEntities(resolve(root, 'signals/entities'));
+  const available = async <T>(load: Promise<T>, empty: T, label: string) => {
+    try {
+      return await load;
+    } catch (error) {
+      if (options.scope === 'public') throw error;
+      if (
+        error instanceof Error &&
+        /^(?:unsafe_|symlink_|invalid_private_state_path)/.test(error.message)
+      )
+        throw error;
+      options.coverage?.push(
+        `${label} could not be validated; other Library stores remain available.`,
+      );
+      return empty;
+    }
+  };
+  const publicRecords = await available(
+    loadEntities(resolve(root, 'signals/entities')),
+    [],
+    'Public entities',
+  );
   const findings = [
     ...publicRecords.map((record) => projectNativeLibrary(record, 'public')),
-    ...(await legacy(root)),
+    ...(await available(legacy(root), [], 'Published historical corpus')),
   ];
   if (options.scope === 'public') return findings;
-  const privateRecords = await loadEntities(resolve(root, '.signals/corpus/entities'));
+  const privateRecords = await available(
+    loadEntities(resolve(root, '.signals/corpus/entities')),
+    [],
+    'Private entities',
+  );
   findings.push(...privateRecords.map((record) => projectNativeLibrary(record, 'private')));
-  findings.push(...(await loadLibraryLeads(root)));
-  findings.push(...(await loadAnswerLibrary(root)));
-  const personal = await loadPersonal(root);
+  findings.push(...(await available(loadLibraryLeads(root), [], 'Saved leads')));
   const state = await collectionState(root);
+  findings.push(...(await loadAnswerLibrary(root, options.coverage)));
+  findings.push(
+    ...(await loadRetainedNotes(
+      root,
+      Object.keys(state.collection)
+        .filter((key) => key.startsWith('note:private:'))
+        .map((key) => key.slice('note:private:'.length)),
+    )),
+  );
+  const personal = await loadPersonal(root);
   return findings.map((finding) => {
     const collection = state.collection[finding.key];
     const annotation = finding.origin.format === 'native' ? personal[finding.id] : undefined;
@@ -129,6 +165,44 @@ export async function loadLibrary(
         'unknown',
     };
   });
+}
+/** A private bookmark protects an immutable incomplete run; losing the reply is safe to reconcile by run ID. */
+export async function retainIncompleteNarrative(root: string, result: SearchResult) {
+  if (
+    !['partial', 'failed', 'cancelled'].includes(result.status) ||
+    result.answerReceipt ||
+    !result.brief?.text.trim() ||
+    result.brief.text.length > 24000
+  )
+    throw new Error('invalid_incomplete_retention');
+  // Recovered acknowledgements reopen the original snapshot. Do not reserialize it.
+  const originalPath = resolve(root, '.signals/runs', `${result.runId}.json`);
+  const existing = await lstat(originalPath).catch((error: NodeJS.ErrnoException) => {
+    if (error.code !== 'ENOENT') throw error;
+    return null;
+  });
+  if (existing) {
+    if (!existing.isFile() || existing.isSymbolicLink())
+      throw new Error('unsafe_incomplete_original');
+  } else await retainRun(result, root);
+  const retained = await loadRun(result.runId, root);
+  if (
+    retained.status !== result.status ||
+    createHash('sha256').update(retained.brief!.text).digest('hex') !==
+      createHash('sha256').update(result.brief.text).digest('hex')
+  )
+    throw new Error('incomplete_retention_conflict');
+  const key = `note:private:${result.runId}`;
+  await withWriter(root, async () => {
+    const state = await collectionState(root);
+    state.collection[key] = {
+      ...state.collection[key],
+      saved: true,
+      updatedAt: new Date().toISOString(),
+    };
+    await atomicJson(resolve(root, '.signals/library-state.json'), state);
+  });
+  return { key, runId: result.runId, saved: true, status: result.status };
 }
 /** Only an immutable selected trail in the chosen store can bind a saved vote to a parent. */
 export async function retainedIntroducingParent(

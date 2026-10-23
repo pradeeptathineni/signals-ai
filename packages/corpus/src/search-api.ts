@@ -1,5 +1,20 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomBytes, randomUUID } from 'node:crypto';
+import {
+  exactOwnerRecord,
+  providerCapabilities,
+  providerLibrary,
+  providerRecord,
+  ProviderError,
+  validateProviderHeaders,
+  validateProcessObserver,
+} from './provider-capabilities.js';
+import {
+  requestStore,
+  parseResearchRequest,
+  requestConfigurationDigest,
+} from './search-request-store.js';
+import { processObservation, type ObservedRun } from './process-observation.js';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { Type } from 'typebox';
@@ -13,7 +28,12 @@ import {
 } from '../../domain/src/search-contract.js';
 import { signalSearch } from './signal-search.js';
 import { directSearch } from './search-direct.js';
-import { codexRunner, answerFirstOperation, claimReviewOperation } from './search-runner.js';
+import {
+  codexRunner,
+  answerFirstOperation,
+  claimReviewOperation,
+  type SearchRunner,
+} from './search-runner.js';
 import { loadAcquisitionConfig, acquisitionReadiness } from './search-acquisition.js';
 import { scanSources } from './search-sources.js';
 import { loadPersonal, updatePersonal } from './search-personal.js';
@@ -34,11 +54,22 @@ import { runDueOnce, refreshRequest } from './search-scheduler.js';
 import {
   answerFromEvidence,
   answerFromRetainedMaterial,
+  followupChild,
+  followupChildV2,
   frozenLibraryMaterial,
+  parseFollowupRequest,
+  parseFollowupRequestV2,
+  savedResearchMaterial,
+  savedResearchMaterialV2,
 } from './search-followup.js';
 import { checkPrimaryMaterial } from './search-reuse.js';
 import { selectSavedEntity } from './search-selection.js';
-import { loadLibrary, setLibrarySaved, retainedIntroducingParent } from './library.js';
+import {
+  loadLibrary,
+  setLibrarySaved,
+  retainedIntroducingParent,
+  retainIncompleteNarrative,
+} from './library.js';
 import { libraryPreferences, librarySearchSchema, matchLibrary } from './library-meaning.js';
 import { saveQuery } from './research-store.js';
 import { saveLibraryLead } from './library-leads.js';
@@ -104,8 +135,9 @@ const savedEntitySelection = Type.Object(
   },
   { additionalProperties: false },
 );
-interface ActiveRun {
+interface ActiveRun extends ObservedRun {
   controller: AbortController;
+  requestEpoch?: string;
   events: string[];
   result?: SearchResult;
   provisional?: ProvisionalLead[];
@@ -126,18 +158,74 @@ export function searchApi(
   locate = directSearch,
   follow = answerFromEvidence,
   check = checkPrimaryMaterial,
+  // Saved-context discussion runner; the default is the no-web Codex runner.
+  discussionRunner?: (task: string, schema: unknown) => Pick<SearchRunner, 'discover'>,
 ) {
   const token = randomBytes(32).toString('hex');
   const runs = new Map<string, ActiveRun>();
+  const requests = requestStore(root);
+  const observation = processObservation(root, runs);
+  const executionConfiguration = async () => {
+    const settings = await loadSettings(root);
+    const acquisition = await loadAcquisitionConfig(root);
+    if (!settings.model || !settings.effort)
+      throw new Error('explicit_execution_configuration_required');
+    const snapshot = {
+      schema_version: 'signals-execution-v1',
+      runner: settings.runner,
+      model: settings.model,
+      effort: settings.effort,
+      acquisition,
+      followedSources: settings.followedSources ?? [],
+    };
+    return { settings, acquisition, digest: requestConfigurationDigest(snapshot) };
+  };
   const previews = new Map<string, ProjectPreview>();
   const pruneRuns = () => {
     for (const [key, run] of runs) {
       if (runs.size <= 30) break;
-      if (run.result || run.error || run.batch || run.due) runs.delete(key);
+      if (run.result || run.error || run.batch || run.due) {
+        runs.delete(key);
+        if (!run.reopened) observation.changed();
+      }
     }
   };
   const resultFor = (runId: string | undefined) =>
     [...runs.values()].find((run) => run.result && run.result.runId === runId)?.result;
+  // A follow-up child reuses its durable job ID as its run UUID, so readback needs no new ledger field.
+  const childRunId = (id: string) =>
+    `${id.slice(0, 8)}-${id.slice(8, 12)}-${id.slice(12, 16)}-${id.slice(16, 20)}-${id.slice(20)}`;
+  // Explicit fields only: admission internals never leave the owner.
+  const followupView = async (view: Awaited<ReturnType<typeof requests.lookup>>) => {
+    const reply = {
+      code: view.code,
+      id: view.id,
+      receipt: view.receipt,
+      execution_configuration: view.execution_configuration,
+      deduplication: view.deduplication,
+      reason: view.reason,
+    };
+    if (!view.id || !view.receipt) return { ...reply, result_ref: null };
+    try {
+      const exact = await exactOwnerRecord(root, {
+        owner: 'signals-ai',
+        kind: 'answer',
+        id: childRunId(view.id),
+        revision: null,
+        digest: null,
+      });
+      const child = JSON.parse(exact.bytes.toString('utf8')) as SearchResult;
+      return {
+        ...reply,
+        result_ref:
+          child.followupOf?.requestDigest === view.receipt.request_digest ? exact.ref : null,
+      };
+    } catch (error) {
+      if (!(error instanceof ProviderError)) throw error;
+      // Absence is not proof of no effect; the receipt state stays authoritative.
+      return { ...reply, result_ref: null, result_reason: error.code };
+    }
+  };
   // One in-process AI job at a time. Claiming is synchronous so no await separates the
   // check from the set; search-runner's filesystem lease separately guards other processes.
   let active = false;
@@ -173,18 +261,33 @@ export function searchApi(
       work: (run: ActiveRun, progress: (event: string) => void) => Promise<void>,
     ) => {
       if (!claim()) return json(409, { code: 'runner_busy' });
-      const run: ActiveRun = { controller: new AbortController(), events: [first] };
+      const startedAt = new Date().toISOString();
+      const run: ActiveRun = {
+        controller: new AbortController(),
+        events: [first],
+        startedAt,
+        lastEvidenceAt: startedAt,
+        settled: false,
+      };
       const id = randomBytes(16).toString('hex');
       runs.set(id, run);
+      observation.changed();
       void work(run, (event) => {
         run.events.push(event);
+        run.lastEvidenceAt = new Date().toISOString();
+        observation.changed();
         if (run.events.length > 100) run.events.shift();
       })
         .catch((failure: unknown) => {
           run.error = failure instanceof Error ? failure.message : fallback;
           run.events.push(run.error);
+          run.lastEvidenceAt = new Date().toISOString();
+          observation.changed();
         })
         .finally(() => {
+          run.settled = true;
+          run.settledAt = new Date().toISOString();
+          observation.changed();
           active = false;
           pruneRuns();
         });
@@ -209,6 +312,12 @@ export function searchApi(
       return true;
     }
     try {
+      await validateProviderHeaders(
+        root,
+        request.headers['x-signals-provider-version'],
+        request.headers['x-signals-instance-id'],
+        request.headers['x-signals-owner-epoch'],
+      );
       let body: unknown;
       if (mutation) {
         if (!request.headers['content-type']?.startsWith('application/json'))
@@ -221,7 +330,47 @@ export function searchApi(
         body = JSON.parse(raw);
       }
       const route = path.slice('/signals-ai/__signals/api/'.length);
-      if (route === 'session' && !mutation)
+      if (route === 'provider/capabilities' && !mutation)
+        json(
+          200,
+          await providerCapabilities(
+            root,
+            request.headers['x-signals-provider-version'],
+            request.headers['x-signals-instance-id'],
+            request.headers['x-signals-owner-epoch'],
+          ),
+        );
+      else if (route === 'provider/records' && !mutation)
+        json(
+          200,
+          await providerRecord(
+            root,
+            request.url!,
+            request.headers['x-signals-provider-version'],
+            request.headers['x-signals-instance-id'],
+            request.headers['x-signals-owner-epoch'],
+          ),
+        );
+      else if (route === 'provider/library' && !mutation)
+        json(
+          200,
+          await providerLibrary(
+            root,
+            request.url!,
+            request.headers['x-signals-provider-version'],
+            request.headers['x-signals-instance-id'],
+            request.headers['x-signals-owner-epoch'],
+          ),
+        );
+      else if (route === 'provider/processes' && !mutation) {
+        await validateProcessObserver(
+          root,
+          request.headers['x-signals-provider-version'],
+          request.headers['x-signals-instance-id'],
+          request.headers['x-signals-owner-epoch'],
+        );
+        json(200, await observation.snapshot());
+      } else if (route === 'session' && !mutation)
         json(200, {
           token,
           capability: await codexRunner().readiness(),
@@ -229,10 +378,167 @@ export function searchApi(
           active,
           limits: 'One AI job; quick 8 searches/20 documents/240s; wide 24/60/600s.',
         });
-      else if (route === 'settings')
+      else if (route === 'request-scope') {
+        if (mutation && !Value.Check(Type.Object({}, { additionalProperties: false }), body))
+          throw new Error('invalid_request_scope_initialization');
+        json(200, mutation ? await requests.initialize() : await requests.scope());
+      } else if (route === 'request-configuration' && !mutation) {
+        const configuration = await executionConfiguration();
+        json(200, {
+          schema_version: 'signals-execution-v1',
+          digest_algorithm: 'jcs-sha256-v1',
+          digest: configuration.digest,
+        });
+      } else if (/^requests\/[A-Za-z0-9_.:-]{1,128}(\/reconcile)?$/.test(route)) {
+        const reconcile = route.endsWith('/reconcile');
+        if (
+          mutation !== reconcile ||
+          (mutation && !Value.Check(Type.Object({}, { additionalProperties: false }), body))
+        )
+          throw new Error('invalid_request_readback');
+        const epoch = String(request.headers['x-signals-owner-epoch'] ?? '');
+        const found = await requests.lookup(route.split('/')[1]!, epoch);
+        json(found.receipt ? 200 : 404, found);
+      } else if (/^followups\/[A-Za-z0-9_.:-]{1,128}$/.test(route) && !mutation) {
+        const epoch = String(request.headers['x-signals-owner-epoch'] ?? '');
+        const found = await requests.lookup(route.split('/')[1]!, epoch);
+        json(found.receipt ? 200 : 404, await followupView(found));
+      } else if (route === 'followups' && mutation) {
+        const input =
+          body &&
+          typeof body === 'object' &&
+          'schema_version' in body &&
+          body.schema_version === '2.0'
+            ? parseFollowupRequestV2(body)
+            : parseFollowupRequest(body);
+        const epoch = String(request.headers['x-signals-owner-epoch'] ?? '');
+        const expectedConfiguration = request.headers['x-signals-execution-digest'];
+        if (expectedConfiguration !== undefined && typeof expectedConfiguration !== 'string')
+          throw new Error('invalid_execution_configuration_digest');
+        const configuration = await executionConfiguration();
+        const admit = () =>
+          requests.admit(
+            input,
+            epoch,
+            configuration.digest,
+            expectedConfiguration,
+            'frozen-followup',
+          );
+        if ((await requests.lookup(input.idempotency_key, epoch)).receipt) {
+          // Same key: compare its meaning and return the original identity. Never re-run.
+          json(202, await followupView(await admit()));
+          return true;
+        }
+        // Every exact parent is verified before admission and before any model call.
+        const parentRefs = input.schema_version === '2.0' ? input.parent_refs : [input.parent_ref];
+        const parents = await Promise.all(
+          parentRefs.map(async (ref) => ({
+            ref,
+            run: JSON.parse(
+              (await exactOwnerRecord(root, ref)).bytes.toString('utf8'),
+            ) as SearchResult,
+          })),
+        );
+        const selected =
+          input.schema_version === '2.0' ? savedResearchMaterialV2(parents, input.question) : null;
+        const frozen =
+          selected?.frozen ?? savedResearchMaterial(parents[0]!.run, parents[0]!.ref.kind);
+        if (!claim()) {
+          json(409, { code: 'runner_busy', reason: 'Another AI job is active; nothing admitted.' });
+          return true;
+        }
+        try {
+          const admission = await admit();
+          if (!admission.created) {
+            active = false;
+            json(202, await followupView(admission));
+            return true;
+          }
+          const { record } = admission;
+          const started = await requests.dispatch(record.id, epoch);
+          const startedAt = new Date().toISOString();
+          const run: ActiveRun = {
+            controller: new AbortController(),
+            requestEpoch: epoch,
+            events: ['Discussing saved research. No search, source access or verification.'],
+            startedAt,
+            lastEvidenceAt: startedAt,
+            settled: false,
+          };
+          runs.set(record.id, run);
+          observation.changed();
+          void (async () => {
+            let retaining = false;
+            try {
+              const { settings } = configuration;
+              const answer = await answerFromRetainedMaterial(
+                frozen,
+                input.question,
+                settings.model || undefined,
+                settings.effort || undefined,
+                { runner: discussionRunner, signal: run.controller.signal },
+              );
+              const childInput = {
+                runId: childRunId(record.id),
+                question: input.question,
+                frozen,
+                requestDigest: record.digest,
+                answer,
+                requestedModel: settings.model || null,
+                elapsedMs: Date.now() - Date.parse(startedAt),
+              };
+              const child = selected
+                ? followupChildV2({ ...childInput, parents, selection: selected.selection })
+                : followupChild({
+                    ...childInput,
+                    parent: parents[0]!.run,
+                    parentRef: parents[0]!.ref,
+                  });
+              retaining = true;
+              await retainRun(child, root);
+              run.result = child;
+              run.events.push('Follow-up answer retained privately.');
+              await requests.settle(
+                record.id,
+                epoch,
+                'complete',
+                'followup_complete_child_retained',
+              );
+            } catch (failure) {
+              run.error = failure instanceof Error ? failure.message : 'followup_failed';
+              run.events.push(run.error);
+              // An interrupted retention write is not a settled effect; readback stays unknown.
+              if (!retaining) {
+                const cancelled = run.controller.signal.aborted;
+                await requests
+                  .settle(
+                    record.id,
+                    epoch,
+                    cancelled ? 'cancelled' : 'failed',
+                    cancelled ? 'followup_cancelled' : 'followup_failed',
+                  )
+                  .catch(() => {});
+              }
+            } finally {
+              run.lastEvidenceAt = new Date().toISOString();
+              run.settled = true;
+              run.settledAt = run.lastEvidenceAt;
+              observation.changed();
+              active = false;
+              pruneRuns();
+            }
+          })();
+          json(202, await followupView(started));
+        } catch (failure) {
+          active = false;
+          throw failure;
+        }
+      } else if (route === 'settings')
         json(200, mutation ? await saveSettings(body, root) : await loadSettings(root));
-      else if (route === 'library' && !mutation) json(200, { findings: await loadLibrary(root) });
-      else if (route === 'question' && mutation) {
+      else if (route === 'library' && !mutation) {
+        const coverage: string[] = [];
+        json(200, { findings: await loadLibrary(root, { coverage }), coverage });
+      } else if (route === 'question' && mutation) {
         const schema = Type.Object(
           { question: Type.String({ minLength: 1, maxLength: 2000 }) },
           { additionalProperties: false },
@@ -478,10 +784,15 @@ export function searchApi(
           throw new Error('invalid_history_selection');
         const result = await loadRun(body.runId, root, (await loadSettings(root)).threshold);
         const id = randomBytes(16).toString('hex');
+        const reopenedAt = new Date().toISOString();
         runs.set(id, {
           controller: new AbortController(),
           events: ['Reopened frozen result; no inference or new acquisition.'],
           result,
+          startedAt: reopenedAt,
+          lastEvidenceAt: reopenedAt,
+          settled: true,
+          reopened: true,
         });
         pruneRuns();
         json(200, { id });
@@ -496,6 +807,113 @@ export function searchApi(
               ? checked.source?.digest
               : (material?.digest ?? null),
         });
+      } else if (
+        route === 'search' &&
+        mutation &&
+        body &&
+        typeof body === 'object' &&
+        'schema_version' in body
+      ) {
+        const input = parseResearchRequest(body);
+        const epoch = String(request.headers['x-signals-owner-epoch'] ?? '');
+        const configuration = await executionConfiguration();
+        const expectedConfiguration = request.headers['x-signals-execution-digest'];
+        if (expectedConfiguration !== undefined && typeof expectedConfiguration !== 'string')
+          throw new Error('invalid_execution_configuration_digest');
+        const admission = await requests.admit(
+          input,
+          epoch,
+          configuration.digest,
+          expectedConfiguration,
+        );
+        const { created, record, ...accepted } = admission;
+        if (!created) {
+          json(202, accepted);
+          return true;
+        }
+        if (!claim()) {
+          // This accepted identity is known not to have dispatched. A retry reads
+          // that same identity; it cannot become an implicit second execution.
+          json(409, { ...accepted, code: 'runner_busy' });
+          return true;
+        }
+        try {
+          const query = parseRequest({
+            query: input.query,
+            method: input.method,
+            profile: input.profile,
+            save: 'never',
+            cache: 'memory',
+          });
+          const { settings, acquisition } = configuration;
+          const runner = codexRunner(settings.model || undefined, settings.effort || undefined, {
+            root,
+            acquisition,
+            settings,
+            ...answerFirstOperation(query),
+          });
+          // Commit uncertainty BEFORE entering the research callback. No read or
+          // repeated POST can cross this boundary for an existing identity.
+          const started = await requests.dispatch(record.id, epoch);
+          const run: ActiveRun = {
+            controller: new AbortController(),
+            requestEpoch: epoch,
+            events: ['Starting research…'],
+            startedAt: new Date().toISOString(),
+            lastEvidenceAt: new Date().toISOString(),
+            settled: false,
+          };
+          runs.set(record.id, run);
+          observation.changed();
+          void (async () => {
+            try {
+              run.result = await search(query, {
+                root,
+                runner,
+                acquisition,
+                signal: run.controller.signal,
+                progress: (event) => {
+                  run.events.push(event);
+                  run.lastEvidenceAt = new Date().toISOString();
+                  observation.changed();
+                  if (run.events.length > 100) run.events.shift();
+                },
+                brief: (brief) => {
+                  run.brief = brief;
+                },
+                provisional: (leads) => {
+                  run.provisional = leads;
+                },
+              });
+              await requests.settle(
+                record.id,
+                epoch,
+                run.result.status === 'completed'
+                  ? 'complete'
+                  : run.result.status === 'not_configured'
+                    ? 'failed'
+                    : run.result.status,
+              );
+            } catch (failure) {
+              run.error = failure instanceof Error ? failure.message : 'search_failed';
+              run.events.push(run.error);
+              run.lastEvidenceAt = new Date().toISOString();
+              observation.changed();
+              // A failed persistence write cannot be called a settled effect.
+              if (!run.result) await requests.settle(record.id, epoch, 'failed').catch(() => {});
+            } finally {
+              run.settled = true;
+              run.settledAt = new Date().toISOString();
+              observation.changed();
+              active = false;
+              pruneRuns();
+            }
+          })();
+          json(202, started);
+        } catch (failure) {
+          active = false;
+          throw failure;
+        }
       } else if ((route === 'search' || route === 'capture' || route === 'refresh') && mutation) {
         const settings = await loadSettings(root);
         let input = body;
@@ -637,6 +1055,19 @@ export function searchApi(
         });
       } else if (/^runs\/[a-f0-9]{32}$/.test(route) && !mutation) {
         const run = runs.get(route.split('/')[1]!);
+        if (!run) {
+          const durable = await requests.job(route.split('/')[1]!);
+          if (durable?.receipt) {
+            json(200, {
+              events: [],
+              result: null,
+              error: null,
+              ...durable,
+              resultAvailability: 'memory_result_unavailable_after_restart',
+            });
+            return true;
+          }
+        }
         let noteOriginalAvailable: boolean | null = null;
         if (run?.result?.claimCheck?.version === 3) {
           const origin = run.result.claimCheck.origin;
@@ -687,7 +1118,23 @@ export function searchApi(
             : { code: 'unknown_run' },
         );
       } else if (/^cancel\/[a-f0-9]{32}$/.test(route) && mutation) {
-        const run = runs.get(route.split('/')[1]!);
+        const id = route.split('/')[1]!;
+        const run = runs.get(id);
+        const markCancellation = () => {
+          if (run && !run.cancelRequestedAt) {
+            run.cancelRequestedAt = new Date().toISOString();
+            observation.changed();
+          }
+        };
+        if (run?.requestEpoch && !run.result && !run.error) {
+          try {
+            await requests.cancel(id, run.requestEpoch);
+            markCancellation();
+          } finally {
+            run.controller.abort();
+          }
+        }
+        if (run && !run.requestEpoch && !run.settled) markCancellation();
         run?.controller.abort();
         json(200, { cancelled: !!run });
       } else if (route === 'retain-answer' && mutation) {
@@ -696,9 +1143,22 @@ export function searchApi(
           { additionalProperties: false },
         );
         if (!Value.Check(schema, body)) throw new Error('invalid_answer_selection');
-        const result = resultFor(body.runId);
+        const result = resultFor(body.runId) ?? (await loadRun(body.runId, root).catch(() => null));
+        if (!result?.brief?.text) throw new Error('unknown_answer_selection');
+        if (!result.answerReceipt && ['partial', 'failed', 'cancelled'].includes(result.status)) {
+          const key = `note:private:${result.runId}`;
+          try {
+            json(200, await retainIncompleteNarrative(root, result));
+          } catch (error) {
+            const retained = await loadRun(result.runId, root)
+              .then((run) => run.brief?.text === result.brief?.text)
+              .catch(() => false);
+            if (!retained) throw error;
+            json(500, { code: 'note_retained_library_update_failed', retained: true, key });
+          }
+          return true;
+        }
         if (
-          !result?.brief?.text ||
           result.answerReceipt?.state !== 'unassessed' ||
           result.answerReceipt.confidence !== 'unknown'
         )
@@ -895,7 +1355,25 @@ export function searchApi(
         json(200, { cleaned: true, retainedHistory: 'preserved' });
       } else json(404, { code: 'unknown_operation' });
     } catch (failure) {
-      json(400, { code: failure instanceof Error ? failure.message : 'invalid_request' });
+      if (failure instanceof ProviderError) {
+        json(failure.status, { code: failure.code, reason: failure.reason });
+        return true;
+      }
+      const code = failure instanceof Error ? failure.message : 'invalid_request';
+      json(
+        [
+          'request_conflict',
+          'owner_epoch_mismatch',
+          'request_configuration_changed',
+          'request_configuration_conflict',
+          'request_identity_version_requires_reconciliation',
+        ].includes(code)
+          ? 409
+          : code.startsWith('request_store_') || code === 'process_snapshot_too_large'
+            ? 503
+            : 400,
+        { code },
+      );
     }
     return true;
   };

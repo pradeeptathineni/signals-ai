@@ -3,7 +3,12 @@ import {
   frozenFollowupMaterial,
   frozenLibraryMaterial,
   validateRetainedAnswer,
+  parseFollowupRequestV2,
+  savedResearchMaterialV2,
+  followupChildV2,
+  validateFollowupChild,
 } from './search-followup.js';
+import { digest } from './search-fetch.js';
 import { loadEntities } from './search-store.js';
 import { projectNativeLibrary } from '../../domain/src/library-search.js';
 import type { SearchResult } from '../../domain/src/search-contract.js';
@@ -81,4 +86,90 @@ it('accepts qualified retained citations and rejects ambiguous or forged source 
       observations: [`native:public:entity-123:${original}`],
     }),
   ).toThrow('unbound_followup_output');
+});
+
+it('copies and validates a v2 child scope without relying on its parents at reopening', () => {
+  const refs = ['10000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000002'].map(
+    (id) => ({
+      owner: 'signals-ai' as const,
+      kind: 'answer' as const,
+      id,
+      digest: 'a'.repeat(64),
+      revision: 'sha256:' + 'a'.repeat(64),
+    }),
+  );
+  const request = parseFollowupRequestV2({
+    schema_version: '2.0',
+    request_id: 'unit',
+    idempotency_key: 'unit',
+    parent_refs: refs,
+    question: '  What remains unknown?  ',
+    scope: 'saved-context-only',
+    retention: 'private',
+    authority_ref: {
+      owner: 'signals-ai',
+      kind: 'authority',
+      id: 'unit',
+      revision: null,
+      digest: null,
+    },
+  });
+  expect(request.question).toBe('What remains unknown?');
+  const parents = refs.map((ref, index) => ({
+    ref,
+    run: {
+      ...result,
+      runId: ref.id,
+      query: `Saved ${index}`,
+      status: 'completed' as const,
+      items: [],
+    },
+  }));
+  const selected = savedResearchMaterialV2(parents, request.question);
+  const child = followupChildV2({
+    runId: '10000000-0000-4000-8000-000000000003',
+    parents,
+    question: request.question,
+    ...selected,
+    requestDigest: 'b'.repeat(64),
+    requestedModel: null,
+    elapsedMs: 0,
+    answer: {
+      mode: 'frozen-evidence-model',
+      answer: 'An authored hypothetical answer, not executed.',
+      statements: [],
+      gaps: selected.frozen.gaps,
+      usage: null,
+    },
+  });
+  expect(() => validateFollowupChild(child)).not.toThrow();
+  if (child.followupOf?.version !== 2) throw new Error('missing_v2_child');
+  expect(child.followupOf.selection.question_sha256).toBe(digest(request.question));
+  for (const modify of [
+    (copy: typeof child) => {
+      if (copy.followupOf?.version === 2)
+        copy.followupOf.selection.question_sha256 = '0'.repeat(64);
+    },
+    (copy: typeof child) => {
+      if (copy.followupOf?.version === 2)
+        copy.followupOf.parents[1]!.ref = copy.followupOf.parents[0]!.ref;
+    },
+    (copy: typeof child) => {
+      if (copy.followupOf?.version === 2) copy.followupOf.selection.per_parent[0]!.kept = 1;
+    },
+    (copy: typeof child) => {
+      if (copy.followupOf?.version === 2) copy.followupOf.cited = ['observation-' + 'f'.repeat(24)];
+    },
+  ]) {
+    const copy = structuredClone(child);
+    modify(copy);
+    expect(() => validateFollowupChild(copy)).toThrow(/followup/);
+  }
+  const oversized = parents.map((parent) => ({
+    ...parent,
+    run: { ...parent.run, brief: { format: 'markdown' as const, text: 'x'.repeat(60000) } },
+  }));
+  expect(() => savedResearchMaterialV2(oversized, request.question)).toThrow(
+    'followup_synthesis_budget_exceeded',
+  );
 });

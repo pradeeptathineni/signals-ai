@@ -7,8 +7,10 @@ import { saveLibraryLeads, loadLibraryLeads } from './library-leads.js';
 import { atomicJson } from './search-store.js';
 import { loadLibrary } from './library.js';
 import { searchLibrary } from '../../domain/src/library-search.js';
+import { validateGrounding, type Grounding } from '@pradeeptathineni/research-ai';
 
 export interface ResearchAnswer {
+  grounding?: Grounding;
   query: string;
   answer: string;
   observedAt: string;
@@ -109,11 +111,16 @@ export function planResearchRetention(input: ResearchAnswer) {
     !Number.isFinite(Date.parse(input.observedAt))
   )
     throw new Error('invalid_research_answer');
+  if (input.grounding !== undefined) {
+    validateGrounding(input.answer, input.grounding);
+    for (const source of input.grounding.sources) normalizeConsiderUrl(source.uri);
+  }
   return {
     input,
     answerSha256: createHash('sha256').update(input.answer).digest('hex'),
     ...retainedPartialCitationsV1(input.answer),
     limits: [
+      ...(input.grounding?.limits ?? []),
       'Only ordinary inline Markdown citations outside code are recognized; bare URLs, reference-style links and unsupported Markdown remain in the raw answer.',
       'Inline labels are limited to 200 characters and destination/title segments to 4096; oversized references remain in the raw answer without citation credit.',
       'Citation destinations preserve fragments; base identity is separate and does not merge distinct navigation targets or entities.',

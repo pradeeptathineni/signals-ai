@@ -12,6 +12,154 @@ import { frozenFollowupMaterial } from './search-followup.js';
 import { loadLibrary } from './library.js';
 import { randomUUID } from 'node:crypto';
 
+it('keeps durable v1 identity through lost replies, concurrent retry and API restart without replay', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-durable-api-')));
+  let dispatches = 0;
+  let release!: () => void;
+  const pending = new Promise<void>((done) => {
+    release = done;
+  });
+  const runner = async (): Promise<SearchResult> => {
+    dispatches++;
+    await pending;
+    return {
+      schemaVersion: 2,
+      runId: randomUUID(),
+      query: 'durable question',
+      status: 'partial',
+      brief: { format: 'markdown', text: 'Stopped partial answer.' },
+      items: [],
+      sources: [],
+      coverage: [],
+      gaps: ['synthetic partial'],
+      usage: {
+        searches: 0,
+        documents: 0,
+        elapsedMs: 0,
+        modelCalls: 0,
+        providerUsage: null,
+        cost: null,
+      },
+      counts: { leads: 0, distinct: 0, duplicates: 0, omitted: 0 },
+      limits: budgets.quick,
+    };
+  };
+  let handler = searchApi(root, runner);
+  const server = createServer((request, response) => {
+    void handler(request, response);
+  });
+  await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('no_port');
+  const base = `http://127.0.0.1:${address.port}/signals-ai/__signals/api/`;
+  const envelope = {
+    schema_version: '1.0',
+    request_id: 'question-1',
+    idempotency_key: 'retry-1',
+    query: 'durable question',
+    method: 'answer-first',
+    profile: 'quick',
+    cache: 'memory',
+    save: 'never',
+    project_ref: null,
+    authority_ref: {
+      owner: 'signals-ai',
+      kind: 'authority',
+      id: 'local',
+      revision: '1',
+      digest: null,
+    },
+  };
+  try {
+    // D01 depends on this exact pre-effect refusal even for malformed/oversized bodies.
+    const refused = await fetch(base + 'search', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{bad',
+    });
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toEqual({ code: 'csrf_token_required' });
+    await expect(readFile(join(root, '.signals/requests/ledger.json'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+    const { token } = await (await fetch(base + 'session')).json();
+    const headers = { 'content-type': 'application/json', 'x-signals-token': token };
+    const initialized = await fetch(base + 'request-scope', {
+      method: 'POST',
+      headers,
+      body: '{}',
+    });
+    expect(initialized.status).toBe(200);
+    const scope = await initialized.json();
+    const owned = { ...headers, 'x-signals-owner-epoch': scope.epoch };
+    const post = (body = envelope) =>
+      fetch(base + 'search', { method: 'POST', headers: owned, body: JSON.stringify(body) });
+    // Consume no start response content: emulate a lost 202 after admission.
+    const first = await post();
+    expect(first.status).toBe(202);
+    const retries = await Promise.all([post(), post(), post()]);
+    const receipts = await Promise.all(
+      retries.map((reply) => reply.json() as Promise<{ id: string }>),
+    );
+    const originalId = receipts[0]!.id;
+    expect(new Set(receipts.map((row) => row.id)).size).toBe(1);
+    expect(dispatches).toBe(1);
+    expect((await post({ ...envelope, query: 'different' })).status).toBe(409);
+    expect((await post({ ...envelope, profile: 'wide' })).status).toBe(409);
+    const before = await readFile(join(root, '.signals/requests/ledger.json'));
+    handler = searchApi(root, runner);
+    const recovered = await (
+      await fetch(base + 'requests/retry-1', { headers: { 'x-signals-owner-epoch': scope.epoch } })
+    ).json();
+    expect(recovered.id).toBe(originalId);
+    expect(recovered.receipt.state).toBe('unknown');
+    expect(recovered.receipt.reason).toBe('dispatch_may_have_started');
+    expect(await readFile(join(root, '.signals/requests/ledger.json'))).toEqual(before);
+    const renewed = await (await fetch(base + 'session')).json();
+    const repeated = await fetch(base + 'search', {
+      method: 'POST',
+      headers: { ...owned, 'x-signals-token': renewed.token },
+      body: JSON.stringify(envelope),
+    });
+    expect(repeated.status).toBe(202);
+    expect((await repeated.json()).id).toBe(originalId);
+    expect(dispatches).toBe(1);
+    release();
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const settled = await (
+        await fetch(base + 'requests/retry-1', {
+          headers: { 'x-signals-owner-epoch': scope.epoch },
+        })
+      ).json();
+      if (settled.receipt?.state === 'partial') break;
+      await new Promise((done) => setTimeout(done, 10));
+    }
+    const settled = await (
+      await fetch(base + 'requests/retry-1', { headers: { 'x-signals-owner-epoch': scope.epoch } })
+    ).json();
+    expect(settled.receipt.state).toBe('partial');
+    const reopened = await (await fetch(base + 'runs/' + originalId)).json();
+    expect(reopened.result).toBeNull();
+    expect(reopened.receipt.state).toBe('partial');
+    const settledBytes = await readFile(join(root, '.signals/requests/ledger.json'));
+    const reconciled = await fetch(base + 'requests/retry-1/reconcile', {
+      method: 'POST',
+      headers: { ...owned, 'x-signals-token': renewed.token },
+      body: '{}',
+    });
+    expect(reconciled.status).toBe(200);
+    expect((await reconciled.json()).id).toBe(originalId);
+    expect(await readFile(join(root, '.signals/requests/ledger.json'))).toEqual(settledBytes);
+    expect(dispatches).toBe(1);
+  } finally {
+    release();
+    await new Promise<void>((done, reject) =>
+      server.close((error) => (error ? reject(error) : done())),
+    );
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 it('explicitly reopens an interrupted private run for frozen continuation without restarting research', async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-partial-api-')));
   const result: SearchResult = {

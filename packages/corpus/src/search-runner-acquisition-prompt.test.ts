@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
   prompt: '',
   configured: { hits: [] as unknown[], gaps: [] as string[], searches: 0, modelCalls: 0 },
   followed: { sources: [] as unknown[], gaps: [] as string[], modelCalls: 0 },
+  scannedSettings: null as SearchSettings | null,
 }));
 vi.mock('node:os', async (original) => ({
   ...(await original<typeof OsModule>()),
@@ -21,7 +22,10 @@ vi.mock('./search-acquisition.js', async (original) => ({
 }));
 vi.mock('./search-sources.js', async (original) => ({
   ...(await original()),
-  scanSourcesForResearch: async () => state.followed,
+  scanSourcesForResearch: async (settings: SearchSettings) => {
+    state.scannedSettings = settings;
+    return state.followed;
+  },
 }));
 vi.mock('./search-reuse.js', () => ({
   researchCorpusSlice: async () => ({ records: [], gaps: [] }),
@@ -30,8 +34,8 @@ vi.mock('node:child_process', async (original) => ({
   ...(await original<typeof ChildModule>()),
   spawn: () => {
     const child = Object.assign(new EventEmitter(), {
-      stdout: new EventEmitter(),
-      stderr: new EventEmitter(),
+      stdout: Object.assign(new EventEmitter(), { destroy: () => {} }),
+      stderr: Object.assign(new EventEmitter(), { destroy: () => {} }),
       pid: undefined,
       kill: () => true,
       stdin: {
@@ -47,15 +51,18 @@ vi.mock('node:child_process', async (original) => ({
                 }) + '\n',
               ),
             );
+            child.stdout.emit('data', Buffer.from('{"type":"turn.completed"}\n'));
             child.emit('close', 0, null);
           });
         },
+        destroy: () => {},
       },
     });
     return child;
   },
 }));
 import { codexRunner } from './search-runner.js';
+import { defaultSettings, type SearchSettings } from './search-settings.js';
 
 it.each(['empty', 'access-gaps', 'locators', 'charged-empty-search'])(
   'passes meaningful acquisition context without empty provider boilerplate: %s',
@@ -74,8 +81,10 @@ it.each(['empty', 'access-gaps', 'locators', 'charged-empty-search'])(
       state.followed.sources.push({ uri: 'https://example.com/followed', status: 'changed' });
     } else if (kind === 'charged-empty-search') state.configured.searches = 1;
     try {
+      const snapshot = { ...structuredClone(defaultSettings), model: 'snapshot-model' };
       const result = await codexRunner('gpt-6.1-sol', 'high', {
         root: state.home,
+        settings: snapshot,
         naturalAnswer: true,
         task: 'Public question, no authority expansion.',
       }).discover(
@@ -84,6 +93,7 @@ it.each(['empty', 'access-gaps', 'locators', 'charged-empty-search'])(
         () => {},
       );
       expect(result.proposal).toEqual({ answer: 'Authored public answer.' });
+      expect(state.scannedSettings).toEqual(snapshot);
       expect(state.prompt).toContain('Public question, no authority expansion.');
       if (kind === 'empty') {
         expect(state.prompt).not.toContain('Configured acquisition');

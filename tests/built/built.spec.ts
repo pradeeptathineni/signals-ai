@@ -1,4 +1,38 @@
 import { expect, test } from '@playwright/test';
+import { mkdir, readFile, symlink, unlink, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+
+test('built serving keeps its physical private-asset refusal and public Library control', async ({
+  request,
+}) => {
+  await mkdir('.signals/test-private', { recursive: true });
+  const target = resolve('.signals/test-private/built-asset-guard.json');
+  const asset = resolve('dist/public-site/assets/built-asset-guard.json');
+  await writeFile(target, '{"private":"built-private-canary"}', { flag: 'wx' });
+  await symlink(target, asset);
+  try {
+    for (const url of ['assets/built-asset-guard.json', `/signals-ai/@fs${target}`]) {
+      const response = await request.get(url);
+      const body = await response.text();
+      console.log(
+        JSON.stringify({
+          url,
+          status: response.status(),
+          canary: body.includes('built-private-canary'),
+        }),
+      );
+      expect.soft(response.status()).toBe(404);
+      expect.soft(body).not.toContain('built-private-canary');
+    }
+    const library = await request.get('library.json');
+    expect(library.status()).toBe(200);
+    expect(await library.text()).toBe(await readFile('dist/public-site/library.json', 'utf8'));
+  } finally {
+    await unlink(asset);
+    await unlink(target);
+  }
+});
+
 test('built same-origin question saves, repeat visits and protected mutations', async ({
   page,
   request,

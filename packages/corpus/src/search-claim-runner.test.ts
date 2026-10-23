@@ -17,9 +17,10 @@ vi.mock('node:child_process', async (original) => {
     ...actual,
     spawn: () => {
       const child = Object.assign(new EventEmitter(), {
-        stdout: new EventEmitter(),
-        stderr: new EventEmitter(),
+        stdout: Object.assign(new EventEmitter(), { destroy: () => {} }),
+        stderr: Object.assign(new EventEmitter(), { destroy: () => {} }),
         stdin: {
+          destroy: () => {},
           end: () => {
             queueMicrotask(() => {
               const chunks = state.chunks.length

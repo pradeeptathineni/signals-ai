@@ -40,3 +40,10 @@ use the existing bounded claim kernel. That headless command invokes the authent
 host and is a separate user-selected operation, not an extra inference pass inside this
 invoking-host skill. A private claim receipt is not the schema-v1 Context entity bundle.
 Its scoped verdict creates no entity, numeric Signal, adoption or execution authority.
+
+The separate answer-first headless operation can opt into `--suggest-checks`, returning
+up to three editable unverified hypotheses beside its immutable answer. These suggestions
+do not supply primary evidence or trigger checks. An explicit later linked check preserves
+the own-answer citation boundary and records submitted edits. This optional operation is
+not another inference pass inside this invoking-host skill; ordinary prose/manual selection
+remains available. See the same README section for bounded private metadata and CLI selection.

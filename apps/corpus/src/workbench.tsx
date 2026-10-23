@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useRef, type ReactNode } from 'react';
 import { ClaimCheck } from './claim-check.js';
 import type { PartialNoteSelection } from '../../../packages/domain/src/claim-check.js';
 import type { SearchRequest } from '../../../packages/domain/src/search-contract.js';
+import { CheckSuggestions } from './check-suggestions.js';
 import {
   filterSearchItems,
   sourceHost,
@@ -75,6 +76,7 @@ export function Workbench({
   const [query, setQuery] = useState(''),
     [result, setResult] = useState<SearchResult | null>(null);
   const [earlyBrief, setEarlyBrief] = useState<SearchResult['brief']>();
+  const [retainedNarrative, setRetainedNarrative] = useState<string | null>(null);
   // Form selection only; a fresh typed question starts answer-first. Other callers stay explicit.
   const [researchMethod, setResearchMethod] = useState<'native' | 'answer-first' | 'primary-check'>(
     'answer-first',
@@ -91,6 +93,7 @@ export function Workbench({
     setNoteParentGap(null);
     setNoteClaim('');
   }
+  const [suggestChecks, setSuggestChecks] = useState(false);
   const [primaryClaim, setPrimaryClaim] = useState('');
   const [primaryUrls, setPrimaryUrls] = useState('');
   const primaryTargets = primaryUrls
@@ -216,6 +219,7 @@ export function Workbench({
       setTab('Search');
       setResult(null);
       setEarlyBrief(undefined);
+      setRetainedNarrative(null);
       setEvents(['Opening active research…']);
     }
   }, [monitorRun]);
@@ -355,8 +359,19 @@ export function Workbench({
     assessmentOf?: string,
     claim?: string,
     method: 'native' | 'answer-first' | 'primary-check' = 'native',
-    note?: Pick<SearchRequest, 'parentSnapshotDigest' | 'claimCitations'>,
+    selection: Pick<
+      SearchRequest,
+      | 'parentSnapshotDigest'
+      | 'claimCitations'
+      | 'suggestChecks'
+      | 'suggestionIndex'
+      | 'offeredDigest'
+    > = {},
   ) {
+    const note =
+      selection.parentSnapshotDigest !== undefined || selection.claimCitations !== undefined
+        ? selection
+        : undefined;
     const starting = ++openingEpoch.current;
     clearNoteSelection();
     const direct = method === 'primary-check';
@@ -374,6 +389,7 @@ export function Workbench({
         captureUrls: direct ? primaryTargets : captureUrls,
         method: captureUrls || direct ? 'native' : method,
         assessmentOf,
+        ...selection,
         claimText: direct ? primaryClaim : claim,
         ...(note ? { ...note, claimOrigin: 'retained-partial', review: false } : {}),
         ...(direct ? { claimOrigin: 'request', review: false } : note ? {} : { supplementalSites }),
@@ -398,7 +414,16 @@ export function Workbench({
     setQuery(question);
   }
   function startFormResearch() {
-    return start(query, undefined, context, undefined, undefined, undefined, researchMethod);
+    return start(
+      query,
+      undefined,
+      context,
+      undefined,
+      undefined,
+      undefined,
+      researchMethod,
+      researchMethod === 'answer-first' ? { suggestChecks } : {},
+    );
   }
   async function save(ids: string[], mode: 'manual' | 'eligible') {
     if (!result) return;
@@ -487,6 +512,34 @@ export function Workbench({
                 : 'Retained from this research session. '}
             Inspect supporting evidence and limitations before acting.
           </p>
+          {result?.brief?.text &&
+            ['completed', 'partial', 'failed', 'cancelled'].includes(result.status) && (
+              <button
+                disabled={retainedNarrative === result.runId}
+                onClick={() =>
+                  void (async () => {
+                    try {
+                      const saved = await api<{ key: string }>('retain-answer', {
+                        runId: result.runId,
+                      });
+                      setRetainedNarrative(result.runId);
+                      setMessage(
+                        `${saved.key.startsWith('note:') ? 'Incomplete note' : 'Answer'} saved in Library. Its original status and evidence remain unchanged.`,
+                      );
+                      onCompleted?.(result.runId);
+                    } catch (failure) {
+                      setError(failure instanceof Error ? failure.message : String(failure));
+                    }
+                  })()
+                }
+              >
+                {retainedNarrative === result.runId
+                  ? 'Saved in Library'
+                  : result.answerReceipt
+                    ? 'Save answer in Library'
+                    : 'Save incomplete note in Library'}
+              </button>
+            )}
           {result?.assessmentOf && (
             <p>
               Assessment of retained answer {result.assessmentOf}. The original answer remains
@@ -1381,6 +1434,16 @@ export function Workbench({
                         </option>
                       </select>
                     </label>
+                    {researchMethod === 'answer-first' && (
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={suggestChecks}
+                          onChange={(event) => setSuggestChecks(event.target.checked)}
+                        />
+                        Suggest a few decision-critical checks (unverified)
+                      </label>
+                    )}
                     {researchMethod === 'primary-check' ? (
                       <>
                         <label>
@@ -1597,6 +1660,38 @@ export function Workbench({
                 </p>
               )}
             {tab === 'Search' && result?.claimCheck && <ClaimCheck receipt={result.claimCheck} />}
+            {tab === 'Search' && result?.suggestionIndex !== undefined && (
+              <p>
+                Checked selection from original suggestion {result.suggestionIndex + 1}. The
+                proposition above records submitted edits. Reopen the original answer to inspect the
+                unchanged offered suggestion and its unverified rationale.
+              </p>
+            )}
+            {tab === 'Search' && result?.checkSuggestions && (
+              <CheckSuggestions
+                key={result.runId}
+                suggestions={result.checkSuggestions}
+                busy={busy}
+                retained={result.persistence?.privateRun === true}
+                onCheck={(index, claim, urls) =>
+                  void action(() =>
+                    start(
+                      result.query,
+                      undefined,
+                      result.answerReceipt?.context,
+                      urls,
+                      result.runId,
+                      claim,
+                      'native',
+                      {
+                        suggestionIndex: index,
+                        offeredDigest: result.checkSuggestions!.offeredDigest,
+                      },
+                    ),
+                  )
+                }
+              />
+            )}
             {tab === 'Search' && result?.interpretation && (
               <details className="desk-interpretation">
                 <summary>How your question was understood</summary>
