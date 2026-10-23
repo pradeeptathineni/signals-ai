@@ -151,6 +151,80 @@ it('rejects an invalid private aggregate without repairing or replacing its byte
   }
 });
 
+it('rejects stored capture forks while reopening a valid linear predecessor chain', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-captures-capture-fork-')));
+  const source = await saveLibraryLead(
+    root,
+    { uri: 'https://example.org/a', name: 'A', description: 'A', limits: [] },
+    randomUUID(),
+    'fixture',
+  );
+  const raw = await exactOwnerRecord(root, {
+    owner: 'signals-ai',
+    kind: 'lead',
+    id: source.id,
+    revision: null,
+    digest: null,
+  });
+  const ref = raw.ref as RecordRef;
+  const resolveSource = async (candidate: RecordRef) => {
+    const value = await exactOwnerRecord(root, candidate);
+    return { bytes: value.bytes, ref: value.ref as RecordRef };
+  };
+  const path = join(root, '.signals/source-captures.json');
+  try {
+    const first = await createSourceCapture(
+      root,
+      {
+        source_ref: ref,
+        mode: 'paste',
+        text: 'First version.',
+        observed_at: '2026-10-23T12:00:00Z',
+      },
+      resolveSource,
+    );
+    const second = await createSourceCapture(
+      root,
+      {
+        source_ref: ref,
+        mode: 'paste',
+        text: 'Second version.',
+        observed_at: '2026-10-23T13:00:00Z',
+        supersedes: first.ref,
+      },
+      resolveSource,
+    );
+    const third = await createSourceCapture(
+      root,
+      {
+        source_ref: ref,
+        mode: 'paste',
+        text: 'Third version.',
+        observed_at: '2026-10-23T14:00:00Z',
+      },
+      resolveSource,
+    );
+    await expect(openSourceCapture(root, second.capture.id)).resolves.toMatchObject({
+      capture: second.capture,
+    });
+    const fork = JSON.parse(await readFile(path, 'utf8')) as {
+      captures: Array<{ id: string; supersedes: RecordRef | null }>;
+      annotations: unknown[];
+    };
+    const thirdRow = fork.captures.find((capture) => capture.id === third.capture.id)!;
+    thirdRow.supersedes = first.ref;
+    const bytes = JSON.stringify(fork);
+    await writeFile(path, bytes, { mode: 0o600 });
+    await expect(openSourceCapture(root, second.capture.id)).rejects.toMatchObject({
+      status: 503,
+      code: 'source_capture_unavailable',
+    });
+    await expect(readFile(path, 'utf8')).resolves.toBe(bytes);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 it('rejects split-surrogate, wrong-quote, and out-of-range anchors without changing history', async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'signals-captures-anchor-')));
   const source = await saveLibraryLead(

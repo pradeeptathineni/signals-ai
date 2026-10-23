@@ -320,15 +320,18 @@ function validateClosure(store: Store) {
       unavailable();
     captures.set(capture.id, capture);
   }
+  const supersededCaptures = new Set<string>();
   for (const capture of captures.values()) {
     if (capture.supersedes) {
       const previous = captures.get(capture.supersedes.id);
+      if (!previous) return unavailable();
       if (
-        !previous ||
         previous.source_id !== capture.source_id ||
-        !sameRef(capture.supersedes, refOf('source_capture', previous.id, previous))
+        !sameRef(capture.supersedes, refOf('source_capture', previous.id, previous)) ||
+        supersededCaptures.has(previous.id)
       )
         unavailable();
+      supersededCaptures.add(previous.id);
     }
   }
   const superseded = new Set<string>();
