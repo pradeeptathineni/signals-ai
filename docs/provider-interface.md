@@ -93,3 +93,11 @@ node library-consumer.mjs http://127.0.0.1:5178/signals-ai/__signals/api/ INSTAN
 ```
 
 The offline `library-built-demo.test.ts` runs an authored callback behind actual built Signals assets, restarts the HTTP owner with generation disabled, and exercises this external consumer plus standalone Library navigation. Its fixture observations are not native research-quality evidence.
+
+## Retain annotated source captures
+
+The optional `source-capture` v1 contract stores bounded immutable source observations and exact-quote personal annotations in private `.signals/source-captures.json`. Captures are explicitly selected from an exact current `entity` or `lead` record; fetching uses that selected source URI only. Paste mode retains caller-supplied text as unverified and never fetches. A later version may name an exact predecessor; concurrent successors are refused. Capture history and annotations are never added to public assets or Library search.
+
+The owner routes are `GET/POST source-captures`, `GET source-captures/{capture_uuid}`, `GET source-captures/compare?left={uuid}&right={uuid}`, `POST source-captures/selection`, and `POST source-annotations`. They use the trusted provider version, instance, epoch, origin and session guards. POST bodies and query parameters are closed. Selection returns the exact capture and only explicitly requested exact annotation refs, suitable as a private research-source handoff; it is not an answer or support judgment. `read_record` supports exact `source_capture` and `source_annotation` refs.
+
+From the installed Signals root, `npm run source-captures -- --root PRIVATE_ROOT list` and `open CAPTURE_UUID` inspect local history. `capture EXACT_SOURCE_REF_JSON` fetches; `capture EXACT_SOURCE_REF_JSON --paste-file FILE --observed-at ISO` imports a bounded local UTF8 text file. `annotate REQUEST_JSON`, `compare LEFT_UUID RIGHT_UUID`, and `select REQUEST_JSON` accept the same closed request shapes as the HTTP contract. The standalone [consumer](../scripts/examples/source-capture-consumer.mjs) demonstrates exact selection and UTF16 quote-anchor verification without importing Signals modules. It requires a running trusted provider endpoint.

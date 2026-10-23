@@ -13,6 +13,7 @@ import { loadLibraryLeads } from './library-leads.js';
 import { importedAnswers } from './research-receipts.js';
 import { loadProjects } from './projects.js';
 import { searchLibrary, type LibraryFinding } from '../../domain/src/library-search.js';
+import { sourceCaptureRecordBytes, SourceCaptureError } from './source-captures.js';
 
 const closed = { additionalProperties: false };
 const text = Type.String({ minLength: 1, maxLength: 200 });
@@ -68,6 +69,8 @@ const recordSchema = Type.Object(
       'entity_snapshot',
       'lead_record',
       'project_record',
+      'source_capture_record',
+      'source_annotation_record',
     ]),
   },
   closed,
@@ -169,6 +172,7 @@ export async function providerCapabilities(
     product_version: manifest.version,
     contracts: [
       ...['K01', 'K12', 'K13', 'K14', 'K15'].map((id) => ({ id, versions: ['1.0'] })),
+      { id: 'source-capture', versions: ['1.0'] },
       { id: 'frozen-followup-request', versions: ['1.0', '2.0'] },
     ],
     operations: [
@@ -213,7 +217,33 @@ export async function providerCapabilities(
           'entity',
           'lead',
           'project',
+          'source_capture',
+          'source_annotation',
         ],
+        mutating: false,
+        authority_required: false,
+      },
+      {
+        name: 'capture_source',
+        target_kinds: ['source_capture'],
+        mutating: true,
+        authority_required: true,
+      },
+      {
+        name: 'read_source_captures',
+        target_kinds: ['source_capture', 'source_annotation'],
+        mutating: false,
+        authority_required: false,
+      },
+      {
+        name: 'annotate_source',
+        target_kinds: ['source_annotation'],
+        mutating: true,
+        authority_required: true,
+      },
+      {
+        name: 'select_source_capture',
+        target_kinds: ['source_capture', 'source_annotation'],
         mutating: false,
         authority_required: false,
       },
@@ -269,6 +299,8 @@ export async function providerCapabilities(
       'entity',
       'lead',
       'project',
+      'source_capture',
+      'source_annotation',
     ],
     process_observation: true,
     observed_at: new Date().toISOString(),
@@ -433,6 +465,16 @@ async function ownedBytes(
     if (!project)
       return fail(404, 'provider_record_not_found', 'Validated project is unavailable.');
     return { bytes: projectedBytes(project), storage: 'project_record' };
+  }
+  if (kind === 'source_capture' || kind === 'source_annotation') {
+    if (!uuid.test(id))
+      fail(400, 'invalid_provider_reference', 'Source-capture record IDs must be UUIDs.');
+    try {
+      return await sourceCaptureRecordBytes(root, kind, id);
+    } catch (error) {
+      if (error instanceof SourceCaptureError) fail(error.status, error.code, error.reason);
+      throw error;
+    }
   }
   return fail(400, 'unsupported_record_kind', 'This owner does not read that record kind.');
 }
