@@ -2,7 +2,11 @@
   "ignoreBinaries": ["codex"],
   "workspaces": {
     ".": {
-      "entry": ["tests/workbench/server.ts", "tests/built/server.ts"]
+      "entry": [
+        "tests/workbench/server.ts",
+        "tests/built/server.ts",
+        "scripts/examples/source-capture-consumer.mjs"
+      ]
     }
   }
 }
