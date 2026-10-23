@@ -217,3 +217,24 @@ SIGNALS_WORKSPACE="$EXAMPLE_ROOT/history" npm run start
 ```
 
 Open the printed loopback address. Reopening uses the saved child, with no new producer or review. Selected pages 1–2 and unread pages 3–4 remain visible. These authored declarations establish no real source truth, installation permission, whole-document assessment or human usefulness. Keep or remove the explicitly created temporary example directory yourself when finished.
+
+### Import private documents
+
+Explicitly import local PDF, Markdown, HTML or plain-text bytes, reopen extracted pages, and select up to eight pages for the existing frozen Research input. Import makes no model call, network request, OCR attempt or project change. HTTP import accepts bounded base64 bytes rather than file paths. The local CLI accepts only an explicitly named file:
+
+```sh
+npm run private-documents -- --root /path/to/private-state import /path/to/handbook.pdf
+npm run private-documents -- --root /path/to/private-state list
+npm run private-documents -- --root /path/to/private-state open DOCUMENT_UUID
+npm run private-documents -- --root /path/to/private-state select "$(cat selection.json)" --origin http://127.0.0.1:5178
+```
+
+`selection.json` contains the exact `document_ref` printed by `list` and the selected `pages` array. PDF extraction uses the text layer from optional `pypdf==6.15.0`; create an isolated Python environment and install the exact requirement with:
+
+```sh
+python3 -m venv /path/to/pdf-python
+/path/to/pdf-python/bin/python -m pip install -r requirements-private-documents.txt
+npm run private-documents -- --root /path/to/private-state import /path/to/handbook.pdf --python /path/to/pdf-python/bin/python
+```
+
+Import refuses encrypted, malformed, image-only and oversized PDFs; there is no OCR or automatic dependency installation. A document is limited to 4 MiB, 50 PDF pages and 48,000 UTF16 units/96,000 UTF8 bytes of extracted text; private storage is bounded to 20 documents and 12 MiB of original bytes. HTML is parsed inertly, with no scripts or linked resources executed or fetched. Extraction order and tables may be imperfect, and imported content is untrusted text rather than a truth, authenticity or coverage claim. Original bytes and page text stay under `.signals/private-documents.json` and are never part of public Pages output.

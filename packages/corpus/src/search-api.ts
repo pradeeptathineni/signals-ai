@@ -10,6 +10,13 @@ import {
   SourceCaptureError,
   type RecordRef,
 } from './source-captures.js';
+import {
+  importPrivateDocument,
+  listPrivateDocuments,
+  openPrivateDocument,
+  selectPrivateDocument,
+  PrivateDocumentError,
+} from './private-documents.js';
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
   exactOwnerRecord,
@@ -329,19 +336,78 @@ export function searchApi(
         request.headers['x-signals-instance-id'],
         request.headers['x-signals-owner-epoch'],
       );
+      const route = path.slice('/signals-ai/__signals/api/'.length);
       let body: unknown;
       if (mutation) {
         if (!request.headers['content-type']?.startsWith('application/json'))
           throw new Error('json_required');
         let raw = '';
+        const limit = route === 'private-documents' ? 6 * 1024 * 1024 : 128000;
         for await (const chunk of request) {
           raw += String(chunk);
-          if (Buffer.byteLength(raw) > 128000) throw new Error('request_too_large');
+          if (Buffer.byteLength(raw) > limit) throw new Error('request_too_large');
         }
         body = JSON.parse(raw);
       }
-      const route = path.slice('/signals-ai/__signals/api/'.length);
-      if (
+      if (route === 'private-documents' || route.startsWith('private-documents/')) {
+        await validateProcessObserver(
+          root,
+          request.headers['x-signals-provider-version'],
+          request.headers['x-signals-instance-id'],
+          request.headers['x-signals-owner-epoch'],
+        );
+        const params = new URL(request.url!, 'http://127.0.0.1').searchParams;
+        if (route === 'private-documents' && mutation) {
+          if (params.size)
+            throw new PrivateDocumentError(
+              400,
+              'invalid_private_document',
+              'Import does not accept query fields.',
+            );
+          json(201, await importPrivateDocument(root, body));
+        } else if (route === 'private-documents' && !mutation) {
+          if (params.size)
+            throw new PrivateDocumentError(
+              400,
+              'invalid_private_document',
+              'Listing does not accept query fields.',
+            );
+          json(200, await listPrivateDocuments(root));
+        } else if (route === 'private-documents/selection' && mutation) {
+          if (params.size)
+            throw new PrivateDocumentError(
+              400,
+              'invalid_private_document',
+              'Selection does not accept query fields.',
+            );
+          json(200, await selectPrivateDocument(root, body, `http://${host}`));
+        } else {
+          const pageMatch = /^private-documents\/([a-f0-9-]{36})\/pages\/([1-9]\d{0,2})$/.exec(
+            route,
+          );
+          const documentMatch = /^private-documents\/([a-f0-9-]{36})$/.exec(route);
+          if (mutation) json(404, { code: 'unknown_operation' });
+          else if (params.size)
+            throw new PrivateDocumentError(
+              400,
+              'invalid_private_document',
+              'Document reads do not accept query fields.',
+            );
+          else if (pageMatch) {
+            const reopened = await openPrivateDocument(root, pageMatch[1]!);
+            const number = Number(pageMatch[2]);
+            const page = reopened.document.pages[number - 1];
+            if (!page || page.number !== number)
+              throw new PrivateDocumentError(
+                404,
+                'private_document_page_not_found',
+                'No extracted page has that number.',
+              );
+            json(200, { document_ref: reopened.ref, page });
+          } else if (documentMatch) json(200, await openPrivateDocument(root, documentMatch[1]!));
+          else json(404, { code: 'unknown_operation' });
+        }
+      } else if (
         route === 'source-captures' ||
         route.startsWith('source-captures/') ||
         route === 'source-annotations'
@@ -1468,6 +1534,10 @@ export function searchApi(
       } else json(404, { code: 'unknown_operation' });
     } catch (failure) {
       if (failure instanceof SourceCaptureError) {
+        json(failure.status, { code: failure.code, reason: failure.reason });
+        return true;
+      }
+      if (failure instanceof PrivateDocumentError) {
         json(failure.status, { code: failure.code, reason: failure.reason });
         return true;
       }

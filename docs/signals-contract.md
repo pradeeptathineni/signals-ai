@@ -143,6 +143,16 @@ A caller can explicitly request one proposition check against one or two selecte
 
 ## Frozen policy readers
 
+## Private document selection
+
+Signals accepts an explicit bounded local import of PDF, Markdown, HTML or plain UTF8 text. The closed import input is `{name,media_type,bytes_base64}`; names are display basenames and HTTP never accepts paths. PDF import uses the optional exact pypdf 6.15.0 dependency through a fixed stdin-only helper. Import performs no model call, network acquisition, OCR, project mutation or public admission. HTML is parsed as inert text with no scripts or resources fetched.
+
+Private `.signals/private-documents.json` records retain the original bytes, `raw_sha256`, `record_sha256`, extractor identity, qualification and ordered pages `{number,text,text_sha256}`. Reopen validates the closed record and digest closure; it does not reparse or silently repair stored text. `RecordRef` uses owner `signals-ai`, kind `private_document`, UUID id, and the same SHA256 digest/revision binding as source captures. Lists return exact refs and metadata only, without original bytes or page text. Reopen returns `{ref,document}` with page text, never raw bytes or disk paths.
+
+Import accepts at most 4 MiB per file and 50 PDF pages. Complete extraction is refused above 48,000 UTF16 units or 96,000 UTF8 bytes; the store is limited to 20 documents and 12 MiB aggregate original bytes. PDF extraction is text-layer only, refuses encrypted/malformed/image-only files and reports pypdf's potential reading-order/table limits. Markdown and plain text preserve well-formed UTF8 text; HTML uses the existing inert Readability/layout projection. None of these limits or digests proves source completeness, authenticity or truth.
+
+`selectPrivateDocument(root,{document_ref,pages},origin)` requires an exact `private_document` ref, unique 1–8 in-range pages and a validated loopback HTTP origin. It returns `{sources,document_ref,pages,qualification}` with one full page per Research `FrozenSource`; the source URI names the local page route and is not a public verification claim. Only the selected text enters the existing frozen Research boundary. Source text and caller notes remain untrusted data. Import, listing, reopen and selection themselves invoke no AI or external transport.
+
 Declared policies replay unchanged. Native brief v4 selects v7; native v1–v3 and full proposals keep their original readers. The reducers in `packages/domain/src/search-score.ts` and `search-assessment.ts` define exact arithmetic and normalizers.
 
 | Policy               | Preserved meaning                                                                                                                                           |

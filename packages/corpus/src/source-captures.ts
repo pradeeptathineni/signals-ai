@@ -12,7 +12,7 @@ import { materialOmissions } from './search-document.js';
 const closed = { additionalProperties: false };
 const sha = Type.String({ pattern: '^[a-f0-9]{64}$' });
 const uuid = Type.String({ pattern: '^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$' });
-const refSchema = Type.Object(
+export const recordRefSchema = Type.Object(
   {
     owner: Type.Literal('signals-ai'),
     kind: Type.String({ minLength: 1, maxLength: 40 }),
@@ -27,7 +27,7 @@ const captureSchema = Type.Object(
     schema_version: Type.Literal('1.0'),
     id: uuid,
     source_id: Type.String({ pattern: '^source-[a-f0-9]{64}$' }),
-    source_ref: refSchema,
+    source_ref: recordRefSchema,
     source_uri: Type.String({ minLength: 1, maxLength: 2048 }),
     final_uri: Type.Union([Type.String({ minLength: 1, maxLength: 2048 }), Type.Null()]),
     captured_at: Type.String({ format: 'date-time' }),
@@ -77,7 +77,7 @@ const captureSchema = Type.Object(
       minItems: 1,
       maxItems: 8,
     }),
-    supersedes: Type.Union([refSchema, Type.Null()]),
+    supersedes: Type.Union([recordRefSchema, Type.Null()]),
   },
   closed,
 );
@@ -85,7 +85,7 @@ const annotationSchema = Type.Object(
   {
     schema_version: Type.Literal('1.0'),
     id: uuid,
-    capture_ref: refSchema,
+    capture_ref: recordRefSchema,
     anchor: Type.Object(
       {
         text_sha256: sha,
@@ -97,7 +97,7 @@ const annotationSchema = Type.Object(
     ),
     note: Type.String({ minLength: 1, maxLength: 4000 }),
     created_at: Type.String({ format: 'date-time' }),
-    supersedes: Type.Union([refSchema, Type.Null()]),
+    supersedes: Type.Union([recordRefSchema, Type.Null()]),
     qualification: Type.Array(Type.String({ minLength: 1, maxLength: 500 }), {
       minItems: 1,
       maxItems: 4,
@@ -113,7 +113,7 @@ const storeSchema = Type.Object(
   },
   closed,
 );
-export type RecordRef = Static<typeof refSchema>;
+export type RecordRef = Static<typeof recordRefSchema>;
 type Capture = Static<typeof captureSchema>;
 type Annotation = Static<typeof annotationSchema>;
 type Store = Static<typeof storeSchema>;
@@ -154,7 +154,7 @@ const sameRef = (left: RecordRef, right: RecordRef) =>
   left.revision === right.revision;
 const refBindsDigest = (ref: RecordRef) => ref.revision === `sha256:${ref.digest}`;
 const exactRef = (value: unknown, kind: string | string[]) => {
-  if (!Value.Check(refSchema, value))
+  if (!Value.Check(recordRefSchema, value))
     invalid('An exact Signals RecordRef with matching digest and revision is required.');
   const ref = value as RecordRef;
   const accepted = Array.isArray(kind) ? kind : [kind];
@@ -187,7 +187,7 @@ const isoDate = (value: unknown) => {
     return false;
   return Number.isFinite(Date.parse(value));
 };
-const validUnicode = (value: string) => {
+export const isWellFormedUnicode = (value: string) => {
   for (let i = 0; i < value.length; i++) {
     const unit = value.charCodeAt(i);
     if (unit >= 0xd800 && unit <= 0xdbff) {
@@ -198,7 +198,8 @@ const validUnicode = (value: string) => {
   return true;
 };
 function utf8(value: string) {
-  if (!validUnicode(value)) invalid('Text must contain valid Unicode without unpaired surrogates.');
+  if (!isWellFormedUnicode(value))
+    invalid('Text must contain valid Unicode without unpaired surrogates.');
   return Buffer.from(value, 'utf8');
 }
 function prefix(value: string) {
@@ -266,7 +267,7 @@ function validateClosure(store: Store) {
     )
       unavailable();
     if (
-      !validUnicode(capture.text) ||
+      !isWellFormedUnicode(capture.text) ||
       !capture.text.trim() ||
       capture.text_sha256 !== sha256(capture.text) ||
       capture.scope.capture.retained_utf16_units !== capture.text.length ||
@@ -315,7 +316,8 @@ function validateClosure(store: Store) {
       unavailable();
     if (
       capture.supersedes &&
-      (!Value.Check(refSchema, capture.supersedes) || capture.supersedes.kind !== 'source_capture')
+      (!Value.Check(recordRefSchema, capture.supersedes) ||
+        capture.supersedes.kind !== 'source_capture')
     )
       unavailable();
     captures.set(capture.id, capture);
@@ -340,9 +342,9 @@ function validateClosure(store: Store) {
       annotations.has(annotation.id) ||
       annotation.anchor.text_sha256.length !== 64 ||
       !refBindsDigest(annotation.capture_ref) ||
-      !validUnicode(annotation.note) ||
+      !isWellFormedUnicode(annotation.note) ||
       !annotation.note.trim() ||
-      !validUnicode(annotation.anchor.quote) ||
+      !isWellFormedUnicode(annotation.anchor.quote) ||
       !annotation.anchor.quote
     )
       unavailable();
@@ -688,7 +690,11 @@ export async function annotateSource(root: string, input: unknown) {
   const captureRef = exactRef(data.capture_ref, 'source_capture');
   const initial = await openSourceCapture(root, captureRef.id);
   if (!sameRef(initial.ref, captureRef)) changed();
-  if (!data.note.trim() || !validUnicode(data.note) || !validUnicode(data.anchor.quote))
+  if (
+    !data.note.trim() ||
+    !isWellFormedUnicode(data.note) ||
+    !isWellFormedUnicode(data.anchor.quote)
+  )
     invalid('Note and quote must be valid Unicode; note must be nonblank.');
   if (
     !Number.isSafeInteger(data.anchor.start) ||
