@@ -6,7 +6,7 @@
 // --
 
 import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { privateCommand } from './private-cli.js';
 import {
   createPrivateReader,
   listPrivateReaders,
@@ -29,20 +29,19 @@ try {
     console.log(usage);
     process.exit(0);
   }
-  if (args.shift() !== '--root' || !args[0]) throw new Error('explicit_root_required');
-  const root = resolve(args.shift()!);
-  const command = args.shift();
+  const { root, command } = privateCommand(args);
   let result: unknown;
   if (command === 'list' && args.length === 0) result = await listPrivateReaders(root);
-  else if (command === 'open' && args.length === 1) result = await openPrivateReader(root, args[0]);
+  else if (command === 'open' && args.length === 1)
+    result = await openPrivateReader(root, args[0]!);
   else if (command === 'create' && args.length === 1)
-    result = await createPrivateReader(root, await readRequest(args[0]));
+    result = await createPrivateReader(root, await readRequest(args[0]!));
   else if (command === 'revise' && args.length === 1)
-    result = await revisePrivateReader(root, await readRequest(args[0]));
+    result = await revisePrivateReader(root, await readRequest(args[0]!));
   else if (command === 'select' && args.length === 3 && args[1] === '--origin')
     result = await selectPrivateReaderAnnotations(
       root,
-      await readRequest(args[0]),
+      await readRequest(args[0]!),
       args.at(2) ?? '',
     );
   else throw new Error('unknown_command');
