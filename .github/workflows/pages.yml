@@ -26,6 +26,11 @@ jobs:
       - run: npm run typecheck
       - run: npx playwright install --with-deps chromium
       - run: npm run corpus:build
+      - name: Install the pinned private PDF test parser
+        run: |
+          python3 -m venv "$RUNNER_TEMP/signals-private-documents"
+          "$RUNNER_TEMP/signals-private-documents/bin/python" -m pip install --disable-pip-version-check --require-hashes -r requirements-private-documents.txt
+          echo "$RUNNER_TEMP/signals-private-documents/bin" >> "$GITHUB_PATH"
       - run: npm test
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
       - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
