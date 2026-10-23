@@ -1,5 +1,15 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { knowledgeRoute } from './knowledge.js';
+import {
+  annotateSource,
+  compareSourceCaptures,
+  createSourceCapture,
+  listSourceCaptures,
+  openSourceCapture,
+  selectSourceCapture,
+  SourceCaptureError,
+  type RecordRef,
+} from './source-captures.js';
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
   exactOwnerRecord,
@@ -332,6 +342,94 @@ export function searchApi(
       }
       const route = path.slice('/signals-ai/__signals/api/'.length);
       if (
+        route === 'source-captures' ||
+        route.startsWith('source-captures/') ||
+        route === 'source-annotations'
+      ) {
+        await validateProcessObserver(
+          root,
+          request.headers['x-signals-provider-version'],
+          request.headers['x-signals-instance-id'],
+          request.headers['x-signals-owner-epoch'],
+        );
+        const resolveSource = async (ref: RecordRef) => {
+          const exact = await exactOwnerRecord(root, ref);
+          return { bytes: exact.bytes, ref: exact.ref as RecordRef };
+        };
+        const routeParams = new URL(request.url!, 'http://127.0.0.1').searchParams;
+        if (route === 'source-captures' && mutation) {
+          if (routeParams.size)
+            throw new SourceCaptureError(
+              400,
+              'invalid_source_capture_request',
+              'Capture creation does not accept query fields.',
+            );
+          json(201, await createSourceCapture(root, body, resolveSource));
+        } else if (route === 'source-captures' && !mutation) {
+          const params = new URL(request.url!, 'http://127.0.0.1').searchParams;
+          if (
+            [...params.keys()].some((key) => key !== 'source_ref') ||
+            params.getAll('source_ref').length > 1
+          )
+            throw new SourceCaptureError(
+              400,
+              'invalid_source_capture_request',
+              'Use only one optional exact source_ref filter.',
+            );
+          let sourceRef: unknown;
+          if (params.has('source_ref')) {
+            try {
+              sourceRef = JSON.parse(params.get('source_ref')!);
+            } catch {
+              throw new SourceCaptureError(
+                400,
+                'invalid_source_capture_request',
+                'source_ref must be URL-encoded closed RecordRef JSON.',
+              );
+            }
+          }
+          json(200, await listSourceCaptures(root, sourceRef, resolveSource));
+        } else if (route === 'source-captures/selection' && mutation) {
+          if (routeParams.size)
+            throw new SourceCaptureError(
+              400,
+              'invalid_source_capture_request',
+              'Selection does not accept query fields.',
+            );
+          json(200, await selectSourceCapture(root, body));
+        } else if (route === 'source-captures/compare' && !mutation) {
+          const params = new URL(request.url!, 'http://127.0.0.1').searchParams;
+          if (
+            [...params.keys()].some((key) => key !== 'left' && key !== 'right') ||
+            params.getAll('left').length !== 1 ||
+            params.getAll('right').length !== 1
+          )
+            throw new SourceCaptureError(
+              400,
+              'invalid_source_capture_request',
+              'Compare requires one left and one right capture UUID.',
+            );
+          json(200, await compareSourceCaptures(root, params.get('left')!, params.get('right')!));
+        } else if (/^source-captures\/[a-f0-9-]{36}$/.test(route) && !mutation) {
+          if (routeParams.size)
+            throw new SourceCaptureError(
+              400,
+              'invalid_source_capture_request',
+              'Capture reopen does not accept query fields.',
+            );
+          json(200, await openSourceCapture(root, route.slice('source-captures/'.length)));
+        } else if (route === 'source-annotations' && mutation) {
+          if (routeParams.size)
+            throw new SourceCaptureError(
+              400,
+              'invalid_source_capture_request',
+              'Annotation creation does not accept query fields.',
+            );
+          json(201, await annotateSource(root, body));
+        } else {
+          json(404, { code: 'unknown_operation' });
+        }
+      } else if (
         route === 'provider/knowledge' ||
         route.startsWith('knowledge/') ||
         route === 'topics' ||
@@ -1369,6 +1467,10 @@ export function searchApi(
         json(200, { cleaned: true, retainedHistory: 'preserved' });
       } else json(404, { code: 'unknown_operation' });
     } catch (failure) {
+      if (failure instanceof SourceCaptureError) {
+        json(failure.status, { code: failure.code, reason: failure.reason });
+        return true;
+      }
       if (failure instanceof ProviderError) {
         json(failure.status, { code: failure.code, reason: failure.reason });
         return true;
