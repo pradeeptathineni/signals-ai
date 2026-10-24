@@ -401,7 +401,7 @@ function annotationEntries(store: Store, captureId: string) {
       annotation,
     }));
 }
-export function sourceCaptureUri(kind: 'entity' | 'lead', bytes: Buffer) {
+function sourceCaptureUri(kind: 'entity' | 'lead', bytes: Buffer) {
   let record: unknown;
   try {
     record = JSON.parse(bytes.toString('utf8'));

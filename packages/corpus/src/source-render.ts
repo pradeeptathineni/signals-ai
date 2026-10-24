@@ -21,6 +21,7 @@ import { requestStore } from './search-request-store.js';
 import {
   createSourceCapture,
   openSourceCapture,
+  recordRefSchema as refSchema,
   validateSourceCaptureSelection,
   type RecordRef,
   type SourceCaptureFetch,
@@ -31,16 +32,6 @@ import type { FetchOptions } from './search-fetch.js';
 const closed = { additionalProperties: false };
 const sha = Type.String({ pattern: '^[a-f0-9]{64}$' });
 const uuid = Type.String({ pattern: '^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$' });
-const refSchema = Type.Object(
-  {
-    owner: Type.Literal('signals-ai'),
-    kind: Type.String({ minLength: 1, maxLength: 40 }),
-    id: Type.String({ minLength: 1, maxLength: 200 }),
-    revision: Type.String({ pattern: '^sha256:[a-f0-9]{64}$' }),
-    digest: sha,
-  },
-  closed,
-);
 const blobSchema = Type.Object(
   {
     sha256: sha,
@@ -568,6 +559,33 @@ function receipt(row: RequestRow, state: 'completed' | 'unknown', manifest?: Man
   };
 }
 
+async function requestReceipt(root: string, row: RequestRow, completedMismatchReason = row.reason) {
+  const manifest = await manifestForCapture(root, row.capture_id);
+  if (row.state === 'completed') {
+    if (manifest && row.manifest_ref && sameRef(manifestRef(manifest), row.manifest_ref))
+      return receipt(row, 'completed', manifest);
+    return receipt(
+      {
+        ...row,
+        state: 'unknown',
+        reason: completedMismatchReason,
+      },
+      'unknown',
+      manifest ?? undefined,
+    );
+  }
+  const captureRef = row.capture_ref ?? (await captureRefIfPresent(root, row.capture_id));
+  return receipt(
+    {
+      ...row,
+      capture_ref: captureRef,
+      manifest_ref: manifest ? manifestRef(manifest) : row.manifest_ref,
+    },
+    'unknown',
+    manifest ?? undefined,
+  );
+}
+
 async function captureRefIfPresent(root: string, id: string) {
   try {
     const opened = await openSourceCapture(root, id);
@@ -673,31 +691,7 @@ export async function renderSourceCapture(
   });
   if (!admission.created) {
     const row = admission.row;
-    if (row.state === 'completed') {
-      const manifest = await manifestForCapture(root, row.capture_id);
-      if (!manifest || !row.manifest_ref || !sameRef(manifestRef(manifest), row.manifest_ref))
-        return receipt(
-          {
-            ...row,
-            state: 'unknown',
-            reason: 'Completed receipt no longer matches its exact manifest.',
-          },
-          'unknown',
-          manifest ?? undefined,
-        );
-      return receipt(row, 'completed', manifest);
-    }
-    const captureRef = row.capture_ref ?? (await captureRefIfPresent(root, row.capture_id));
-    const manifest = await manifestForCapture(root, row.capture_id);
-    return receipt(
-      {
-        ...row,
-        capture_ref: captureRef,
-        manifest_ref: manifest ? manifestRef(manifest) : row.manifest_ref,
-      },
-      'unknown',
-      manifest ?? undefined,
-    );
+    return requestReceipt(root, row, 'Completed receipt no longer matches its exact manifest.');
   }
 
   let captureRef: RecordRef | null = null;
@@ -822,22 +816,7 @@ export async function readSourceRenderRequest(root: string, id: string) {
   const row = ledger.requests.find((item) => item.request_id === id);
   if (!row)
     fail(404, 'source_render_request_not_found', 'Render request identity is not retained.');
-  if (row.state === 'completed') {
-    const manifest = await manifestForCapture(root, row.capture_id);
-    if (manifest && row.manifest_ref && sameRef(manifestRef(manifest), row.manifest_ref))
-      return receipt(row, 'completed', manifest);
-  }
-  const captureRef = row.capture_ref ?? (await captureRefIfPresent(root, row.capture_id));
-  const manifest = await manifestForCapture(root, row.capture_id);
-  return receipt(
-    {
-      ...row,
-      capture_ref: captureRef,
-      manifest_ref: manifest ? manifestRef(manifest) : row.manifest_ref,
-    },
-    'unknown',
-    manifest ?? undefined,
-  );
+  return requestReceipt(root, row);
 }
 
 export async function openSourceRender(root: string, captureId: string, digest?: string) {
