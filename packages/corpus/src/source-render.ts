@@ -314,11 +314,40 @@ export async function renderStaticHtml(html: string): Promise<Rendered> {
       return route.abort();
     });
     const page = await context.newPage();
+    const initialMainFrameUrl = page.mainFrame().url();
+    let mainFrameNavigationAttempted = false;
+    page.on('request', (request) => {
+      if (!request.isNavigationRequest()) return;
+      try {
+        if (request.frame() === page.mainFrame()) mainFrameNavigationAttempted = true;
+      } catch {
+        // A failed main-frame navigation can lose its frame association. Fail closed.
+        mainFrameNavigationAttempted = true;
+      }
+    });
+    page.on('framenavigated', (frame) => {
+      if (frame === page.mainFrame() && frame.url() !== initialMainFrameUrl)
+        mainFrameNavigationAttempted = true;
+    });
+    const refuseNavigation = () => {
+      if (mainFrameNavigationAttempted || page.mainFrame().url() !== initialMainFrameUrl)
+        fail(
+          422,
+          'source_render_navigation_blocked',
+          'The static page attempted to replace its main document. No render artifacts were retained; inspect the text capture separately.',
+        );
+    };
     page.on('requestfinished', (request) => {
       if (/^https?:$/.test(new URL(request.url()).protocol)) completedExternalRequests++;
     });
     page.setDefaultTimeout(10_000);
-    await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 10_000 });
+    try {
+      await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 10_000 });
+    } catch (error) {
+      refuseNavigation();
+      throw error;
+    }
+    refuseNavigation();
     const domText = await page.evaluate(() => document.documentElement?.outerHTML ?? '');
     const ariaText = await page.locator('body').ariaSnapshot();
     const screenshot = await page.screenshot({
@@ -327,6 +356,7 @@ export async function renderStaticHtml(html: string): Promise<Rendered> {
       animations: 'disabled',
       timeout: 15_000,
     });
+    refuseNavigation();
     const result = {
       screenshot: Buffer.from(screenshot),
       dom: Buffer.from(domText, 'utf8'),

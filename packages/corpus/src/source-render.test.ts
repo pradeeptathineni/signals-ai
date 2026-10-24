@@ -13,6 +13,7 @@ import { searchApi } from './search-api.js';
 import type { RecordRef } from './source-captures.js';
 import {
   openSourceCapture,
+  listSourceCaptures,
   type SourceCaptureFetch,
   type SourceResolver,
 } from './source-captures.js';
@@ -65,7 +66,7 @@ async function fixture() {
     const current = await exactOwnerRecord(root, ref);
     return { bytes: current.bytes, ref: current.ref as RecordRef };
   };
-  const html = (version: number) =>
+  let html = (version: number) =>
     `<!doctype html><html><head><title>Fixture ${version}</title><link rel="stylesheet" href="https://blocked.example/site.css"></head><body><h1>Local static heading ${version}</h1><img alt="fixture illustration" src="https://blocked.example/image.png"><script>document.body.dataset.ran = 'yes'</script><p>Rendered fixture version ${version}.</p></body></html>`;
   let fetches = 0;
   const fetcher = async (
@@ -91,7 +92,15 @@ async function fixture() {
     return fetched;
   };
   const runtime: SourceRenderRuntime = { fetcher };
-  return { root, scope, sourceRef, resolver, runtime, getFetches: () => fetches };
+  return {
+    root,
+    scope,
+    sourceRef,
+    resolver,
+    runtime,
+    setHtml: (next: typeof html) => (html = next),
+    getFetches: () => fetches,
+  };
 }
 
 it('renders static HTML in isolated Chromium without JavaScript or external-resource access', async () => {
@@ -116,6 +125,37 @@ it('renders static HTML in isolated Chromium without JavaScript or external-reso
     status: 413,
     code: 'source_render_html_limit',
   });
+});
+
+it('refuses an immediate main-frame meta-refresh without retaining a capture or manifest', async () => {
+  const f = await fixture();
+  f.setHtml(
+    () => `<!doctype html><html><head>
+    <meta http-equiv="refresh" content="0;url=https://blocked.example/redirected">
+  </head><body><h1>Must not be captured as the source</h1>
+    <img alt="blocked external image" src="https://blocked.example/image.png">
+  </body></html>`,
+  );
+  const requestId = randomUUID();
+  await expect(
+    renderSourceCapture(
+      f.root,
+      { request_id: requestId, source_ref: f.sourceRef },
+      f.resolver,
+      f.runtime,
+    ),
+  ).rejects.toMatchObject({
+    status: 422,
+    code: 'source_render_navigation_blocked',
+  });
+  const pending = await readSourceRenderRequest(f.root, requestId);
+  expect(pending).toMatchObject({
+    state: 'unknown',
+    capture_ref: null,
+    manifest_ref: null,
+  });
+  expect((await listSourceCaptures(f.root)).captures).toEqual([]);
+  expect(f.getFetches()).toBe(1);
 });
 
 it('admits once, binds one exact v1 capture, and reopens digest-checked artifacts and comparison', async () => {
