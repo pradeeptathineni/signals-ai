@@ -210,6 +210,7 @@ it('serves the graph through the existing guarded read route and rejects query a
   }
 });
 
+// Two fresh CLI processes have separate deadlines; output assertions stay exact
 it('drains complete large JSON and Markdown CLI output through stdout pipes', async () => {
   const rows = Array.from({ length: 100 }, (_, index) => record(`row-${index}`, `choice-${index}`));
   await writeExport(rows);
@@ -254,7 +255,12 @@ it('drains complete large JSON and Markdown CLI output through stdout pipes', as
     const child = spawn(
       process.execPath,
       ['--import', 'tsx', cli, '--root', root, 'graph', topic.id, '--format', format],
-      { cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'] },
+      {
+        cwd: process.cwd(),
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 8_000,
+        killSignal: 'SIGKILL',
+      },
     );
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
@@ -289,7 +295,7 @@ it('drains complete large JSON and Markdown CLI output through stdout pipes', as
       '- No source validity, truth, causality, successor, or automatic topic update is inferred.\n\n',
     ),
   ).toBe(true);
-});
+}, 20_000);
 
 it('refuses an oversized changing dependency chain without changing the topic', async () => {
   const rows = Array.from({ length: 100 }, (_, index) =>

@@ -787,6 +787,7 @@ export async function updateTopic(root: string, id: string, input: unknown) {
         'Links must refer to distinct selected member identities in this topic.',
       );
     const members: Summary[] = [];
+    const exportsByReader = new Map<string, ReturnType<typeof readExport>>();
     for (const selection of patch.selections) {
       const existing = topic.members.find((row) => key(row.selection) === key(selection));
       if (existing) {
@@ -794,7 +795,7 @@ export async function updateTopic(root: string, id: string, input: unknown) {
         continue;
       }
       // Resolve before saving. A record already removed from search is not silently re-created.
-      await resolveSelection(root, selection);
+      await resolveSelection(root, selection, false, exportsByReader);
       let summary: Summary | undefined;
       if (selection.ref.owner === 'signals-ai')
         summary = (await nativeSummaries(root, '')).records.find(
@@ -804,7 +805,8 @@ export async function updateTopic(root: string, id: string, input: unknown) {
         const reader = (await config(root)).owners.find(
           (row) => row.owner === selection.ref.owner && row.instance_id === selection.instance_id,
         )!;
-        const row = (await readExport(reader)).records.find(
+        const exported = await (exportsByReader.get(JSON.stringify(reader)) ?? readExport(reader));
+        const row = exported.records.find(
           (item) => key(foreignSummary(reader, item).selection) === key(selection),
         );
         if (row) summary = foreignSummary(reader, row);
