@@ -28,7 +28,8 @@ Native reads reuse the existing exact provider. No successor is substituted sile
 
 Topics retain names, selected exact summaries/references, relationships and open questions,
 without copying foreign record bodies. Commands: `topics`, `open UUID`, `update UUID PATCH_JSON`
-and `export UUID`. Shell-quote JSON arguments. Update body:
+and `export UUID`. `graph UUID --format json|markdown` shows exact owner statuses and declared
+dependency paths. Shell-quote JSON arguments. Update body:
 
 ```json
 {
@@ -40,8 +41,13 @@ and `export UUID`. Shell-quote JSON arguments. Update body:
 }
 ```
 
-Copy complete selected identities into `selections`. Links are `{from,to,label}` using
-`JSON.stringify([owner,instance_id,kind,id,revision,digest])` as each member key. A stale
+Copy complete selected identities into `selections`. Links are `{from,to,label,relation?}` using
+`JSON.stringify([owner,instance_id,kind,id,revision,digest])` as each member key. Relation may be
+`related` (the default for old links), `depends_on`, `supports` or `contradicts`; each is a
+caller-authored claim. Only `depends_on` means that `from` depends on `to` and can produce a
+possible-review path from a changed or missing dependency to its declared dependents. Unavailable
+status is indeterminate. Paths do not establish truth, source invalidity or automatic succession;
+the graph returns one deterministic shortest witness per dependent and keeps cycles finite. A stale
 topic revision requires reopening. Removing selections removes membership only. Existing
 frozen selections can retain annotations while an owner is offline; adding a record verifies
 its current exact identity first.
@@ -107,6 +113,7 @@ configuration stays CLI only; `GET knowledge/owners` returns redacted owner/inst
 | `POST topics`                                | `{name}` → Topic                                                                                                                                     |
 | `GET topics/UUID`                            | `{topic,statuses:[{selection,state,reason,current_ref,export_as_of}]}`                                                                               |
 | `POST topics/UUID`                           | Update body above → Topic                                                                                                                            |
+| `GET topics/UUID/graph`                      | `{schema_version,topic,nodes,edges,impacts,qualifications}`; read-only owner-derived projection                                                      |
 | `GET topics/UUID/export`                     | `{content_type:"text/markdown",content}`                                                                                                             |
 | `GET smart-collections`                      | `{collections:[SavedCollection]}`                                                                                                                    |
 | `POST smart-collections`                     | `{operation_id,name,query}` → `{collection,operation_replayed}`                                                                                      |

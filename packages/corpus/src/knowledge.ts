@@ -67,6 +67,7 @@ const linkSchema = Type.Object(
     from: Type.String({ maxLength: 1500 }),
     to: Type.String({ maxLength: 1500 }),
     label: Type.String({ minLength: 1, maxLength: 500 }),
+    relation: Type.Optional(Type.Enum(['related', 'depends_on', 'supports', 'contradicts'])),
   },
   closed,
 );
@@ -710,6 +711,85 @@ export async function openTopic(root: string, id: string) {
   );
   return { topic, statuses };
 }
+
+/** Projects exact saved references and caller-authored dependency claims into bounded review paths. */
+export async function topicEvidenceGraph(root: string, id: string) {
+  const { topic, statuses } = await openTopic(root, id);
+  const nodes = topic.members.map((member, index) => ({
+    key: key(member.selection),
+    selection: member.selection,
+    title: member.title,
+    state: statuses[index]!.state,
+    reason: statuses[index]!.reason,
+    current_ref: statuses[index]!.current_ref,
+    export_as_of: statuses[index]!.export_as_of,
+  }));
+  const nodeKeys = new Set(nodes.map((node) => node.key));
+  const edges = topic.links.map((link) => {
+    if (!nodeKeys.has(link.from) || !nodeKeys.has(link.to))
+      fail(503, 'knowledge_topics_unavailable', 'A saved relationship is malformed.');
+    return {
+      from: link.from,
+      to: link.to,
+      label: link.label,
+      relation: link.relation ?? 'related',
+      basis: 'user_asserted' as const,
+    };
+  });
+  const dependents = new Map<string, string[]>();
+  for (const edge of edges) {
+    if (edge.relation !== 'depends_on') continue;
+    const rows = dependents.get(edge.to) ?? [];
+    rows.push(edge.from);
+    dependents.set(edge.to, rows);
+  }
+  for (const rows of dependents.values()) rows.sort();
+
+  const impacts = nodes.flatMap((trigger) => {
+    if (trigger.state === 'current') return [];
+    const paths: { dependent: string; path: string[] }[] = [];
+    const visited = new Set([trigger.key]);
+    let frontier = [[trigger.key]];
+    while (frontier.length) {
+      const next: string[][] = [];
+      for (const path of frontier) {
+        const tail = path[path.length - 1]!;
+        for (const dependent of dependents.get(tail) ?? []) {
+          if (visited.has(dependent)) continue;
+          visited.add(dependent);
+          const witness = [...path, dependent];
+          paths.push({ dependent, path: witness });
+          next.push(witness);
+        }
+      }
+      frontier = next;
+    }
+    return [
+      {
+        trigger: trigger.key,
+        trigger_state: trigger.state,
+        state: trigger.state === 'unavailable' ? 'indeterminate' : 'needs_review',
+        reason: trigger.reason,
+        paths,
+        path_policy: 'one shortest deterministic path per dependent',
+      },
+    ];
+  });
+  return {
+    schema_version: '1.0',
+    topic: { id: topic.id, revision: topic.revision },
+    nodes,
+    edges,
+    impacts,
+    qualifications: [
+      'Relationships are user-authored claims; they are not verified evidence or support.',
+      'Only depends_on propagates possible review, from dependency to declared dependents.',
+      'Changed and missing references may need review; unavailable status is indeterminate.',
+      'Configured foreign exports are frozen snapshots and do not establish underlying source freshness.',
+      'No source validity, truth, causality, successor, or automatic topic update is inferred.',
+    ],
+  };
+}
 export async function exportTopic(root: string, id: string) {
   const { topic, statuses } = await openTopic(root, id);
   const content = [
@@ -734,7 +814,9 @@ export async function exportTopic(root: string, id: string) {
       '',
     ]),
     '## Relationships',
-    ...topic.links.map((link) => `${link.from} → ${link.to}: ${link.label}`),
+    ...topic.links.map(
+      (link) => `${link.from} → ${link.to} (${link.relation ?? 'related'}): ${link.label}`,
+    ),
     '',
     '## Open questions',
     ...topic.questions.map((question) => `- ${question}`),
@@ -775,10 +857,13 @@ export async function knowledgeRoute(
     return readKnowledge(root, input.selection);
   }
   if (route === 'topics') return mutation ? createTopic(root, body) : listTopics(root);
-  const match = /^topics\/([a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12})(\/export)?$/.exec(route);
+  const match = /^topics\/([a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12})(\/export|\/graph)?$/.exec(
+    route,
+  );
   if (match && !match[2])
     return mutation ? updateTopic(root, match[1]!, body) : openTopic(root, match[1]!);
-  if (match?.[2] && !mutation) return exportTopic(root, match[1]!);
+  if (match?.[2] === '/export' && !mutation) return exportTopic(root, match[1]!);
+  if (match?.[2] === '/graph' && !mutation) return topicEvidenceGraph(root, match[1]!);
   return fail(
     404,
     'unknown_knowledge_operation',
