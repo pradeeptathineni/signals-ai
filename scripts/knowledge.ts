@@ -50,8 +50,7 @@ try {
       result = await updateTopic(root, value ?? '', parse(patch));
       break;
     case 'export':
-      console.log((await exportTopic(root, value ?? '')).content);
-      process.exit(0);
+      result = (await exportTopic(root, value ?? '')).content;
       break;
     case 'graph': {
       let format = 'json';
@@ -65,40 +64,37 @@ try {
       if (format !== 'json' && format !== 'markdown')
         throw new Error('format_must_be_json_or_markdown');
       const graph = await topicEvidenceGraph(root, value ?? '');
-      if (format === 'json') console.log(JSON.stringify(graph, null, 2));
+      if (format === 'json') result = graph;
       else {
         const titles = new Map(graph.nodes.map((node) => [node.key, node.title]));
-        console.log(
-          [
-            `# Evidence impact map: ${graph.topic.id}`,
-            '',
-            `Topic revision ${graph.topic.revision}. Saved references remain with their owners.`,
-            '',
-            '## Records',
-            ...graph.nodes.map((node) => `- **${node.title}** — ${node.state}: ${node.reason}`),
-            '',
-            '## Relationships',
-            ...graph.edges.map(
-              (edge) =>
-                `- ${titles.get(edge.from)} → ${titles.get(edge.to)} (${edge.relation}, caller claim: ${edge.label})`,
+        result = [
+          `# Evidence impact map: ${graph.topic.id}`,
+          '',
+          `Topic revision ${graph.topic.revision}. Saved references remain with their owners.`,
+          '',
+          '## Records',
+          ...graph.nodes.map((node) => `- **${node.title}** — ${node.state}: ${node.reason}`),
+          '',
+          '## Relationships',
+          ...graph.edges.map(
+            (edge) =>
+              `- ${titles.get(edge.from)} → ${titles.get(edge.to)} (${edge.relation}, caller claim: ${edge.label})`,
+          ),
+          '',
+          '## Possible review paths',
+          ...graph.impacts.flatMap((impact) => [
+            `- Trigger: ${titles.get(impact.trigger)} — ${impact.trigger_state}; ${impact.state}. ${impact.reason}`,
+            ...impact.paths.map(
+              ({ dependent, path }) =>
+                `  - ${titles.get(dependent)}: ${path.map((key) => titles.get(key)).join(' → ')}`,
             ),
-            '',
-            '## Possible review paths',
-            ...graph.impacts.flatMap((impact) => [
-              `- Trigger: ${titles.get(impact.trigger)} — ${impact.trigger_state}; ${impact.state}. ${impact.reason}`,
-              ...impact.paths.map(
-                ({ dependent, path }) =>
-                  `  - ${titles.get(dependent)}: ${path.map((key) => titles.get(key)).join(' → ')}`,
-              ),
-            ]),
-            '',
-            '## Qualifications',
-            ...graph.qualifications.map((qualification) => `- ${qualification}`),
-            '',
-          ].join('\n'),
-        );
+          ]),
+          '',
+          '## Qualifications',
+          ...graph.qualifications.map((qualification) => `- ${qualification}`),
+          '',
+        ].join('\n');
       }
-      process.exit(0);
       break;
     }
     default:
@@ -106,7 +102,8 @@ try {
         'Use owners|configure JSON|search TEXT|read JSON|topics|create NAME|open UUID|update UUID JSON|export UUID|graph UUID [--format json|markdown]',
       );
   }
-  console.log(JSON.stringify(result, null, 2));
+  if (result === undefined) throw new Error('knowledge_result_missing');
+  console.log(typeof result === 'string' ? result : JSON.stringify(result, null, 2));
 } catch (failure) {
   console.error(
     JSON.stringify({ code: failure instanceof Error ? failure.message : 'knowledge_failed' }),

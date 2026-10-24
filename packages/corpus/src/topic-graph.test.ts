@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
@@ -206,4 +207,84 @@ it('serves the graph through the existing guarded read route and rejects query a
     server.closeAllConnections();
     await new Promise<void>((done) => server.close(() => done()));
   }
+});
+
+it('drains complete large JSON and Markdown CLI output through stdout pipes', async () => {
+  const rows = Array.from({ length: 100 }, (_, index) => record(`row-${index}`, `choice-${index}`));
+  await writeExport(rows);
+  await configureKnowledge(root, {
+    owners: [{ owner: 'planning-ai', path: exportPath, instance_id: 'graph-fixture' }],
+  });
+  const topic = await createTopic(root, { name: 'Large graph pipe' });
+  const selections = rows.map(select);
+  const pair = (index: number) => ({
+    from: memberKey(selections[index]!),
+    to: memberKey(selections[99]!),
+    label: `Dependency ${index}: ${'x'.repeat(480)}`,
+    relation: 'depends_on' as const,
+  });
+  await updateTopic(root, topic.id, {
+    revision: topic.revision,
+    name: topic.name,
+    selections,
+    links: [
+      ...Array.from({ length: 99 }, (_, index) => pair(index)),
+      ...Array.from({ length: 99 }, (_, index) => pair(index)),
+      {
+        from: memberKey(selections[0]!),
+        to: memberKey(selections[1]!),
+        label: `Related: ${'y'.repeat(490)}`,
+      },
+      {
+        from: memberKey(selections[1]!),
+        to: memberKey(selections[0]!),
+        label: `Supports: ${'z'.repeat(490)}`,
+        relation: 'supports',
+      },
+    ],
+    questions: [],
+  });
+  await writeExport(rows.map((row, index) => (index === 99 ? record('row-99', 'changed') : row)));
+  const expected = await topicEvidenceGraph(root, topic.id);
+  const cli = join(process.cwd(), 'scripts/knowledge.ts');
+
+  async function run(format: 'json' | 'markdown') {
+    const child = spawn(
+      process.execPath,
+      ['--import', 'tsx', cli, '--root', root, 'graph', topic.id, '--format', format],
+      { cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
+    child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
+    const exitCode = await new Promise<number | null>((resolveExit, reject) => {
+      child.once('error', reject);
+      child.once('close', resolveExit);
+    });
+    return {
+      exitCode,
+      stdout: Buffer.concat(stdout).toString('utf8'),
+      stderr: Buffer.concat(stderr).toString('utf8'),
+    };
+  }
+
+  const json = await run('json');
+  expect(json.exitCode).toBe(0);
+  expect(json.stderr).toBe('');
+  expect(json.stdout.length).toBeGreaterThan(65_536);
+  expect(json.stdout.endsWith('\n')).toBe(true);
+  expect(JSON.parse(json.stdout)).toEqual(expected);
+
+  const markdown = await run('markdown');
+  expect(markdown.exitCode).toBe(0);
+  expect(markdown.stderr).toBe('');
+  expect(markdown.stdout.length).toBeGreaterThan(65_536);
+  expect(markdown.stdout.startsWith(`# Evidence impact map: ${topic.id}\n`)).toBe(true);
+  expect(markdown.stdout).toContain('Dependency 98:');
+  expect(
+    markdown.stdout.endsWith(
+      '- No source validity, truth, causality, successor, or automatic topic update is inferred.\n\n',
+    ),
+  ).toBe(true);
 });
