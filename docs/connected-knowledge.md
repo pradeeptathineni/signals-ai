@@ -58,6 +58,41 @@ atomic replacement and private file modes, excluded from public assets. Limits: 
 preserves the earlier file. Each foreign export allows ten million UTF8 bytes/5,000 records.
 No recursive discovery, public admission or native generation occurs.
 
+## Save, triage and freeze a query
+
+Smart collections save a bounded text query with optional explicit owners, result kinds,
+inclusive timezone-qualified update bounds, triage state and a maximum of 100 results.
+Empty owner/kind selections include the supported owners/kinds. Rerun a saved collection to
+see current native Library and configured export results; each run reports owner coverage,
+frozen-export timestamps and whether the retrieval or result cap may omit matches. Unknown
+timestamps remain visible as `date_status: "unknown"`, including when date bounds are active.
+Search ordering is retrieval rank, not evidence quality. Each result retains its full
+owner/store/epoch/kind/ID/revision/digest identity.
+Kind filters use exact owner-reference kinds (`entity`, `lead`, `answer`, `imported_answer`,
+`research_note`, `decision`, `review`, `reflection`, `principle`, `study-session`), not
+the entity's descriptive category.
+
+```sh
+npm run smart-collections -- --root /private/signals-workspace create '{"operation_id":"CALLER_UUID","name":"Rollout decisions","query":{"text":"rollout","owners":["signals-ai","planning-ai"],"kinds":["lead","decision"],"updated_after":"2026-01-01T00:00:00Z","triage":"all","limit":50}}'
+npm run smart-collections -- --root /private/signals-workspace run COLLECTION_UUID
+npm run smart-collections -- --root /private/signals-workspace triage COLLECTION_UUID '{"operation_id":"CALLER_UUID","revision":1,"digest":"QUERY_DIGEST","changes":[{"selection":{},"state":"dismiss","reason":"Not the decision I need."}]}'
+npm run smart-collections -- --root /private/signals-workspace freeze COLLECTION_UUID '{"operation_id":"CALLER_UUID","revision":1,"digest":"QUERY_DIGEST","name":"Reviewed rollout choices","selections":[{}],"questions":["What changed?"]}'
+```
+
+Replace each `{}` selection placeholder with the complete `selection` object returned by
+`run`, including its owner, store instance, epoch where applicable, kind, record ID,
+revision and digest.
+
+Triage is reversible metadata tied to exact result versions; a changed record begins
+unreviewed. The complete selected set is validated before any verdict is stored. Freezing
+creates an ordinary topic with only explicitly selected current references, the saved name
+and questions, exact qualification, and a collection revision/digest plus owner-coverage
+snapshot. It copies no foreign content. Collection creation, edits, triage and freeze use
+caller UUID idempotency keys; edits and triage use the current revision/digest. Changed
+retries conflict, while uncertain same-meaning operations reopen their original result.
+Private state is bounded under `.signals/` and uses the existing writer lock and atomic
+replacement. Owner configuration remains operator-only; no provider calls are made.
+
 ## HTTP consumers
 
 Use [provider instance/epoch headers](provider-interface.md) on every route below. Existing
@@ -73,10 +108,18 @@ configuration stays CLI only; `GET knowledge/owners` returns redacted owner/inst
 | `GET topics/UUID`                            | `{topic,statuses:[{selection,state,reason,current_ref,export_as_of}]}`                                                                               |
 | `POST topics/UUID`                           | Update body above → Topic                                                                                                                            |
 | `GET topics/UUID/export`                     | `{content_type:"text/markdown",content}`                                                                                                             |
+| `GET smart-collections`                      | `{collections:[SavedCollection]}`                                                                                                                    |
+| `POST smart-collections`                     | `{operation_id,name,query}` → `{collection,operation_replayed}`                                                                                      |
+| `GET smart-collections/UUID`                 | `{collection}`                                                                                                                                       |
+| `POST smart-collections/UUID`                | `{operation_id,revision,name,query}` → `{collection,operation_replayed}`                                                                             |
+| `GET smart-collections/UUID/run`             | `{collection,records,owner_coverage,partial,date_window,retrieval_note}`                                                                             |
+| `POST smart-collections/UUID/triage`         | `{operation_id,revision,digest,changes:[{selection,state,reason?}]}`                                                                                 |
+| `POST smart-collections/UUID/freeze`         | `{operation_id,revision,digest,name,selections,questions}` → `{topic,operation_replayed}`                                                            |
 
-Topic: `{id,name,revision,created_at,updated_at,members,links,questions}`; members are frozen
-search summaries. Errors have bounded code/reason without private paths. Provider operations
-are `search_knowledge`, `read_knowledge`, `read_topics`, `edit_topics`; availability grants no authority.
+Topic: `{id,name,revision,created_at,updated_at,members,links,questions,collection_snapshot?}`;
+members are frozen search summaries. Errors have bounded code/reason without private paths.
+Provider operations add `read_smart_collections`, `save_smart_collection`,
+`triage_smart_collection`, and `freeze_smart_collection`; availability grants no authority.
 
 Producer envelope: `{schema_version:"1.0",owner,instance_id,exported_at?,source_revision?,freshness?,records}`.
 Records: `{ref,title,summary,updated_at,qualification,content}`. Content is deterministic native

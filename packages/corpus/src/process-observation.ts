@@ -126,7 +126,7 @@ export function processObservation(root: string, runs: Map<string, ObservedRun>)
       throw new Error('process_snapshot_too_large');
     return observation;
   }
-  return { snapshot, changed };
+  return { snapshot, changed, storeEpoch };
 }
 
 function project(

@@ -73,6 +73,43 @@ Each row advertises an exact `cancel` job target when a current worker can be in
 
 Copy [process-consumer.mjs](../scripts/examples/process-consumer.mjs) alone into a Node 24 directory and run it with the exact trusted endpoint, instance ID and durable request epoch. It prints a validated full snapshot without importing Signals code or invoking a model. Run `npm run build && npm run demo:processes` for the local [offline demo](../scripts/examples/process-demo.mjs). It uses the real built-asset HTTP handler with an explicitly authored callback and measures restart, stale evidence, cancellation, partial and failed work without provider calls.
 
+### Read live Research activity
+
+Capabilities advertise `research-activity` version `1.0`, nonmutating operation
+`read_research_activity`, and `access.research_activity_route`.
+`GET provider/research-activity?request_id=JOB_ID&after=0` reads actual native
+session observations for the exact durable search job returned by POST `search`.
+Provider version `1.0`, trusted instance ID and owner epoch headers are required;
+the existing Host, Origin and no-store protections apply. Reads start no work.
+
+The `signals-research-activity-v1` batch binds `instance_id`, `owner_epoch`,
+`store_epoch` (the same HTTP observation epoch as K13), `request_id` and nullable
+`session_id`. Events retain the closed `research-activity-v1` projection from the
+pinned Research executor. Signals assigns one session ID to one actual workspace
+run; it claims no native thread identity. Queries, prose, thinking, arguments and
+raw diagnostics are absent. Unsafe URLs stay withheld without rewriting them.
+Native web completion proves neither access nor source truth; `session.settled`
+reports actual terminal/cleanup evidence, without accepting an answer.
+
+Save `next_cursor`, `session_id` and `store_epoch`; supply all three on reconnect.
+`after` defaults to zero; `limit` is 1–100, default100. Unknown or repeated query
+keys refuse400. Missing reconnect binding refuses428; wrong scope or an ahead
+cursor in an available buffer refuses409. Unknown durable jobs refuse404.
+The ephemeral ring retains at most256 rows /256,000 event bytes, with4,096 bytes
+per row, within the existing30-run retention. `first_sequence`, `last_sequence`,
+`dropped`, cursor-relative `gap` and `observation_lost` expose missing coverage.
+Callback failure marks loss synchronously and cannot stop the Research owner.
+
+`availability`, `reason`, `last_observed_at`, `fresh`, `as_of` and a30-second stale
+threshold distinguish missing, stale and available evidence without heartbeat
+inference. `owner_settled` and `session_settled` are separate. `complete` requires
+both, a drained cursor and no known loss; it describes observation delivery, not
+research success. A known request without its current buffer returns unavailable
+and lost, including after pruning/restart. No event replay or work dispatch is
+fabricated; durable request receipts remain authoritative. Existing ledger
+publication can return503 temporarily, as for other owner reads; retry only the
+same read. Answer, checkpoint, cancellation and duplicate-POST behavior is unchanged.
+
 ## Consumer with no Signals imports
 
 Copy [provider-consumer.mjs](../scripts/examples/provider-consumer.mjs) alone into a Node 24 directory. It uses built-in HTTP/crypto/assert support, validates the explicitly configured endpoint, refuses redirects, checks owner/version/operation availability and verifies content digest/revision:

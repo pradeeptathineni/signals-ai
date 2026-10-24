@@ -13,6 +13,7 @@
   },
   "scripts": {
     "knowledge": "node --import tsx scripts/knowledge.ts",
+    "smart-collections": "node --import tsx scripts/smart-collections.ts",
     "source-captures": "node --import tsx scripts/source-captures.ts",
     "private-documents": "node --import tsx scripts/private-documents.ts",
     "private-collection": "node --import tsx scripts/private-collection.ts",
@@ -58,7 +59,7 @@
   },
   "dependencies": {
     "@mozilla/readability": "0.6.0",
-    "@pradeeptathineni/research-ai": "file:vendor/research-ai/c434781745dae9bcc9ab7f525d73bf78ad0a794c3f36e8e1dd1d209c9d3c1022.tgz",
+    "@pradeeptathineni/research-ai": "file:vendor/research-ai/688dbe678ddff4dfaa67c1ac6a5bd636710559a3c057d257f1de88a87b13455b.tgz",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
     "linkedom": "0.18.13",

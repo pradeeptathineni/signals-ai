@@ -94,12 +94,28 @@ it('negotiates a portable owner boundary and reads exact partial answer bytes wi
         instance_id: string;
         process_observation: boolean;
         contracts: { id: string; versions: string[] }[];
+        operations: {
+          name: string;
+          target_kinds: string[];
+          mutating: boolean;
+          authority_required: boolean;
+        }[];
       };
     };
     expect(metadata.capabilities.instance_id).toBe(scope.identity);
     expect(metadata.capabilities.process_observation).toBe(true);
     expect(metadata.capabilities.contracts).toContainEqual({ id: 'K13', versions: ['1.0'] });
     expect(metadata.capabilities.contracts).toContainEqual({ id: 'K14', versions: ['1.0'] });
+    expect(metadata.capabilities.contracts).toContainEqual({
+      id: 'smart-collections',
+      versions: ['1.0'],
+    });
+    expect(metadata.capabilities.operations).toContainEqual({
+      name: 'triage_smart_collection',
+      target_kinds: ['exact_result_identity'],
+      mutating: true,
+      authority_required: true,
+    });
     const narrative = 'Original partial answer Ω\r\nQualification remains unknown.';
     const run: SearchResult = {
       schemaVersion: 2,
