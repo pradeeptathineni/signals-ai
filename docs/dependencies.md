@@ -32,6 +32,13 @@ GitHub Pages actions are pinned to reviewed upstream commits in `.github/workflo
 
 ## Advisory policy
 
+The development-only Repomix/MCP/Express path pins `body-parser@2.4.0`
+([GHSA-27r3-jxmh-p828](https://github.com/advisories/GHSA-27r3-jxmh-p828)).
+Knip and Repomix share `zod@4.6.7`, which includes the fix introduced in 4.6.6
+([GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5)).
+Both updates stay within existing dependency ranges. They grant no MCP/server
+access and add no advisory exception.
+
 The lockfile pins patched `handlebars@4.7.10` and `source-map-js@1.2.2`. Neither receives an advisory waiver.
 
 [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) was withdrawn on 2026-10-23 as not practically exploitable. Its development-only Repomix exception is retired. The audit gate accepts no high or critical advisory, including a returned copy of the withdrawn report, and rejects malformed/inconsistent metadata and nested high/critical causes. Moderate findings remain visible in the npm report.
