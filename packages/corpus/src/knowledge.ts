@@ -12,6 +12,7 @@ import { requestStore } from './search-request-store.js';
 const closed = { additionalProperties: false };
 const short = Type.String({ minLength: 1, maxLength: 200 });
 const sha = Type.String({ pattern: '^[a-f0-9]{64}$' });
+const topicGraphByteLimit = 4 * 1024 * 1024;
 const refSchema = Type.Object(
   { owner: short, kind: short, id: short, revision: short, digest: sha },
   closed,
@@ -715,27 +716,63 @@ export async function openTopic(root: string, id: string) {
 /** Projects exact saved references and caller-authored dependency claims into bounded review paths. */
 export async function topicEvidenceGraph(root: string, id: string) {
   const { topic, statuses } = await openTopic(root, id);
-  const nodes = topic.members.map((member, index) => ({
-    key: key(member.selection),
-    selection: member.selection,
-    title: member.title,
-    state: statuses[index]!.state,
-    reason: statuses[index]!.reason,
-    current_ref: statuses[index]!.current_ref,
-    export_as_of: statuses[index]!.export_as_of,
-  }));
+  const qualifications = [
+    'Relationships are user-authored claims; they are not verified evidence or support.',
+    'Only depends_on propagates possible review, from dependency to declared dependents.',
+    'Changed and missing references may need review; unavailable status is indeterminate.',
+    'Configured foreign exports are frozen snapshots and do not establish underlying source freshness.',
+    'No source validity, truth, causality, successor, or automatic topic update is inferred.',
+  ];
+  const topicRef = { id: topic.id, revision: topic.revision };
+  // Count the final compact JSON envelope, charging each array item as it is added.
+  let outputBytes = Buffer.byteLength(
+    JSON.stringify({
+      schema_version: '1.0',
+      topic: topicRef,
+      nodes: [],
+      edges: [],
+      impacts: [],
+      qualifications,
+    }),
+  );
+  const reserve = (bytes: number) => {
+    if (outputBytes + bytes > topicGraphByteLimit)
+      fail(
+        409,
+        'knowledge_graph_too_large',
+        'Evidence impact map exceeds the 4 MiB JSON limit. Select a smaller topic to inspect its paths.',
+      );
+    outputBytes += bytes;
+  };
+  const nodes = [];
+  for (const [index, member] of topic.members.entries()) {
+    const node = {
+      key: key(member.selection),
+      selection: member.selection,
+      title: member.title,
+      state: statuses[index]!.state,
+      reason: statuses[index]!.reason,
+      current_ref: statuses[index]!.current_ref,
+      export_as_of: statuses[index]!.export_as_of,
+    };
+    reserve(Buffer.byteLength(JSON.stringify(node)) + (nodes.length ? 1 : 0));
+    nodes.push(node);
+  }
   const nodeKeys = new Set(nodes.map((node) => node.key));
-  const edges = topic.links.map((link) => {
+  const edges = [];
+  for (const link of topic.links) {
     if (!nodeKeys.has(link.from) || !nodeKeys.has(link.to))
       fail(503, 'knowledge_topics_unavailable', 'A saved relationship is malformed.');
-    return {
+    const edge = {
       from: link.from,
       to: link.to,
       label: link.label,
       relation: link.relation ?? 'related',
       basis: 'user_asserted' as const,
     };
-  });
+    reserve(Buffer.byteLength(JSON.stringify(edge)) + (edges.length ? 1 : 0));
+    edges.push(edge);
+  }
   const dependents = new Map<string, string[]>();
   for (const edge of edges) {
     if (edge.relation !== 'depends_on') continue;
@@ -745,9 +782,20 @@ export async function topicEvidenceGraph(root: string, id: string) {
   }
   for (const rows of dependents.values()) rows.sort();
 
-  const impacts = nodes.flatMap((trigger) => {
-    if (trigger.state === 'current') return [];
+  const impacts = [];
+  for (const trigger of nodes) {
+    if (trigger.state === 'current') continue;
     const paths: { dependent: string; path: string[] }[] = [];
+    const impact = {
+      trigger: trigger.key,
+      trigger_state: trigger.state,
+      state: trigger.state === 'unavailable' ? 'indeterminate' : 'needs_review',
+      reason: trigger.reason,
+      paths,
+      path_policy: 'one shortest deterministic path per dependent',
+    };
+    reserve(Buffer.byteLength(JSON.stringify({ ...impact, paths: [] })) + (impacts.length ? 1 : 0));
+    impacts.push(impact);
     const visited = new Set([trigger.key]);
     let frontier = [[trigger.key]];
     while (frontier.length) {
@@ -758,36 +806,22 @@ export async function topicEvidenceGraph(root: string, id: string) {
           if (visited.has(dependent)) continue;
           visited.add(dependent);
           const witness = [...path, dependent];
-          paths.push({ dependent, path: witness });
+          const resultPath = { dependent, path: witness };
+          reserve(Buffer.byteLength(JSON.stringify(resultPath)) + (paths.length ? 1 : 0));
+          paths.push(resultPath);
           next.push(witness);
         }
       }
       frontier = next;
     }
-    return [
-      {
-        trigger: trigger.key,
-        trigger_state: trigger.state,
-        state: trigger.state === 'unavailable' ? 'indeterminate' : 'needs_review',
-        reason: trigger.reason,
-        paths,
-        path_policy: 'one shortest deterministic path per dependent',
-      },
-    ];
-  });
+  }
   return {
     schema_version: '1.0',
-    topic: { id: topic.id, revision: topic.revision },
+    topic: topicRef,
     nodes,
     edges,
     impacts,
-    qualifications: [
-      'Relationships are user-authored claims; they are not verified evidence or support.',
-      'Only depends_on propagates possible review, from dependency to declared dependents.',
-      'Changed and missing references may need review; unavailable status is indeterminate.',
-      'Configured foreign exports are frozen snapshots and do not establish underlying source freshness.',
-      'No source validity, truth, causality, successor, or automatic topic update is inferred.',
-    ],
+    qualifications,
   };
 }
 export async function exportTopic(root: string, id: string) {

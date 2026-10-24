@@ -48,7 +48,10 @@ caller-authored claim. Only `depends_on` means that `from` depends on `to` and c
 possible-review path from a changed or missing dependency to its declared dependents. Unavailable
 status is indeterminate. Paths do not establish truth, source invalidity or automatic succession;
 the graph returns one deterministic shortest witness per dependent and keeps cycles finite. A stale
-topic revision requires reopening. Removing selections removes membership only. Existing
+topic revision requires reopening. Compact graph JSON is capped at 4 MiB, charged as serialized
+node/edge bytes and each witness path as it is added. Larger projections return `409
+`knowledge_graph_too_large` and ask for a smaller topic; paths are not silently dropped. Removing
+selections removes membership only. Existing
 frozen selections can retain annotations while an owner is offline; adding a record verifies
 its current exact identity first.
 

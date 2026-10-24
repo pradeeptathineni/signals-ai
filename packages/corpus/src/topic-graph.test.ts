@@ -9,6 +9,7 @@ import { afterEach, beforeEach, expect, it } from 'vitest';
 import {
   configureKnowledge,
   createTopic,
+  listTopics,
   openTopic,
   topicEvidenceGraph,
   updateTopic,
@@ -246,6 +247,7 @@ it('drains complete large JSON and Markdown CLI output through stdout pipes', as
   });
   await writeExport(rows.map((row, index) => (index === 99 ? record('row-99', 'changed') : row)));
   const expected = await topicEvidenceGraph(root, topic.id);
+  expect(Buffer.byteLength(JSON.stringify(expected))).toBeLessThanOrEqual(4 * 1024 * 1024);
   const cli = join(process.cwd(), 'scripts/knowledge.ts');
 
   async function run(format: 'json' | 'markdown') {
@@ -287,4 +289,37 @@ it('drains complete large JSON and Markdown CLI output through stdout pipes', as
       '- No source validity, truth, causality, successor, or automatic topic update is inferred.\n\n',
     ),
   ).toBe(true);
+});
+
+it('refuses an oversized changing dependency chain without changing the topic', async () => {
+  const rows = Array.from({ length: 100 }, (_, index) =>
+    record(`record-${String(index).padStart(3, '0')}-${'x'.repeat(160)}`, `choice-${index}`),
+  );
+  await writeExport(rows);
+  await configureKnowledge(root, {
+    owners: [{ owner: 'planning-ai', path: exportPath, instance_id: 'graph-fixture' }],
+  });
+  const topic = await createTopic(root, { name: 'Oversized chain' });
+  const selections = rows.map(select);
+  await updateTopic(root, topic.id, {
+    revision: topic.revision,
+    name: topic.name,
+    selections,
+    links: Array.from({ length: 99 }, (_, index) => ({
+      from: memberKey(selections[index]!),
+      to: memberKey(selections[index + 1]!),
+      label: `Decision ${index} depends on the next exact record`,
+      relation: 'depends_on',
+    })),
+    questions: [],
+  });
+  const saved = (await listTopics(root)).topics[0]!;
+  await writeExport(rows.map((row, index) => record(row.ref.id, `changed-${index}`)));
+
+  await expect(topicEvidenceGraph(root, topic.id)).rejects.toMatchObject({
+    status: 409,
+    code: 'knowledge_graph_too_large',
+    reason: expect.stringContaining('Select a smaller topic'),
+  });
+  expect((await listTopics(root)).topics[0]).toEqual(saved);
 });
