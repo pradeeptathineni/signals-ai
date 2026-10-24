@@ -175,6 +175,7 @@ export async function providerCapabilities(
       { id: 'source-capture', versions: ['1.0'] },
       { id: 'private-collection', versions: ['1.0'] },
       { id: 'private-pdf-reader', versions: ['1.0'] },
+      { id: 'smart-collections', versions: ['1.0'] },
       { id: 'frozen-followup-request', versions: ['1.0', '2.0'] },
     ],
     operations: [
@@ -203,6 +204,30 @@ export async function providerCapabilities(
       },
       { name: 'read_topics', target_kinds: ['topic'], mutating: false, authority_required: false },
       { name: 'edit_topics', target_kinds: ['topic'], mutating: true, authority_required: true },
+      {
+        name: 'read_smart_collections',
+        target_kinds: ['saved_query', 'query_result'],
+        mutating: false,
+        authority_required: false,
+      },
+      {
+        name: 'save_smart_collection',
+        target_kinds: ['saved_query'],
+        mutating: true,
+        authority_required: true,
+      },
+      {
+        name: 'triage_smart_collection',
+        target_kinds: ['exact_result_identity'],
+        mutating: true,
+        authority_required: true,
+      },
+      {
+        name: 'freeze_smart_collection',
+        target_kinds: ['topic'],
+        mutating: true,
+        authority_required: true,
+      },
       {
         name: 'observe_processes',
         target_kinds: ['research_job', 'research_request'],
@@ -374,6 +399,8 @@ export async function providerCapabilities(
         'provider/library?q=<literal Unicode text>&limit=<1..100>&kinds=<comma-separated supported kinds>&project_ref=<encoded RecordRef>&cursor=<opaque>',
       knowledge_route:
         'provider/knowledge?q=<literal text>&limit=<1..100>; knowledge/record reads an exact selected owner reference; topics supports private named collections. Foreign readers are operator-configured frozen export files.',
+      smart_collections_route:
+        'smart-collections saves bounded text/owner/kind/date/triage queries; /<uuid>/run revisits current configured owner snapshots; /<uuid>/triage requires exact result identities and query revision/digest; /<uuid>/freeze freezes only explicit current selections into an ordinary topic with owner coverage. Mutations require the existing session token and every route uses owner instance/epoch and loopback guards.',
       followup_route:
         'followups (frozen-followup-request-v1 or v2, session token and owner epoch); followups/<idempotency_key> reads it back',
       private_collection_route:

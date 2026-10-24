@@ -75,6 +75,28 @@ const editFields = {
   links: Type.Array(linkSchema, { maxItems: 200 }),
   questions: Type.Array(Type.String({ minLength: 1, maxLength: 2000 }), { maxItems: 100 }),
 };
+const collectionSnapshotSchema = Type.Object(
+  {
+    collection_id: Type.String({ format: 'uuid' }),
+    collection_revision: Type.Integer({ minimum: 1 }),
+    collection_digest: sha,
+    partial: Type.Boolean(),
+    owner_coverage: Type.Array(
+      Type.Object(
+        {
+          owner: short,
+          state: Type.Enum(['connected', 'unconfigured', 'unavailable', 'partial']),
+          observed_at: Type.String({ format: 'date-time' }),
+          export_as_of: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
+          reason: Type.String({ maxLength: 1000 }),
+        },
+        closed,
+      ),
+      { maxItems: 3 },
+    ),
+  },
+  closed,
+);
 const topicSchema = Type.Object(
   {
     id: Type.String({ format: 'uuid' }),
@@ -82,6 +104,7 @@ const topicSchema = Type.Object(
     created_at: Type.String(),
     updated_at: Type.String(),
     members: Type.Array(summarySchema, { maxItems: 100 }),
+    collection_snapshot: Type.Optional(collectionSnapshotSchema),
     ...editFields,
   },
   closed,
@@ -103,6 +126,8 @@ type Selection = Static<typeof selectionSchema>;
 type Summary = Static<typeof summarySchema>;
 type Topic = Static<typeof topicSchema>;
 type ExportRecord = Static<typeof exportedRecord>;
+export type KnowledgeSelection = Selection;
+export type KnowledgeCoverage = Awaited<ReturnType<typeof searchKnowledge>>['owner_coverage'];
 const owners = ['signals-ai', 'planning-ai', 'principles-ai'];
 const kinds: Record<string, string[]> = {
   'planning-ai': ['decision', 'review', 'reflection'],
@@ -168,6 +193,10 @@ async function writeKnowledge<T>(root: string, operation: () => Promise<T>) {
       'Private state could not be written safely. Reopen to inspect the saved outcome before retrying.',
     );
   }
+}
+/** Reuses the validated private writer boundary for adjacent owner state. */
+export function withKnowledgeWriter<T>(root: string, operation: () => Promise<T>) {
+  return writeKnowledge(root, operation);
 }
 async function config(root: string) {
   try {
@@ -489,6 +518,93 @@ export async function createTopic(root: string, input: unknown) {
     return topic;
   });
 }
+const frozenTopicInputSchema = Type.Object(
+  {
+    id: Type.String({ format: 'uuid' }),
+    name: editFields.name,
+    selections: Type.Array(selectionSchema, { minItems: 1, maxItems: 100 }),
+    questions: editFields.questions,
+    snapshot: collectionSnapshotSchema,
+  },
+  closed,
+);
+/** Called inside the knowledge writer transaction to retain exact selected references. */
+export async function freezeTopicFromCollection(root: string, input: unknown) {
+  const parsed = checked<Static<typeof frozenTopicInputSchema>>(frozenTopicInputSchema, input);
+  parsed.selections.forEach(checkSelection);
+  const state = await topicState(root);
+  const existing = state.topics.find((topic) => topic.id === parsed.id);
+  const meaning = JSON.stringify({
+    name: parsed.name,
+    selections: parsed.selections,
+    questions: parsed.questions,
+    snapshot: parsed.snapshot,
+  });
+  if (existing) {
+    const savedMeaning = JSON.stringify({
+      name: existing.name,
+      selections: existing.members.map((member) => member.selection),
+      questions: existing.questions,
+      snapshot: existing.collection_snapshot,
+    });
+    if (meaning !== savedMeaning)
+      fail(
+        409,
+        'knowledge_topic_operation_conflict',
+        'The topic ID already records different frozen meaning.',
+      );
+    return existing;
+  }
+  if (state.topics.length >= 100)
+    fail(409, 'knowledge_topics_full', 'Export or remove a topic before adding another.');
+  if (new Set(parsed.selections.map(key)).size !== parsed.selections.length)
+    fail(
+      400,
+      'invalid_knowledge_selection',
+      'Frozen selections must have distinct exact identities.',
+    );
+  const members: Summary[] = [];
+  for (const selection of parsed.selections) {
+    await resolveSelection(root, selection);
+    if (selection.ref.owner === 'signals-ai') {
+      const summary = (await nativeSummaries(root, '')).records.find(
+        (row) => key(row.selection) === key(selection),
+      );
+      if (summary) members.push(summary);
+    } else {
+      const reader = (await config(root)).owners.find(
+        (row) => row.owner === selection.ref.owner && row.instance_id === selection.instance_id,
+      );
+      const record =
+        reader &&
+        (await readExport(reader)).records.find(
+          (row) => key(foreignSummary(reader, row).selection) === key(selection),
+        );
+      if (reader && record) members.push(foreignSummary(reader, record));
+    }
+  }
+  if (members.length !== parsed.selections.length)
+    fail(
+      409,
+      'knowledge_selection_changed',
+      'A selected result is no longer current. Rerun and select it explicitly.',
+    );
+  const now = new Date().toISOString();
+  const topic: Topic = {
+    id: parsed.id,
+    name: parsed.name,
+    revision: 1,
+    created_at: now,
+    updated_at: now,
+    members,
+    links: [],
+    questions: parsed.questions,
+    collection_snapshot: parsed.snapshot,
+  };
+  state.topics.push(topic);
+  await saveTopics(root, state);
+  return topic;
+}
 function findTopic(topics: Topic[], id: string) {
   const topic = topics.find((row) => row.id === id);
   if (!topic)
@@ -601,6 +717,13 @@ export async function exportTopic(root: string, id: string) {
     '',
     `Saved topic ${topic.id}; revision ${topic.revision}.`,
     'References and user annotations only; record content remains with its owner.',
+    ...(topic.collection_snapshot
+      ? [
+          `Frozen query: ${topic.collection_snapshot.collection_id}; revision ${topic.collection_snapshot.collection_revision}; digest ${topic.collection_snapshot.collection_digest}.`,
+          `Owner coverage at freeze: ${JSON.stringify(topic.collection_snapshot.owner_coverage)}.`,
+          '',
+        ]
+      : []),
     '',
     ...topic.members.flatMap((member, index) => [
       `## ${member.title}`,

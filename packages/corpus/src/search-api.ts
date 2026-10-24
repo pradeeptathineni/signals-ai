@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { knowledgeRoute } from './knowledge.js';
+import { smartCollectionsRoute } from './smart-collections.js';
 import {
   annotateSource,
   compareSourceCaptures,
@@ -559,7 +560,9 @@ export function searchApi(
         route === 'provider/knowledge' ||
         route.startsWith('knowledge/') ||
         route === 'topics' ||
-        route.startsWith('topics/')
+        route.startsWith('topics/') ||
+        route === 'smart-collections' ||
+        route.startsWith('smart-collections/')
       ) {
         await validateProcessObserver(
           root,
@@ -567,7 +570,12 @@ export function searchApi(
           request.headers['x-signals-instance-id'],
           request.headers['x-signals-owner-epoch'],
         );
-        json(200, await knowledgeRoute(root, route, mutation, request.url!, body));
+        json(
+          200,
+          route === 'smart-collections' || route.startsWith('smart-collections/')
+            ? await smartCollectionsRoute(root, route, mutation, request.url!, body)
+            : await knowledgeRoute(root, route, mutation, request.url!, body),
+        );
       } else if (route === 'provider/capabilities' && !mutation)
         json(
           200,
