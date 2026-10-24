@@ -52,11 +52,19 @@ else {
     emit({type:'item.completed',item:{type:'web_search',id:'web-2',action:{type:'open_page',url:'https://example.org/guide?${canary}'}}});
     emit({type:'item.completed',item:{type:'agent_message',text:'Partial fixture answer.'}});
     process.stderr.write('${canary}');
-    if (mode === 'hang') return setInterval(() => {}, 1000);
-    setTimeout(() => {
+    const finish = () => setTimeout(() => {
       emit({type:'item.completed',item:{type:'agent_message',text:'Final fixture answer.'}});
       emit({type:'turn.completed',usage:{input_tokens:1,output_tokens:1}});
+      if (mode === 'hold') fs.writeFileSync(path.join(home, 'third-finished'), 'done');
     }, 1000);
+    if (mode === 'hang') return setInterval(() => {}, 1000);
+    if (mode === 'hold') {
+      const release = () => fs.existsSync(path.join(home, 'release-third'))
+        ? finish()
+        : setTimeout(release, 10);
+      return release();
+    }
+    finish();
   });
 }
 `;
@@ -96,11 +104,19 @@ it('forwards actual native activity through admitted owner requests without repl
   if (!address || typeof address === 'string') throw new Error('no_port');
   const base = `http://127.0.0.1:${address.port}/signals-ai/__signals/api/`;
   const journey: unknown[] = [];
+  let thirdId: string | null = null;
   const invokeCount = async () =>
     (await readFile(join(home, 'invocations'), 'utf8').catch(() => ''))
       .trim()
       .split('\n')
       .filter(Boolean).length;
+  const waitForFile = async (path: string) => {
+    for (let index = 0; index < 200; index++) {
+      if (await readFile(path, 'utf8').catch(() => null)) return;
+      await new Promise((done) => setTimeout(done, 20));
+    }
+    throw new Error('fixture_file_timeout');
+  };
   const wait = async (
     read: () => Promise<ActivityResponse>,
     ready: (value: ActivityBatch) => boolean,
@@ -250,8 +266,9 @@ it('forwards actual native activity through admitted owner requests without repl
     const second = await responseJson<{ id: string }>(await post(2));
     const concurrent = await wait(
       () => read(second.id),
-      (batch) => batch.session_id !== null,
+      (batch) => batch.events.some((row) => row.kind === 'checkpoint'),
     );
+    expect(await invokeCount()).toBe(2);
     expect(concurrent.session_id).not.toBe(final.session_id);
     expect((await batch(accepted.id)).session_id).toBe(final.session_id);
     const cancel = await fetch(base + 'cancel/' + second.id, {
@@ -280,12 +297,14 @@ it('forwards actual native activity through admitted owner requests without repl
       settlement: cancelled.events.at(-1)?.detail,
     });
 
-    await writeFile(join(home, 'mode'), 'complete');
+    await writeFile(join(home, 'mode'), 'hold');
     const third = await responseJson<{ id: string }>(await post(3));
+    thirdId = third.id;
     const beforeRestart = await wait(
       () => read(third.id),
-      (batch) => batch.session_id !== null,
+      (batch) => batch.events.some((row) => row.kind === 'checkpoint'),
     );
+    expect(await invokeCount()).toBe(3);
     handler = searchApi(root);
     const lost = await batch(third.id);
     expect(lost).toMatchObject({
@@ -325,6 +344,7 @@ it('forwards actual native activity through admitted owner requests without repl
       durable_state: recovery.receipt.state,
       native_invocations: await invokeCount(),
     });
+    await writeFile(join(home, 'release-third'), 'release');
     handler = original;
     await wait(
       () => read(third.id),
@@ -337,6 +357,8 @@ it('forwards actual native activity through admitted owner requests without repl
       );
     console.log('ACTIVITY_OWNER_JOURNEY ' + JSON.stringify(journey));
   } finally {
+    await writeFile(join(home, 'release-third'), 'release').catch(() => {});
+    if (thirdId) await waitForFile(join(home, 'third-finished')).catch(() => {});
     await new Promise<void>((done) => server.close(() => done()));
     vi.unstubAllEnvs();
     await rm(fixture, { recursive: true, force: true });
