@@ -521,7 +521,12 @@ export async function searchKnowledge(root: string, query = '', limit = 30) {
       if (group[offset] && ranked.length < limit) ranked.push(group[offset]!);
   return { schema_version: '1.0', records: ranked, owner_coverage };
 }
-async function resolveSelection(root: string, selection: Selection, current = false) {
+async function resolveSelection(
+  root: string,
+  selection: Selection,
+  current = false,
+  exportsByReader?: Map<string, ReturnType<typeof readExport>>,
+) {
   checkSelection(selection);
   if (selection.ref.owner === 'signals-ai') {
     const scope = await requestStore(root).scope();
@@ -551,7 +556,13 @@ async function resolveSelection(root: string, selection: Selection, current = fa
       'knowledge_owner_unavailable',
       'The selected owner store is not explicitly configured.',
     );
-  const exported = await readExport(reader);
+  const readerKey = JSON.stringify(reader);
+  let pending = exportsByReader?.get(readerKey);
+  if (!pending) {
+    pending = readExport(reader);
+    exportsByReader?.set(readerKey, pending);
+  }
+  const exported = await pending;
   const row = exported.records.find(
     (item) => item.ref.kind === selection.ref.kind && item.ref.id === selection.ref.id,
   );
@@ -961,10 +972,12 @@ export async function exportTopicReferences(root: string, topicId: string, input
 
 export async function openTopic(root: string, id: string) {
   const topic = findTopic((await topicState(root)).topics, id);
+  // One frozen export per reader for this view; later views always read fresh bytes
+  const exportsByReader = new Map<string, ReturnType<typeof readExport>>();
   const statuses = await Promise.all(
     topic.members.map(async ({ selection }) => {
       try {
-        const current = await resolveSelection(root, selection, true);
+        const current = await resolveSelection(root, selection, true, exportsByReader);
         const state = key(current.selection) === key(selection) ? 'current' : 'changed';
         return {
           selection,
@@ -1170,6 +1183,14 @@ export async function knowledgeRoute(
     return readKnowledge(root, input.selection);
   }
   if (route === 'topics') return mutation ? createTopic(root, body) : listTopics(root);
+  const references =
+    /^topics\/([a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12})\/references(\/export)?$/.exec(route);
+  if (references && !references[2])
+    return mutation
+      ? setTopicReference(root, references[1]!, body)
+      : listTopicReferences(root, references[1]!);
+  if (references?.[2] === '/export' && mutation)
+    return exportTopicReferences(root, references[1]!, body);
   const match = /^topics\/([a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12})(\/export|\/graph)?$/.exec(
     route,
   );

@@ -143,6 +143,9 @@ configuration stays CLI only; `GET knowledge/owners` returns redacted owner/inst
 | `GET topics/UUID`                            | `{topic,statuses:[{selection,state,reason,current_ref,export_as_of}]}`                                                                               |
 | `POST topics/UUID`                           | Update body above → Topic                                                                                                                            |
 | `GET topics/UUID/graph`                      | `{schema_version,topic,nodes,edges,impacts,qualifications}`; read-only owner-derived projection                                                      |
+| `GET topics/UUID/references`                 | Current retained metadata rows and separate availability                                                                                             |
+| `POST topics/UUID/references`                | `{revision,selection,metadata}` → exact member metadata/history update                                                                               |
+| `POST topics/UUID/references/export`         | `{revision,reference_ids}` → `signals.reference-list.v1`, only explicitly selected metadata                                                          |
 | `GET topics/UUID/export`                     | `{content_type:"text/markdown",content}`                                                                                                             |
 | `GET smart-collections`                      | `{collections:[SavedCollection]}`                                                                                                                    |
 | `POST smart-collections`                     | `{operation_id,name,query}` → `{collection,operation_replayed}`                                                                                      |
