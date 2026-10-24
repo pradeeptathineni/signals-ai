@@ -28,7 +28,8 @@ Native reads reuse the existing exact provider. No successor is substituted sile
 
 Topics retain names, selected exact summaries/references, relationships and open questions,
 without copying foreign record bodies. Commands: `topics`, `open UUID`, `update UUID PATCH_JSON`
-and `export UUID`. Shell-quote JSON arguments. Update body:
+and `export UUID`. `graph UUID --format json|markdown` shows exact owner statuses and declared
+dependency paths. Shell-quote JSON arguments. Update body:
 
 ```json
 {
@@ -40,9 +41,17 @@ and `export UUID`. Shell-quote JSON arguments. Update body:
 }
 ```
 
-Copy complete selected identities into `selections`. Links are `{from,to,label}` using
-`JSON.stringify([owner,instance_id,kind,id,revision,digest])` as each member key. A stale
-topic revision requires reopening. Removing selections removes membership only. Existing
+Copy complete selected identities into `selections`. Links are `{from,to,label,relation?}` using
+`JSON.stringify([owner,instance_id,kind,id,revision,digest])` as each member key. Relation may be
+`related` (the default for old links), `depends_on`, `supports` or `contradicts`; each is a
+caller-authored claim. Only `depends_on` means that `from` depends on `to` and can produce a
+possible-review path from a changed or missing dependency to its declared dependents. Unavailable
+status is indeterminate. Paths do not establish truth, source invalidity or automatic succession;
+the graph returns one deterministic shortest witness per dependent and keeps cycles finite. A stale
+topic revision requires reopening. Compact graph JSON is capped at 4 MiB, charged as serialized
+node/edge bytes and each witness path as it is added. Larger projections return `409
+`knowledge_graph_too_large` and ask for a smaller topic; paths are not silently dropped. Removing
+selections removes membership only. Existing
 frozen selections can retain annotations while an owner is offline; adding a record verifies
 its current exact identity first.
 
@@ -57,6 +66,32 @@ atomic replacement and private file modes, excluded from public assets. Limits: 
 100 topics, 100 members per topic, two million stored UTF8 bytes; failed validation/capacity
 preserves the earlier file. Each foreign export allows ten million UTF8 bytes/5,000 records.
 No recursive discovery, public admission or native generation occurs.
+
+## Retain reference metadata
+
+Attach a user-supplied bibliographic description to an exact currently selected topic member.
+The full selection identity, including owner epoch, determines a stable `ref-<sha256>` ID.
+Metadata hashes use UTF8 JSON with recursively sorted object keys, preserved array order, and no
+spacing. Changed descriptions append immutable metadata revisions; equal canonical metadata is
+an idempotent no-op. Topic revision checks govern edits, while removal of a member leaves its
+metadata history detached and exportable.
+
+```sh
+npm run knowledge -- --root /private/signals-workspace reference-set TOPIC_UUID '{"revision":2,"selection":{},"metadata":{"type":"article","title":"A user-entered title","authors":[{"family":"Lovelace","given":"Ada"}],"year":1843,"doi":"10.1234/example.1","url":"https://example.org/paper"}}'
+npm run knowledge -- --root /private/signals-workspace references TOPIC_UUID
+npm run knowledge -- --root /private/signals-workspace references-export TOPIC_UUID '{"revision":3,"reference_ids":["REFERENCE_ID_FROM_REFERENCES"]}'
+```
+
+Replace the selection placeholder with the complete selected owner identity. Metadata is closed
+to `article|book|webpage|report`, title, optional author names, year, container, publisher, DOI,
+and HTTP(S) URL. These values are user descriptions, not verified bibliography; Signals does not
+look up DOI/URL metadata. `references` returns current rows and a separate selected/changed/missing/
+unavailable/detached availability list. Export preserves the caller's chosen ID order and returns
+only `{schema:"signals.reference-list.v1",topic,references}`. It may describe a detached historic
+selection and does not validate the source's currentness or include its body. Each topic retains up
+to 100 references and 32 metadata versions per reference under the existing two MiB topic-store
+limit; overflow refuses the whole write without truncating history. These owner commands add no
+HTTP route or automatic provider/publication path.
 
 ## Save, triage and freeze a query
 
@@ -107,6 +142,10 @@ configuration stays CLI only; `GET knowledge/owners` returns redacted owner/inst
 | `POST topics`                                | `{name}` → Topic                                                                                                                                     |
 | `GET topics/UUID`                            | `{topic,statuses:[{selection,state,reason,current_ref,export_as_of}]}`                                                                               |
 | `POST topics/UUID`                           | Update body above → Topic                                                                                                                            |
+| `GET topics/UUID/graph`                      | `{schema_version,topic,nodes,edges,impacts,qualifications}`; read-only owner-derived projection                                                      |
+| `GET topics/UUID/references`                 | Current retained metadata rows and separate availability                                                                                             |
+| `POST topics/UUID/references`                | `{revision,selection,metadata}` → exact member metadata/history update                                                                               |
+| `POST topics/UUID/references/export`         | `{revision,reference_ids}` → `signals.reference-list.v1`, only explicitly selected metadata                                                          |
 | `GET topics/UUID/export`                     | `{content_type:"text/markdown",content}`                                                                                                             |
 | `GET smart-collections`                      | `{collections:[SavedCollection]}`                                                                                                                    |
 | `POST smart-collections`                     | `{operation_id,name,query}` → `{collection,operation_replayed}`                                                                                      |

@@ -5,10 +5,10 @@ import { join, relative } from 'node:path';
 // Exact composed Research archive; version alone does not identify these capabilities.
 export const researchArchive = {
   version: '0.4.0-rc.1',
-  sourceCommit: '0db2b19f0d115ff41eaa4d38fd4d7b0f7c5fd944',
-  sha256: '688dbe678ddff4dfaa67c1ac6a5bd636710559a3c057d257f1de88a87b13455b',
+  sourceCommit: '344a5ea30a36efaf3c10ca1fa4b6f3a319f01fa4',
+  sha256: '0f7ab726f7267e1a7e85c4f7094d909db5a7e64671a2b319d3083aa39f6ce947',
   integrity:
-    'sha512-p5AnUhODBHI0R9k1OMKjU5EDAZR9eqxgGC9pzwRbRaN9yZC8y9Lr/bnh5tfPa4X0juS3X+ZrWhmiwEv5eFi3Zw==',
+    'sha512-WwROhHo9AMQHDsapnVDvhdBwTHMMYr5WzdutkbA0rb9x4wboXP8U6Qt48lD+11mQXPi60nteskdUNHuaTM2obA==',
 };
 export const researchSpec = `file:vendor/research-ai/${researchArchive.sha256}.tgz`;
 

@@ -337,6 +337,54 @@ it('serves guarded HTTP journeys, retains topics across owner restart and reject
       }),
     });
     expect(saved.status).toBe(200);
+    const referenceInput = {
+      revision: 2,
+      selection: search.records[0]!.selection,
+      metadata: { type: 'report', title: 'Synthetic retained reference', year: 2026 },
+    };
+    expect(
+      (
+        await fetch(first.base + `topics/${id}/references`, {
+          method: 'POST',
+          headers: { ...headers, 'content-type': 'application/json' },
+          body: JSON.stringify(referenceInput),
+        })
+      ).status,
+    ).toBe(403);
+    const attached = await fetch(first.base + `topics/${id}/references`, {
+      method: 'POST',
+      headers: auth,
+      body: JSON.stringify(referenceInput),
+    });
+    expect(attached.status).toBe(200);
+    const reference = (await attached.json()) as { reference: { id: string } };
+    const listed = await fetch(first.base + `topics/${id}/references`, { headers });
+    expect(listed.status).toBe(200);
+    const refs = (await listed.json()) as { references: { id: string }[] };
+    expect(refs.references.map((row) => row.id)).toEqual([reference.reference.id]);
+    expect(
+      (
+        await fetch(first.base + `topics/${id}/references`, {
+          method: 'POST',
+          headers: auth,
+          body: JSON.stringify(referenceInput),
+        })
+      ).status,
+    ).toBe(409);
+    const exportedReferences = await fetch(first.base + `topics/${id}/references/export`, {
+      method: 'POST',
+      headers: auth,
+      body: JSON.stringify({ revision: 3, reference_ids: [reference.reference.id] }),
+    });
+    expect(exportedReferences.status).toBe(200);
+    const referenceList = (await exportedReferences.json()) as {
+      schema: string;
+      references: { qualification: string }[];
+    };
+    expect(referenceList.schema).toBe('signals.reference-list.v1');
+    expect(referenceList.references[0]!.qualification).toBe(
+      'User-supplied bibliographic metadata; unverified.',
+    );
     expect((await fetch(first.base + 'provider/knowledge?path=/tmp', { headers })).status).toBe(
       400,
     );
@@ -352,6 +400,10 @@ it('serves guarded HTTP journeys, retains topics across owner restart and reject
     expect(reopened.topic.questions).toEqual(['Resume this?']);
     expect(reopened.statuses[0]!.state).toBe('current');
     expect((await fetch(second.base + `topics/${id!}/export`, { headers })).status).toBe(200);
+    const references = (await (
+      await fetch(second.base + `topics/${id!}/references`, { headers })
+    ).json()) as { references: { metadata: { title: string } }[] };
+    expect(references.references[0]!.metadata.title).toBe('Synthetic retained reference');
   } finally {
     second.server.closeAllConnections();
     await new Promise<void>((done) => second.server.close(() => done()));
