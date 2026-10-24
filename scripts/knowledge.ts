@@ -3,11 +3,14 @@ import {
   configureKnowledge,
   createTopic,
   exportTopic,
+  exportTopicReferences,
   knowledgeOwners,
+  listTopicReferences,
   listTopics,
   openTopic,
   readKnowledge,
   searchKnowledge,
+  setTopicReference,
   topicEvidenceGraph,
   updateTopic,
 } from '../packages/corpus/src/knowledge.js';
@@ -97,9 +100,18 @@ try {
       }
       break;
     }
+    case 'reference-set':
+      result = await setTopicReference(root, value ?? '', parse(patch));
+      break;
+    case 'references':
+      result = await listTopicReferences(root, value ?? '');
+      break;
+    case 'references-export':
+      result = await exportTopicReferences(root, value ?? '', parse(patch));
+      break;
     default:
       throw new Error(
-        'Use owners|configure JSON|search TEXT|read JSON|topics|create NAME|open UUID|update UUID JSON|export UUID|graph UUID [--format json|markdown]',
+        'Use owners|configure JSON|search TEXT|read JSON|topics|create NAME|open UUID|update UUID JSON|export UUID|graph UUID [--format json|markdown]|reference-set UUID JSON|references UUID|references-export UUID JSON',
       );
   }
   if (result === undefined) throw new Error('knowledge_result_missing');

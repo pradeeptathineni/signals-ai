@@ -67,6 +67,32 @@ atomic replacement and private file modes, excluded from public assets. Limits: 
 preserves the earlier file. Each foreign export allows ten million UTF8 bytes/5,000 records.
 No recursive discovery, public admission or native generation occurs.
 
+## Retain reference metadata
+
+Attach a user-supplied bibliographic description to an exact currently selected topic member.
+The full selection identity, including owner epoch, determines a stable `ref-<sha256>` ID.
+Metadata hashes use UTF8 JSON with recursively sorted object keys, preserved array order, and no
+spacing. Changed descriptions append immutable metadata revisions; equal canonical metadata is
+an idempotent no-op. Topic revision checks govern edits, while removal of a member leaves its
+metadata history detached and exportable.
+
+```sh
+npm run knowledge -- --root /private/signals-workspace reference-set TOPIC_UUID '{"revision":2,"selection":{},"metadata":{"type":"article","title":"A user-entered title","authors":[{"family":"Lovelace","given":"Ada"}],"year":1843,"doi":"10.1234/example.1","url":"https://example.org/paper"}}'
+npm run knowledge -- --root /private/signals-workspace references TOPIC_UUID
+npm run knowledge -- --root /private/signals-workspace references-export TOPIC_UUID '{"revision":3,"reference_ids":["REFERENCE_ID_FROM_REFERENCES"]}'
+```
+
+Replace the selection placeholder with the complete selected owner identity. Metadata is closed
+to `article|book|webpage|report`, title, optional author names, year, container, publisher, DOI,
+and HTTP(S) URL. These values are user descriptions, not verified bibliography; Signals does not
+look up DOI/URL metadata. `references` returns current rows and a separate selected/changed/missing/
+unavailable/detached availability list. Export preserves the caller's chosen ID order and returns
+only `{schema:"signals.reference-list.v1",topic,references}`. It may describe a detached historic
+selection and does not validate the source's currentness or include its body. Each topic retains up
+to 100 references and 32 metadata versions per reference under the existing two MiB topic-store
+limit; overflow refuses the whole write without truncating history. These owner commands add no
+HTTP route or automatic provider/publication path.
+
 ## Save, triage and freeze a query
 
 Smart collections save a bounded text query with optional explicit owners, result kinds,
