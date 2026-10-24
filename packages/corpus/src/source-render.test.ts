@@ -24,6 +24,7 @@ import {
   readSourceRenderRequest,
   renderSourceCapture,
   renderStaticHtml,
+  SourceRenderError,
   type SourceRenderRuntime,
 } from './source-render.js';
 
@@ -137,17 +138,21 @@ it('refuses an immediate main-frame meta-refresh without retaining a capture or 
   </body></html>`,
   );
   const requestId = randomUUID();
-  await expect(
-    renderSourceCapture(
-      f.root,
-      { request_id: requestId, source_ref: f.sourceRef },
-      f.resolver,
-      f.runtime,
-    ),
-  ).rejects.toMatchObject({
+  const failure = await renderSourceCapture(
+    f.root,
+    { request_id: requestId, source_ref: f.sourceRef },
+    f.resolver,
+    f.runtime,
+  ).then(
+    () => null,
+    (error: unknown) => error,
+  );
+  expect(failure).toBeInstanceOf(SourceRenderError);
+  expect(failure).toMatchObject({
     status: 422,
     code: 'source_render_navigation_blocked',
   });
+  expect((failure as SourceRenderError).completedExternalRequests).toBe(0);
   const pending = await readSourceRenderRequest(f.root, requestId);
   expect(pending).toMatchObject({
     state: 'unknown',

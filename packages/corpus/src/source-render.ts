@@ -155,13 +155,19 @@ export class SourceRenderError extends Error {
     readonly status: number,
     readonly code: string,
     readonly reason: string,
+    readonly completedExternalRequests?: number,
   ) {
     super(code);
   }
 }
 
-function fail(status: number, code: string, reason: string): never {
-  throw new SourceRenderError(status, code, reason);
+function fail(
+  status: number,
+  code: string,
+  reason: string,
+  completedExternalRequests?: number,
+): never {
+  throw new SourceRenderError(status, code, reason, completedExternalRequests);
 }
 
 async function privateFile(root: string, name: string, maxBytes: number): Promise<Buffer | null> {
@@ -335,6 +341,7 @@ export async function renderStaticHtml(html: string): Promise<Rendered> {
           422,
           'source_render_navigation_blocked',
           'The static page attempted to replace its main document. No render artifacts were retained; inspect the text capture separately.',
+          completedExternalRequests,
         );
     };
     page.on('requestfinished', (request) => {
