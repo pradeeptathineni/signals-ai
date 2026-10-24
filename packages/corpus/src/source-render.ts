@@ -127,6 +127,7 @@ type Rendered = {
   aria: Buffer;
   browserVersion: string;
   blockedRequests: number;
+  completedExternalRequests: number;
 };
 type RenderFetch = (
   input: string,
@@ -297,6 +298,7 @@ export async function renderStaticHtml(html: string): Promise<Rendered> {
   let browser: Browser | undefined;
   let context: BrowserContext | undefined;
   let blockedRequests = 0;
+  let completedExternalRequests = 0;
   try {
     const { chromium } = await import('playwright');
     browser = await chromium.launch({ headless: true });
@@ -305,12 +307,16 @@ export async function renderStaticHtml(html: string): Promise<Rendered> {
       viewport: { width: 1280, height: 900 },
       javaScriptEnabled: false,
       serviceWorkers: 'block',
+      offline: true,
     });
     await context.route('**/*', (route) => {
       blockedRequests++;
       return route.abort();
     });
     const page = await context.newPage();
+    page.on('requestfinished', (request) => {
+      if (/^https?:$/.test(new URL(request.url()).protocol)) completedExternalRequests++;
+    });
     page.setDefaultTimeout(10_000);
     await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 10_000 });
     const domText = await page.evaluate(() => document.documentElement?.outerHTML ?? '');
@@ -327,6 +333,7 @@ export async function renderStaticHtml(html: string): Promise<Rendered> {
       aria: Buffer.from(ariaText, 'utf8'),
       browserVersion,
       blockedRequests,
+      completedExternalRequests,
     };
     if (result.dom.length > 128_000 || result.aria.length > 128_000)
       fail(
@@ -723,6 +730,7 @@ export async function renderSourceCapture(
       omissions: [
         'JavaScript was disabled; dynamic page behavior was not rendered.',
         'All browser network requests were aborted and service workers were blocked; external resources are absent.',
+        'The browser offline context and request interception are browser controls, not OS-level network isolation.',
         'No browser profile, cookies, authentication, CDP connection or network replay was used.',
         'Screenshot is the fixed 1280x900 viewport; content outside it is not represented.',
         'DOM and ARIA are retained as inert UTF8 text and are not served as HTML.',

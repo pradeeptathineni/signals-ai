@@ -95,14 +95,21 @@ async function fixture() {
 }
 
 it('renders static HTML in isolated Chromium without JavaScript or external-resource access', async () => {
-  const rendered = await renderStaticHtml(
-    '<!doctype html><html><body><h1>Visible heading</h1><img alt="blocked image" src="https://blocked.example/image.png"><script>document.body.dataset.ran="yes"</script></body></html>',
-  );
+  const html = `<!doctype html><html><head>
+    <link rel="preconnect" href="https://blocked.example">
+    <link rel="dns-prefetch" href="//blocked.example">
+    <meta http-equiv="refresh" content="3600;url=https://blocked.example/redirected">
+  </head><body><h1>Visible heading</h1>
+    <img alt="blocked image" src="https://blocked.example/image.png">
+    <script>document.body.dataset.ran="yes"</script>
+  </body></html>`;
+  const rendered = await renderStaticHtml(html);
   expect(rendered.screenshot.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
   expect(rendered.dom.toString()).toContain('Visible heading');
   expect(rendered.dom.toString()).not.toContain('data-ran="yes"');
   expect(rendered.aria.toString()).toContain('Visible heading');
   expect(rendered.blockedRequests).toBeGreaterThan(0);
+  expect(rendered.completedExternalRequests).toBe(0);
   expect(rendered.dom.length).toBeLessThanOrEqual(128_000);
   expect(rendered.aria.length).toBeLessThanOrEqual(128_000);
   await expect(renderStaticHtml('<p>' + 'x'.repeat(2_000_001) + '</p>')).rejects.toMatchObject({
