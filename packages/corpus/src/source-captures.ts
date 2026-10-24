@@ -401,7 +401,7 @@ function annotationEntries(store: Store, captureId: string) {
       annotation,
     }));
 }
-function sourceUri(kind: 'entity' | 'lead', bytes: Buffer) {
+export function sourceCaptureUri(kind: 'entity' | 'lead', bytes: Buffer) {
   let record: unknown;
   try {
     record = JSON.parse(bytes.toString('utf8'));
@@ -427,11 +427,41 @@ function sourceUri(kind: 'entity' | 'lead', bytes: Buffer) {
   }
 }
 export type SourceResolver = (ref: RecordRef) => Promise<{ bytes: Buffer; ref: RecordRef }>;
+export type SourceCaptureFetch = Awaited<ReturnType<typeof fetchEvidence>>;
+export type SourceCaptureOptions = {
+  captureId?: string;
+  includeBytes?: boolean;
+  fetcher?: typeof fetchEvidence;
+  beforeRetain?: (fetched: SourceCaptureFetch) => Promise<void>;
+};
+
+export async function validateSourceCaptureSelection(
+  root: string,
+  sourceValue: unknown,
+  supersedesValue: unknown,
+  resolveSource: SourceResolver,
+) {
+  const sourceRef = exactRef(sourceValue, ['entity', 'lead']);
+  const current = await resolveSource(sourceRef);
+  if (!sameRef(current.ref, sourceRef))
+    changed('The selected source changed. Resolve its current exact reference before capturing.');
+  const uri = sourceCaptureUri(sourceRef.kind as 'entity' | 'lead', current.bytes);
+  let supersedes: RecordRef | undefined;
+  if (supersedesValue !== undefined) {
+    supersedes = exactRef(supersedesValue, 'source_capture');
+    const previous = await openSourceCapture(root, supersedes.id);
+    const sourceId = `source-${sha256(JSON.stringify([sourceRef.owner, sourceRef.kind, sourceRef.id, uri]))}`;
+    if (previous.capture.source_id !== sourceId || !sameRef(previous.ref, supersedes))
+      changed('Superseded capture must be an exact capture for the same selected source.');
+  }
+  return { sourceRef, uri, supersedes };
+}
 
 export async function createSourceCapture(
   root: string,
   input: unknown,
   resolveSource: SourceResolver,
+  options: SourceCaptureOptions = {},
 ) {
   const shape = Type.Object(
     {
@@ -460,11 +490,15 @@ export async function createSourceCapture(
     invalid(
       'Fetch refuses supplied text/date; paste requires exact text and an ISO observation time.',
     );
-  if (data.supersedes !== undefined) exactRef(data.supersedes, 'source_capture');
-  const first = await resolveSource(sourceRef);
-  if (!sameRef(first.ref, sourceRef))
-    changed('The selected source changed. Resolve its current exact reference before capturing.');
-  const uri = sourceUri(sourceRef.kind as 'entity' | 'lead', first.bytes);
+  if (options.captureId !== undefined && !Value.Check(uuid, options.captureId))
+    invalid('Reserved capture identity must be a UUID.');
+  const selection = await validateSourceCaptureSelection(
+    root,
+    sourceRef,
+    data.supersedes,
+    resolveSource,
+  );
+  const uri = selection.uri;
   let text: string,
     rawDigest: string | null,
     finalUri: string | null,
@@ -475,12 +509,19 @@ export async function createSourceCapture(
   if (data.mode === 'fetch') {
     let fetched: Awaited<ReturnType<typeof fetchEvidence>>;
     try {
-      fetched = await fetchEvidence(uri, undefined, 0, false);
+      fetched = await (options.fetcher ?? fetchEvidence)(
+        uri,
+        undefined,
+        0,
+        false,
+        options.includeBytes ? { includeBytes: true } : {},
+      );
     } catch {
       return unavailable(
         'Source acquisition failed or was denied. Retry only after inspecting the selected source; the last capture is unchanged.',
       );
     }
+    if (options.beforeRetain) await options.beforeRetain(fetched);
     text = fetched.text;
     rawDigest = fetched.digest;
     finalUri = fetched.uri;
@@ -529,7 +570,7 @@ export async function createSourceCapture(
   if (!text.trim()) invalid('Blank source text cannot be captured.');
   if (data.mode === 'fetch') text = prefix(text);
   if (!text.trim()) invalid('The bounded source text contains no usable content.');
-  const id = randomUUID();
+  const id = options.captureId ?? randomUUID();
   const sourceId = `source-${sha256(JSON.stringify([sourceRef.owner, sourceRef.kind, sourceRef.id, uri]))}`;
   const capture = {
     schema_version: '1.0',
@@ -567,17 +608,14 @@ export async function createSourceCapture(
     supersedes: null as RecordRef | null,
   } satisfies Capture;
   if (data.supersedes !== undefined) {
-    const old = await openSourceCapture(root, (data.supersedes as RecordRef).id);
-    if (old.capture.source_id !== sourceId || !sameRef(old.ref, data.supersedes as RecordRef))
-      changed('Superseded capture must be an exact capture for the same selected source.');
-    capture.supersedes = old.ref;
+    capture.supersedes = selection.supersedes!;
   }
   if (!Value.Check(captureSchema, capture)) invalid('Capture projection failed its closed schema.');
   await withWriter(root, async () => {
     const current = await resolveSource(sourceRef);
     if (
       !sameRef(current.ref, sourceRef) ||
-      sourceUri(sourceRef.kind as 'entity' | 'lead', current.bytes) !== uri
+      sourceCaptureUri(sourceRef.kind as 'entity' | 'lead', current.bytes) !== uri
     )
       changed('The source changed during acquisition; no capture was written.');
     const store = await loadStore(root);
@@ -596,6 +634,8 @@ export async function createSourceCapture(
       if (store.captures.some((row) => row.supersedes?.id === capture.supersedes!.id))
         changed('That prior capture already has a successor.');
     }
+    if (store.captures.some((row) => row.id === capture.id))
+      changed('The reserved capture identity is already retained.');
     store.captures.push(capture);
     if (Buffer.byteLength(JSON.stringify(store, null, 2) + '\n') > 2_000_000)
       unavailable('Capture state would exceed its 2 MB limit; existing records were preserved.');
@@ -617,7 +657,7 @@ export async function listSourceCaptures(
     const ref = exactRef(sourceRef, ['entity', 'lead']);
     const current = await resolve(ref);
     if (!sameRef(ref, current.ref)) changed();
-    sourceId = `source-${sha256(JSON.stringify([ref.owner, ref.kind, ref.id, sourceUri(ref.kind as 'entity' | 'lead', current.bytes)]))}`;
+    sourceId = `source-${sha256(JSON.stringify([ref.owner, ref.kind, ref.id, sourceCaptureUri(ref.kind as 'entity' | 'lead', current.bytes)]))}`;
   }
   return {
     captures: captureEntries(store, sourceId).sort((a, b) =>

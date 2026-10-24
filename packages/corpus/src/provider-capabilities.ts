@@ -21,6 +21,11 @@ import {
   selectLibraryExploreKeys,
   type LibraryExploreFilters,
 } from './library-explore.js';
+import {
+  sourceRenderReadiness,
+  sourceRenderRecordBytes,
+  SourceRenderError,
+} from './source-render.js';
 
 const closed = { additionalProperties: false };
 const text = Type.String({ minLength: 1, maxLength: 200 });
@@ -77,6 +82,7 @@ const recordSchema = Type.Object(
       'lead_record',
       'project_record',
       'source_capture_record',
+      'source_capture_render_record',
       'source_annotation_record',
     ]),
   },
@@ -172,6 +178,7 @@ export async function providerCapabilities(
   epoch: unknown,
 ) {
   const scope = await ownerScope(root, version, instance, epoch, false);
+  const renderReadiness = await sourceRenderReadiness();
   const capabilities = {
     schema_version: '1.0',
     owner: 'signals-ai',
@@ -181,6 +188,7 @@ export async function providerCapabilities(
       ...['K01', 'K12', 'K13', 'K14', 'K15'].map((id) => ({ id, versions: ['1.0'] })),
       { id: 'library-explore', versions: ['1.0'] },
       { id: 'source-capture', versions: ['1.0'] },
+      { id: 'source-capture-render', versions: ['1.0'] },
       { id: 'private-collection', versions: ['1.0'] },
       { id: 'private-pdf-reader', versions: ['1.0'] },
       { id: 'smart-collections', versions: ['1.0'] },
@@ -266,6 +274,7 @@ export async function providerCapabilities(
           'lead',
           'project',
           'source_capture',
+          'source_capture_render',
           'source_annotation',
         ],
         mutating: false,
@@ -277,6 +286,16 @@ export async function providerCapabilities(
         mutating: true,
         authority_required: true,
       },
+      ...(renderReadiness.available
+        ? [
+            {
+              name: 'source_capture_render',
+              target_kinds: ['entity', 'lead'],
+              mutating: true,
+              authority_required: true,
+            },
+          ]
+        : []),
       {
         name: 'read_source_captures',
         target_kinds: ['source_capture', 'source_annotation'],
@@ -390,6 +409,7 @@ export async function providerCapabilities(
       'lead',
       'project',
       'source_capture',
+      'source_capture_render',
       'source_annotation',
       'private_pdf_reader',
       'private_pdf_annotation',
@@ -422,6 +442,8 @@ export async function providerCapabilities(
         'provider/library?q=<literal Unicode text>&limit=<1..100>&kinds=<comma-separated supported kinds>&project_ref=<encoded RecordRef>&cursor=<opaque>',
       library_explore_route:
         'GET provider/library-explore?q=<literal Unicode text>&kinds=<comma-separated supported kinds>&project_ref=<encoded RecordRef> returns a complete bounded snapshot; POST provider/library-explore/select selects unique exact keys from its unchanged snapshot. Both routes use existing Library owner rules and require bound owner scope; selection also uses the existing session and origin guard.',
+      source_capture_render_route:
+        'When the exact optional Playwright 1.63.0 runtime and local Chromium binary are available, POST source-captures/render explicitly captures one exact current entity/lead as v1 text plus offline screenshot/DOM/ARIA attachments. GET source-captures/render-requests/<uuid> is readback only; GET source-captures/<uuid>/render and /blob reopen exact digest-bound attachments.',
       knowledge_route:
         'provider/knowledge?q=<literal text>&limit=<1..100>; knowledge/record reads an exact selected owner reference; topics supports private named collections. Foreign readers are operator-configured frozen export files.',
       smart_collections_route:
@@ -567,6 +589,14 @@ async function ownedBytes(
     if (!project)
       return fail(404, 'provider_record_not_found', 'Validated project is unavailable.');
     return { bytes: projectedBytes(project), storage: 'project_record' };
+  }
+  if (kind === 'source_capture_render') {
+    try {
+      return await sourceRenderRecordBytes(root, id);
+    } catch (error) {
+      if (error instanceof SourceRenderError) fail(error.status, error.code, error.reason);
+      throw error;
+    }
   }
   if (kind === 'source_capture' || kind === 'source_annotation') {
     if (!uuid.test(id))

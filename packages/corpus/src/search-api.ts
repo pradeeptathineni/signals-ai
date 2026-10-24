@@ -12,6 +12,15 @@ import {
   type RecordRef,
 } from './source-captures.js';
 import {
+  compareSourceRenderAttachments,
+  openSourceRender,
+  readSourceRenderBlob,
+  readSourceRenderRequest,
+  renderSourceCapture,
+  SourceRenderError,
+  type SourceRenderRuntime,
+} from './source-render.js';
+import {
   importPrivateDocument,
   listPrivateDocuments,
   openPrivateDocument,
@@ -199,6 +208,7 @@ export function searchApi(
   check = checkPrimaryMaterial,
   // Saved-context discussion runner; the default is the no-web Codex runner.
   discussionRunner?: (task: string, schema: unknown) => Pick<SearchRunner, 'discover'>,
+  sourceRenderRuntime: SourceRenderRuntime = {},
 ) {
   const token = randomBytes(32).toString('hex');
   const runs = new Map<string, ActiveRun>();
@@ -520,6 +530,70 @@ export function searchApi(
             }
           }
           json(200, await listSourceCaptures(root, sourceRef, resolveSource));
+        } else if (route === 'source-captures/render' && mutation) {
+          if (routeParams.size)
+            throw new SourceRenderError(
+              400,
+              'invalid_source_render_request',
+              'Render creation does not accept query fields.',
+            );
+          json(200, await renderSourceCapture(root, body, resolveSource, sourceRenderRuntime));
+        } else if (route === 'source-captures/render' && !mutation) {
+          throw new SourceRenderError(
+            405,
+            'invalid_source_render_request',
+            'Render creation requires an explicit POST action.',
+          );
+        } else if (/^source-captures\/render-requests\/[a-f0-9-]{36}$/.test(route) && !mutation) {
+          if (routeParams.size)
+            throw new SourceRenderError(
+              400,
+              'invalid_source_render_request',
+              'Render request readback does not accept query fields.',
+            );
+          json(200, await readSourceRenderRequest(root, route.split('/')[2]!));
+        } else if (/^source-captures\/[a-f0-9-]{36}\/render$/.test(route) && !mutation) {
+          if (
+            [...routeParams.keys()].some((key) => key !== 'digest') ||
+            routeParams.getAll('digest').length > 1
+          )
+            throw new SourceRenderError(
+              400,
+              'invalid_source_render_request',
+              'Render reopen accepts only one optional exact manifest digest.',
+            );
+          json(
+            200,
+            await openSourceRender(
+              root,
+              route.split('/')[1]!,
+              routeParams.get('digest') ?? undefined,
+            ),
+          );
+        } else if (/^source-captures\/[a-f0-9-]{36}\/render\/blob$/.test(route) && !mutation) {
+          if (
+            routeParams.size !== 2 ||
+            !routeParams.has('manifest') ||
+            !routeParams.has('artifact')
+          )
+            throw new SourceRenderError(
+              400,
+              'invalid_source_render_request',
+              'Artifact reopen requires one exact manifest and artifact name.',
+            );
+          const blob = await readSourceRenderBlob(
+            root,
+            route.split('/')[1]!,
+            routeParams.get('manifest')!,
+            routeParams.get('artifact')!,
+          );
+          response.writeHead(200, {
+            'Content-Type': blob.mime,
+            'Content-Length': String(blob.bytes.length),
+            'Cache-Control': 'no-store',
+            'X-Content-Type-Options': 'nosniff',
+          });
+          response.end(blob.bytes);
         } else if (route === 'source-captures/selection' && mutation) {
           if (routeParams.size)
             throw new SourceCaptureError(
@@ -540,7 +614,13 @@ export function searchApi(
               'invalid_source_capture_request',
               'Compare requires one left and one right capture UUID.',
             );
-          json(200, await compareSourceCaptures(root, params.get('left')!, params.get('right')!));
+          const left = params.get('left')!;
+          const right = params.get('right')!;
+          const [comparison, renders] = await Promise.all([
+            compareSourceCaptures(root, left, right),
+            compareSourceRenderAttachments(root, left, right),
+          ]);
+          json(200, { ...comparison, renders });
         } else if (/^source-captures\/[a-f0-9-]{36}$/.test(route) && !mutation) {
           if (routeParams.size)
             throw new SourceCaptureError(
@@ -1700,6 +1780,10 @@ export function searchApi(
       } else json(404, { code: 'unknown_operation' });
     } catch (failure) {
       if (failure instanceof SourceCaptureError) {
+        json(failure.status, { code: failure.code, reason: failure.reason });
+        return true;
+      }
+      if (failure instanceof SourceRenderError) {
         json(failure.status, { code: failure.code, reason: failure.reason });
         return true;
       }

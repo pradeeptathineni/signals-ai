@@ -93,5 +93,8 @@
     "repomix": {
       "@modelcontextprotocol/sdk": "1.32.0"
     }
+  },
+  "optionalDependencies": {
+    "playwright": "1.63.0"
   }
 }

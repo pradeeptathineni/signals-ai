@@ -17,6 +17,7 @@ export interface FetchMetadata {
 export interface FetchOptions {
   conditional?: { etag?: string; lastModified?: string };
   allowNotModified?: boolean;
+  includeBytes?: boolean;
 }
 export class FetchHttpError extends Error {
   constructor(
@@ -109,6 +110,7 @@ export async function fetchEvidence(
   identityUnverified?: boolean;
   truncated?: boolean;
   response?: FetchMetadata;
+  contentType?: string;
 }> {
   for (const value of Object.values(options.conditional ?? {}))
     if (value !== undefined && (value.length > 4096 || /[\r\n]/.test(value)))
@@ -197,17 +199,18 @@ export async function fetchEvidence(
         });
         response.on('error', reject);
         response.on('end', () => {
-          const raw = Buffer.concat(chunks).toString('utf8');
+          const received = Buffer.concat(chunks);
+          const contentType = response.headers['content-type'] ?? '';
+          const raw = received.toString('utf8');
           void (async () => {
             try {
-              const contentType = response.headers['content-type'] ?? '';
               if (/application\/pdf/i.test(contentType)) {
-                const bytes = Buffer.concat(chunks);
                 resolve({
                   text: '',
-                  digest: createHash('sha256').update(bytes).digest('hex'),
+                  digest: createHash('sha256').update(received).digest('hex'),
                   uri: url.toString(),
-                  bytes,
+                  bytes: received,
+                  contentType,
                   response: metadata,
                 });
                 return;
@@ -226,6 +229,7 @@ export async function fetchEvidence(
                   ? { truncated: true }
                   : {}),
                 response: metadata,
+                ...(options.includeBytes ? { bytes: received, contentType } : {}),
                 ...(material ? { material } : {}),
                 ...(/application\/json/i.test(response.headers['content-type'] ?? '')
                   ? { json: JSON.parse(raw) as unknown }

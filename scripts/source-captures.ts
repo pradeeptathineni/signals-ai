@@ -16,12 +16,15 @@ import {
   selectSourceCapture,
   type RecordRef,
 } from '../packages/corpus/src/source-captures.js';
+import { openSourceRender, renderSourceCapture } from '../packages/corpus/src/source-render.js';
 
 const args = process.argv.slice(2);
 const usage = `Usage:
   npm run source-captures -- --root PRIVATE_ROOT list [EXACT_SOURCE_REF_JSON]
   npm run source-captures -- --root PRIVATE_ROOT capture EXACT_SOURCE_REF_JSON [--paste-file FILE --observed-at ISO] [--supersedes EXACT_CAPTURE_REF_JSON]
   npm run source-captures -- --root PRIVATE_ROOT open CAPTURE_UUID
+  npm run source-captures -- --root PRIVATE_ROOT render REQUEST_JSON
+  npm run source-captures -- --root PRIVATE_ROOT render-open CAPTURE_UUID [MANIFEST_SHA256]
   npm run source-captures -- --root PRIVATE_ROOT annotate REQUEST_JSON
   npm run source-captures -- --root PRIVATE_ROOT compare LEFT_UUID RIGHT_UUID
   npm run source-captures -- --root PRIVATE_ROOT select REQUEST_JSON
@@ -94,6 +97,13 @@ try {
   } else if (command === 'open') {
     if (args.length !== 1) throw new Error('capture_uuid_required');
     result = await openSourceCapture(root, args[0]);
+  } else if (command === 'render') {
+    if (args.length !== 1) throw new Error('source_render_request_json_required');
+    result = await renderSourceCapture(root, parse(args[0]), resolver);
+  } else if (command === 'render-open') {
+    if (args.length < 1 || args.length > 2)
+      throw new Error('capture_uuid_and_optional_manifest_digest_required');
+    result = await openSourceRender(root, args[0], args[1]);
   } else if (command === 'annotate') {
     if (args.length !== 1) throw new Error('annotation_request_json_required');
     result = await annotateSource(root, parse(args[0]));
