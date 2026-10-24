@@ -194,7 +194,6 @@ export type KnowledgeReferenceRow = {
   metadata: KnowledgeReferenceMetadata;
   qualification: 'User-supplied bibliographic metadata; unverified.';
 };
-export type KnowledgeCoverage = Awaited<ReturnType<typeof searchKnowledge>>['owner_coverage'];
 const owners = ['signals-ai', 'planning-ai', 'principles-ai'];
 const kinds: Record<string, string[]> = {
   'planning-ai': ['decision', 'review', 'reflection'],
