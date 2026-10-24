@@ -784,6 +784,7 @@ export async function signalSearch(
     selectedPrimary?: SelectedPrimaryProducer;
     signal?: AbortSignal;
     progress?: (event: string) => void;
+    activity?: import('./search-runner.js').ResearchObserver;
     provisional?: (leads: ProvisionalLead[]) => void;
     brief?: (brief: { format: 'markdown'; text: string }) => void;
     fetch?: typeof fetchEvidence;
@@ -883,6 +884,7 @@ export async function signalSearch(
         base.brief = { ...brief };
         dependencies.brief?.(base.brief);
       },
+      dependencies.activity,
     );
     receivingBrief = false;
     base.usage.searches = discovery.searches;

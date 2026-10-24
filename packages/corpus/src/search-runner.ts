@@ -1,9 +1,11 @@
 import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import {
   codexReadiness,
   sessionCompleted,
   withCodexWorkspace,
+  type ResearchActivity,
 } from '@pradeeptathineni/research-ai';
 import { digest, boundedTextReceipt } from './search-fetch.js';
 import { directSearch } from './search-direct.js';
@@ -115,6 +117,7 @@ export function decodeNativeOutput(final: string): unknown {
   }
 }
 export type EnrichmentMaterial = { index: number; uri: string; text: string; omissions?: string[] };
+export type ResearchObserver = (event: ResearchActivity, sessionId: string) => void;
 export interface SearchRunner {
   evidenceClass?: 'configured-live' | 'fixture';
   readiness(): Promise<{
@@ -129,6 +132,7 @@ export interface SearchRunner {
     progress: (event: string) => void,
     acquisitionHints?: AcquisitionHints,
     brief?: (brief: { format: 'markdown'; text: string }) => void,
+    activity?: ResearchObserver,
   ): Promise<{ proposal: unknown; usage: unknown; searches: number }>;
   enrich?(
     proposal: Proposal,
@@ -200,7 +204,7 @@ export function codexRunner(
             reason: 'Install/authenticate Codex CLI; offline Corpus remains available.',
           };
     },
-    async discover(request, signal, progress, acquisitionHints, brief) {
+    async discover(request, signal, progress, acquisitionHints, brief, activity) {
       if (operation.naturalAnswer && (!operation.task?.trim() || operation.schema))
         throw new Error('natural_answer_requires_explicit_task_without_schema');
       const acquisitionStarted = Date.now();
@@ -275,6 +279,7 @@ export function codexRunner(
           (operation.task ??
             `${nativePrompt(request, budgets[request.profile ?? 'wide'])}\nAllowed feature/indicator pairs: ${JSON.stringify(indicators)}. Before returning, check every observation.source, match.sources and priority.sources against zero-based indices in your returned sources array; no web result identifiers. Limit all quotes to 25 words per source overall.\n${supplementalPrompt(request)}`);
         let acquisitionMs = 0;
+        const sessionId = randomUUID();
         const session = await workspace.run({
           prompt,
           live: operation.live !== false,
@@ -292,6 +297,11 @@ export function codexRunner(
             (acquisitionHints?.searches ?? 0),
           readNote: recoverOriginalAnswer,
           onCheckpoint: brief,
+          activity: activity
+            ? (event) => {
+                activity(event, sessionId);
+              }
+            : undefined,
           beforeSpawn: () => {
             acquisitionMs = Date.now() - acquisitionStarted;
           },

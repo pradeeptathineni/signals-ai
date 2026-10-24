@@ -59,7 +59,7 @@
   },
   "dependencies": {
     "@mozilla/readability": "0.6.0",
-    "@pradeeptathineni/research-ai": "file:vendor/research-ai/c434781745dae9bcc9ab7f525d73bf78ad0a794c3f36e8e1dd1d209c9d3c1022.tgz",
+    "@pradeeptathineni/research-ai": "file:vendor/research-ai/0f2a5824cf2b156fa6764d1ef1f2696330c38af306df44c2eb370771e1c9b550.tgz",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
     "linkedom": "0.18.13",

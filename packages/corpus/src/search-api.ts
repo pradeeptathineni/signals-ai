@@ -50,6 +50,7 @@ import {
   requestConfigurationDigest,
 } from './search-request-store.js';
 import { processObservation, type ObservedRun } from './process-observation.js';
+import { ResearchActivityBuffer, activityRead, activityLimits } from './research-activity.js';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { Type } from 'typebox';
@@ -171,6 +172,7 @@ const savedEntitySelection = Type.Object(
   { additionalProperties: false },
 );
 interface ActiveRun extends ObservedRun {
+  activity?: ResearchActivityBuffer;
   controller: AbortController;
   requestEpoch?: string;
   events: string[];
@@ -608,7 +610,69 @@ export function searchApi(
             request.headers['x-signals-owner-epoch'],
           ),
         );
-      else if (route === 'provider/processes' && !mutation) {
+      else if (route === 'provider/research-activity' && !mutation) {
+        if (request.headers['x-signals-provider-version'] === undefined)
+          throw new ProviderError(
+            428,
+            'provider_owner_binding_required',
+            'Bind provider version and trusted owner scope.',
+          );
+        await validateProcessObserver(
+          root,
+          request.headers['x-signals-provider-version'],
+          request.headers['x-signals-instance-id'],
+          request.headers['x-signals-owner-epoch'],
+        );
+        const query = activityRead(request.url!, observation.storeEpoch);
+        const durable = await requests.job(query.id);
+        if (!durable?.receipt)
+          throw new ProviderError(
+            404,
+            'research_request_not_found',
+            'No request with this exact owner identity.',
+          );
+        const scope = await requests.scope();
+        const run = runs.get(query.id);
+        if (run && run.requestEpoch !== scope.epoch)
+          throw new ProviderError(
+            409,
+            'research_activity_owner_mismatch',
+            'Request belongs to another owner epoch.',
+          );
+        const retained = run?.activity?.read(
+          query.after,
+          query.limit,
+          query.session,
+          run.settled,
+        ) ?? {
+          session_id: null,
+          availability: 'unavailable',
+          reason: 'buffer_unavailable',
+          events: [],
+          next_cursor: query.after,
+          first_sequence: null,
+          last_sequence: 0,
+          gap: true,
+          dropped: 0,
+          observation_lost: true,
+          last_observed_at: null,
+          fresh: false,
+          session_settled: false,
+          complete: false,
+        };
+        json(200, {
+          schema_version: 'signals-research-activity-v1',
+          instance_id: scope.identity,
+          owner_epoch: scope.epoch,
+          store_epoch: observation.storeEpoch,
+          request_id: query.id,
+          ...retained,
+          as_of: new Date().toISOString(),
+          stale_after_seconds: 30,
+          owner_settled: Boolean(run?.settled),
+          limits: activityLimits,
+        });
+      } else if (route === 'provider/processes' && !mutation) {
         await validateProcessObserver(
           root,
           request.headers['x-signals-provider-version'],
@@ -1102,6 +1166,7 @@ export function searchApi(
           // repeated POST can cross this boundary for an existing identity.
           const started = await requests.dispatch(record.id, epoch);
           const run: ActiveRun = {
+            activity: new ResearchActivityBuffer(),
             controller: new AbortController(),
             requestEpoch: epoch,
             events: ['Starting research…'],
@@ -1114,6 +1179,9 @@ export function searchApi(
           void (async () => {
             try {
               run.result = await search(query, {
+                activity: (event, sessionId) => {
+                  run.activity!.accept(event, sessionId);
+                },
                 root,
                 runner,
                 acquisition,

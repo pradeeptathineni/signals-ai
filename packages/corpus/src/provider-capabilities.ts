@@ -177,6 +177,7 @@ export async function providerCapabilities(
       { id: 'private-pdf-reader', versions: ['1.0'] },
       { id: 'smart-collections', versions: ['1.0'] },
       { id: 'frozen-followup-request', versions: ['1.0', '2.0'] },
+      { id: 'research-activity', versions: ['1.0'] },
     ],
     operations: [
       {
@@ -227,6 +228,12 @@ export async function providerCapabilities(
         target_kinds: ['topic'],
         mutating: true,
         authority_required: true,
+      },
+      {
+        name: 'read_research_activity',
+        target_kinds: ['research_request'],
+        mutating: false,
+        authority_required: false,
       },
       {
         name: 'observe_processes',
@@ -395,6 +402,8 @@ export async function providerCapabilities(
       mutation_authentication: 'session token in x-signals-token; existing origin checks apply',
       record_owner_headers: ['x-signals-instance-id', 'x-signals-owner-epoch'],
       read_route: 'provider/records?ref=<encoded RecordRef>',
+      research_activity_route:
+        'provider/research-activity?request_id=<accepted job id>&after=<sequence>&limit=<1..100>&store_epoch=<observation epoch>&session_id=<session id>',
       library_route:
         'provider/library?q=<literal Unicode text>&limit=<1..100>&kinds=<comma-separated supported kinds>&project_ref=<encoded RecordRef>&cursor=<opaque>',
       knowledge_route:

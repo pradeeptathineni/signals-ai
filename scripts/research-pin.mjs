@@ -2,13 +2,13 @@ import { createHash } from 'node:crypto';
 import { lstat, readFile, realpath } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 
-// Grounded-answer candidate; local and unpublished, pending integrator acceptance.
+// Typed-activity candidate; local and unpublished, pending integrator acceptance.
 export const researchArchive = {
   version: '0.4.0-rc.1',
-  sourceCommit: '165713c10478a5b68d949dadb922de9c08af1a51',
-  sha256: 'c434781745dae9bcc9ab7f525d73bf78ad0a794c3f36e8e1dd1d209c9d3c1022',
+  sourceCommit: '0e2602a6c0330fb343b8d09b91f98f232dfc56c4',
+  sha256: '0f2a5824cf2b156fa6764d1ef1f2696330c38af306df44c2eb370771e1c9b550',
   integrity:
-    'sha512-JdYmcQ1wivWE9pMaQ9FZ6uOZMdgTUBH4KSiskg2YP8JIANOPJHm1z0qZtD+xBC1WlkewIx60mtKnJ2jHTHM9MQ==',
+    'sha512-c/Mr1qNnage1xPodSH1N+QDiMpPcx8XpNKaPrEOZ4y72onj9WCgcxgv82j0Mdi9o6Ts4RjNOKZTR7MA2GPmFBA==',
 };
 export const researchSpec = `file:vendor/research-ai/${researchArchive.sha256}.tgz`;
 
