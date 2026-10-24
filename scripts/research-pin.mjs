@@ -2,13 +2,13 @@ import { createHash } from 'node:crypto';
 import { lstat, readFile, realpath } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 
-// Typed-activity candidate; local and unpublished, pending integrator acceptance.
+// Exact composed Research archive; version alone does not identify these capabilities.
 export const researchArchive = {
   version: '0.4.0-rc.1',
-  sourceCommit: '0e2602a6c0330fb343b8d09b91f98f232dfc56c4',
-  sha256: '0f2a5824cf2b156fa6764d1ef1f2696330c38af306df44c2eb370771e1c9b550',
+  sourceCommit: '0db2b19f0d115ff41eaa4d38fd4d7b0f7c5fd944',
+  sha256: '688dbe678ddff4dfaa67c1ac6a5bd636710559a3c057d257f1de88a87b13455b',
   integrity:
-    'sha512-c/Mr1qNnage1xPodSH1N+QDiMpPcx8XpNKaPrEOZ4y72onj9WCgcxgv82j0Mdi9o6Ts4RjNOKZTR7MA2GPmFBA==',
+    'sha512-p5AnUhODBHI0R9k1OMKjU5EDAZR9eqxgGC9pzwRbRaN9yZC8y9Lr/bnh5tfPa4X0juS3X+ZrWhmiwEv5eFi3Zw==',
 };
 export const researchSpec = `file:vendor/research-ai/${researchArchive.sha256}.tgz`;
 
