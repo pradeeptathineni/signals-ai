@@ -14,6 +14,13 @@ import { importedAnswers } from './research-receipts.js';
 import { loadProjects } from './projects.js';
 import { searchLibrary, type LibraryFinding } from '../../domain/src/library-search.js';
 import { sourceCaptureRecordBytes, SourceCaptureError } from './source-captures.js';
+import { planResearchRetention, type ResearchAnswer } from './research-answer.js';
+import {
+  buildLibraryExploreSnapshot,
+  LibraryExploreError,
+  selectLibraryExploreKeys,
+  type LibraryExploreFilters,
+} from './library-explore.js';
 
 const closed = { additionalProperties: false };
 const text = Type.String({ minLength: 1, maxLength: 200 });
@@ -172,6 +179,7 @@ export async function providerCapabilities(
     product_version: manifest.version,
     contracts: [
       ...['K01', 'K12', 'K13', 'K14', 'K15'].map((id) => ({ id, versions: ['1.0'] })),
+      { id: 'library-explore', versions: ['1.0'] },
       { id: 'source-capture', versions: ['1.0'] },
       { id: 'private-collection', versions: ['1.0'] },
       { id: 'private-pdf-reader', versions: ['1.0'] },
@@ -194,6 +202,12 @@ export async function providerCapabilities(
           'principle',
           'study-session',
         ],
+        mutating: false,
+        authority_required: false,
+      },
+      {
+        name: 'library_explore',
+        target_kinds: [...libraryKinds],
         mutating: false,
         authority_required: false,
       },
@@ -406,6 +420,8 @@ export async function providerCapabilities(
         'provider/research-activity?request_id=<accepted job id>&after=<sequence>&limit=<1..100>&store_epoch=<observation epoch>&session_id=<session id>',
       library_route:
         'provider/library?q=<literal Unicode text>&limit=<1..100>&kinds=<comma-separated supported kinds>&project_ref=<encoded RecordRef>&cursor=<opaque>',
+      library_explore_route:
+        'GET provider/library-explore?q=<literal Unicode text>&kinds=<comma-separated supported kinds>&project_ref=<encoded RecordRef> returns a complete bounded snapshot; POST provider/library-explore/select selects unique exact keys from its unchanged snapshot. Both routes use existing Library owner rules and require bound owner scope; selection also uses the existing session and origin guard.',
       knowledge_route:
         'provider/knowledge?q=<literal text>&limit=<1..100>; knowledge/record reads an exact selected owner reference; topics supports private named collections. Foreign readers are operator-configured frozen export files.',
       smart_collections_route:
@@ -632,47 +648,22 @@ export async function providerRecord(
 }
 
 const libraryKinds = ['answer', 'research_note', 'imported_answer', 'entity', 'lead'] as const;
-async function libraryIdentity(root: string, finding: LibraryFinding) {
-  if (finding.origin.format === 'native')
-    return { kind: 'entity', id: `${finding.origin.destination}:${finding.id}` };
-  if (finding.origin.format === 'lead') return { kind: 'lead', id: finding.id };
-  if (finding.origin.format === 'note') return { kind: 'research_note', id: finding.id };
-  if (finding.origin.format === 'answer') {
-    try {
-      await snapshotBytes(root, finding.id);
-      return { kind: 'answer', id: finding.id };
-    } catch (error) {
-      if (!(error instanceof ProviderError) || error.status !== 404) throw error;
-      return { kind: 'imported_answer', id: finding.id };
-    }
-  }
-  return null; // Legacy bundles do not yet have an exact per-record reader.
-}
-
-/** K12: a bounded, owner-qualified navigation page over current saved Library records. */
-export async function providerLibrary(
-  root: string,
-  url: string,
-  version: unknown,
-  instance: unknown,
-  epoch: unknown,
-) {
-  await ownerScope(root, version, instance, epoch, true);
+function strictLibraryParams(url: string, allowed: string[], message: string) {
   const params = new URL(url, 'http://127.0.0.1').searchParams;
   if (
-    [...params.keys()].some(
-      (key) => !['q', 'limit', 'kinds', 'project_ref', 'cursor'].includes(key),
-    ) ||
+    [...params.keys()].some((key) => !allowed.includes(key)) ||
     [...params.keys()].some((key) => params.getAll(key).length !== 1)
   )
-    fail(400, 'invalid_library_query', 'Unknown or repeated Library filters are not supported.');
+    fail(400, 'invalid_library_query', message);
+  return params;
+}
+
+function libraryFilterValues(params: URLSearchParams) {
   const q = params.get('q') ?? '';
-  const limitText = params.get('limit') ?? '30';
-  if (q.length > 2000 || !/^[1-9]\d*$/.test(limitText) || Number(limitText) > 100)
-    fail(400, 'invalid_library_query', 'Query text must be bounded and limit must be 1..100.');
-  const limit = Number(limitText);
   const kindsText = params.get('kinds');
   const kinds = kindsText === null ? [...libraryKinds] : kindsText.split(',');
+  if (q.length > 2000)
+    fail(400, 'invalid_library_query', 'Query text must be bounded and limit must be 1..100.');
   if (
     !kinds.length ||
     kinds.some((kind) => !libraryKinds.includes(kind as (typeof libraryKinds)[number])) ||
@@ -689,7 +680,13 @@ export async function providerLibrary(
         candidate.kind !== 'project'
       )
         throw new Error();
-      projectFilter = candidate;
+      projectFilter = {
+        owner: candidate.owner,
+        kind: candidate.kind,
+        id: candidate.id,
+        revision: candidate.revision,
+        digest: candidate.digest,
+      };
     } catch {
       fail(
         400,
@@ -697,11 +694,135 @@ export async function providerLibrary(
         'Project filter must be a Signals project RecordRef.',
       );
     }
-    const current = await ownedBytes(root, 'project', projectFilter!.id);
+  }
+  return { q, kinds, projectFilter };
+}
+
+async function importedAnswerSources(root: string, findings: LibraryFinding[]) {
+  const answerFindings = new Map(
+    findings
+      .filter((finding) => finding.origin.format === 'answer')
+      .map((finding) => [finding.origin.recordId, finding]),
+  );
+  if (!answerFindings.size) return new Map<string, Buffer>();
+  let runNames: Set<string>;
+  try {
+    runNames = new Set(
+      (await readdir(resolve(root, '.signals/runs'))).filter((name) =>
+        /^[a-f0-9-]{36}\.json$/.test(name),
+      ),
+    );
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') runNames = new Set();
+    else fail(503, 'provider_record_unavailable', 'Answer owner state could not be listed safely.');
+  }
+  const importedIds = new Set(
+    [...answerFindings.keys()].filter((id) => !runNames.has(`${id}.json`)),
+  );
+  if (!importedIds.size) return new Map<string, Buffer>();
+
+  const directory = resolve(root, '.signals/queries');
+  let names: string[];
+  try {
+    names = await readdir(directory);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT')
+      return fail(
+        409,
+        'provider_record_changed',
+        'Imported answers changed while the Library snapshot was read.',
+      );
+    return fail(
+      503,
+      'provider_record_unavailable',
+      'Imported answer storage could not be listed safely.',
+    );
+  }
+  const sources = new Map<string, Buffer>();
+  for (const name of names) {
+    if (!/^[a-f0-9-]{36}\.json$/.test(name)) continue;
+    const bytes = await fileBytes(resolve(directory, name));
+    let stored: {
+      recordVersion?: number;
+      result?: { runId?: string; input?: ResearchAnswer; answerSha256?: string };
+    };
+    try {
+      stored = JSON.parse(bytes.toString('utf8')) as typeof stored;
+    } catch {
+      continue;
+    }
+    const id = stored.result?.runId;
+    if (!id || !importedIds.has(id)) continue;
+    const finding = answerFindings.get(id)!;
+    try {
+      const input = stored.result!.input!;
+      const planned = planResearchRetention(input);
+      if (
+        stored.recordVersion !== 1 ||
+        stored.result!.answerSha256 !== planned.answerSha256 ||
+        finding.title !== input.query ||
+        finding.answerText !== input.answer ||
+        finding.observedAt !== input.observedAt ||
+        finding.answer?.sha256 !== planned.answerSha256 ||
+        JSON.stringify(finding.answer?.provenance) !== JSON.stringify(input.provenance)
+      )
+        fail(
+          409,
+          'provider_record_changed',
+          'Imported answer changed while the Library snapshot was read.',
+        );
+      if (sources.has(id))
+        fail(503, 'provider_record_unavailable', 'Imported answer identity is ambiguous.');
+      sources.set(id, bytes);
+    } catch (error) {
+      if (error instanceof ProviderError) throw error;
+      fail(503, 'provider_record_unavailable', 'Imported answer snapshot validation failed.');
+    }
+  }
+  if (sources.size !== importedIds.size)
+    fail(
+      409,
+      'provider_record_changed',
+      'Imported answers changed while the Library snapshot was read.',
+    );
+  return sources;
+}
+
+async function libraryIdentity(
+  root: string,
+  finding: LibraryFinding,
+  importedSources: Map<string, Buffer>,
+) {
+  if (finding.origin.format === 'native')
+    return { kind: 'entity', id: `${finding.origin.destination}:${finding.id}` };
+  if (finding.origin.format === 'lead') return { kind: 'lead', id: finding.id };
+  if (finding.origin.format === 'note') return { kind: 'research_note', id: finding.id };
+  if (finding.origin.format === 'answer') {
+    if (importedSources.has(finding.id)) return { kind: 'imported_answer', id: finding.id };
+    try {
+      await snapshotBytes(root, finding.id);
+      return { kind: 'answer', id: finding.id };
+    } catch (error) {
+      if (!(error instanceof ProviderError) || error.status !== 404) throw error;
+      return { kind: 'imported_answer', id: finding.id };
+    }
+  }
+  return null; // Legacy bundles do not yet have an exact per-record reader.
+}
+
+async function currentLibrarySnapshot(
+  root: string,
+  q: string,
+  kinds: string[],
+  projectFilter: OwnerRef | null,
+  batchImportedAnswers = false,
+) {
+  if (projectFilter) {
+    const current = await ownedBytes(root, 'project', projectFilter.id);
     const sha = createHash('sha256').update(current.bytes).digest('hex');
     if (
-      (projectFilter!.digest && projectFilter!.digest !== sha) ||
-      (projectFilter!.revision && projectFilter!.revision !== `sha256:${sha}`)
+      (projectFilter.digest && projectFilter.digest !== sha) ||
+      (projectFilter.revision && projectFilter.revision !== `sha256:${sha}`)
     )
       fail(
         409,
@@ -722,6 +843,13 @@ export async function providerLibrary(
   const hits = searchLibrary(findings, q).filter(
     ({ finding }) => !projectFilter || associations.get(finding.key)?.includes(projectFilter.id),
   );
+  const importedSources =
+    batchImportedAnswers && (kinds.includes('imported_answer') || kinds.includes('answer'))
+      ? await importedAnswerSources(
+          root,
+          hits.map(({ finding }) => finding),
+        )
+      : new Map<string, Buffer>();
   if (!q.trim())
     hits.sort(
       (a, b) =>
@@ -729,16 +857,26 @@ export async function providerLibrary(
         a.finding.key.localeCompare(b.finding.key),
     );
   const observedAt = new Date().toISOString();
-  const summaries = [];
+  const records = [];
   for (const { finding } of hits) {
-    const identity = await libraryIdentity(root, finding);
+    const identity = await libraryIdentity(root, finding, importedSources);
     if (!identity || !kinds.includes(identity.kind)) continue;
     let digestValue: string | null = null;
     let available = true;
     try {
-      digestValue = createHash('sha256')
-        .update((await ownedBytes(root, identity.kind, identity.id)).bytes)
-        .digest('hex');
+      const bytes =
+        identity.kind === 'imported_answer'
+          ? batchImportedAnswers
+            ? importedSources.get(identity.id)
+            : (await ownedBytes(root, identity.kind, identity.id)).bytes
+          : (await ownedBytes(root, identity.kind, identity.id)).bytes;
+      if (!bytes)
+        throw new ProviderError(
+          409,
+          'provider_record_changed',
+          'Imported answer changed during Library snapshot.',
+        );
+      digestValue = createHash('sha256').update(bytes).digest('hex');
     } catch (error) {
       if (!(error instanceof ProviderError) || ![404, 503].includes(error.status)) throw error;
       available = false;
@@ -756,7 +894,7 @@ export async function providerLibrary(
         digest: sha,
       });
     }
-    summaries.push({
+    records.push({
       ref: {
         owner: 'signals-ai',
         ...identity,
@@ -784,10 +922,42 @@ export async function providerLibrary(
         q,
         kinds,
         projectFilter,
-        summaries: summaries.map((summary) => ({ ...summary, observed_at: null })),
+        summaries: records.map((record) => ({ ...record, observed_at: null })),
       }),
     )
     .digest('hex');
+  const owner_coverage = [
+    {
+      owner: 'signals-ai',
+      state: 'connected',
+      observed_at: observedAt,
+      reason: `Saved supported records searched; legacy published bundles lack exact per-record reads and are excluded.${coverage.length ? ` Partial coverage: ${coverage.join(' ')}` : ''}`,
+    },
+  ];
+  return { records, snapshot, owner_coverage };
+}
+
+/** K12: a bounded, owner-qualified navigation page over current saved Library records. */
+export async function providerLibrary(
+  root: string,
+  url: string,
+  version: unknown,
+  instance: unknown,
+  epoch: unknown,
+) {
+  await ownerScope(root, version, instance, epoch, true);
+  const params = strictLibraryParams(
+    url,
+    ['q', 'limit', 'kinds', 'project_ref', 'cursor'],
+    'Unknown or repeated Library filters are not supported.',
+  );
+  const limitText = params.get('limit') ?? '30';
+  if (!/^[1-9]\d*$/.test(limitText) || Number(limitText) > 100)
+    fail(400, 'invalid_library_query', 'Query text must be bounded and limit must be 1..100.');
+  const limit = Number(limitText);
+  const { q, kinds, projectFilter } = libraryFilterValues(params);
+  const current = await currentLibrarySnapshot(root, q, kinds, projectFilter);
+  const { snapshot, records, owner_coverage } = current;
   const cursor = params.get('cursor');
   let offset = 0;
   if (cursor !== null) {
@@ -801,7 +971,7 @@ export async function providerLibrary(
         parsed.snapshot !== snapshot ||
         !Number.isSafeInteger(parsed.offset) ||
         parsed.offset < 1 ||
-        parsed.offset >= summaries.length
+        parsed.offset >= records.length
       )
         throw new Error();
       offset = parsed.offset;
@@ -814,20 +984,142 @@ export async function providerLibrary(
     }
   }
   const next =
-    offset + limit < summaries.length
+    offset + limit < records.length
       ? Buffer.from(JSON.stringify({ snapshot, offset: offset + limit })).toString('base64url')
       : null;
   return {
     schema_version: '1.0',
-    records: summaries.slice(offset, offset + limit),
+    records: records.slice(offset, offset + limit),
     next_cursor: next,
-    owner_coverage: [
-      {
-        owner: 'signals-ai',
-        state: 'connected',
-        observed_at: observedAt,
-        reason: `Saved supported records searched; legacy published bundles lack exact per-record reads and are excluded.${coverage.length ? ` Partial coverage: ${coverage.join(' ')}` : ''}`,
-      },
-    ],
+    owner_coverage,
   };
+}
+
+const libraryExploreFiltersSchema = Type.Object(
+  {
+    q: Type.String({ maxLength: 2000 }),
+    kinds: Type.Array(Type.String({ minLength: 1, maxLength: 40 }), {
+      minItems: 1,
+      maxItems: libraryKinds.length,
+    }),
+    project_ref: Type.Union([recordRef, Type.Null()]),
+  },
+  closed,
+);
+const libraryExploreSelectionSchema = Type.Object(
+  {
+    snapshot: digest,
+    filters: libraryExploreFiltersSchema,
+    keys: Type.Array(digest, { maxItems: 1000 }),
+  },
+  closed,
+);
+
+function libraryExploreFailure(error: unknown): never {
+  if (error instanceof LibraryExploreError)
+    throw new ProviderError(error.status, error.code, error.reason);
+  throw error;
+}
+
+async function currentLibraryExplore(
+  root: string,
+  filters: LibraryExploreFilters,
+  version: unknown,
+  instance: unknown,
+  epoch: unknown,
+) {
+  const current = await currentLibrarySnapshot(
+    root,
+    filters.q,
+    filters.kinds,
+    filters.project_ref,
+    true,
+  );
+  const scope = await ownerScope(root, version, instance, epoch, true);
+  try {
+    return buildLibraryExploreSnapshot({
+      identity: scope.identity,
+      epoch: scope.epoch,
+      filters,
+      records: current.records,
+      owner_coverage: current.owner_coverage,
+      kinds: libraryKinds,
+    });
+  } catch (error) {
+    libraryExploreFailure(error);
+  }
+}
+
+/** Complete, stable owner snapshot over the existing saved-Library query. */
+export async function providerLibraryExplore(
+  root: string,
+  url: string,
+  version: unknown,
+  instance: unknown,
+  epoch: unknown,
+) {
+  await ownerScope(root, version, instance, epoch, true);
+  const params = strictLibraryParams(
+    url,
+    ['q', 'kinds', 'project_ref'],
+    'Unknown or repeated Library exploration filters are not supported.',
+  );
+  const { q, kinds, projectFilter } = libraryFilterValues(params);
+  const filters: LibraryExploreFilters = { q, kinds, project_ref: projectFilter };
+  try {
+    return await currentLibraryExplore(root, filters, version, instance, epoch);
+  } catch (error) {
+    libraryExploreFailure(error);
+  }
+}
+
+/** Select exact keys only when the caller's snapshot still matches current owner metadata. */
+export async function selectProviderLibraryExplore(
+  root: string,
+  input: unknown,
+  version: unknown,
+  instance: unknown,
+  epoch: unknown,
+) {
+  await ownerScope(root, version, instance, epoch, true);
+  if (!Value.Check(libraryExploreSelectionSchema, input))
+    fail(
+      400,
+      'invalid_library_selection',
+      'Selection requires one bounded snapshot, closed filters and unique exact item keys.',
+    );
+  const body = input as {
+    snapshot: string;
+    filters: LibraryExploreFilters;
+    keys: string[];
+  };
+  if (
+    !body.filters.kinds.every((kind) =>
+      libraryKinds.includes(kind as (typeof libraryKinds)[number]),
+    ) ||
+    new Set(body.filters.kinds).size !== body.filters.kinds.length ||
+    new Set(body.keys).size !== body.keys.length
+  )
+    fail(
+      400,
+      'invalid_library_selection',
+      'Selection filters and exact keys must be unique supported values.',
+    );
+  let current;
+  try {
+    current = await currentLibraryExplore(root, body.filters, version, instance, epoch);
+  } catch (error) {
+    libraryExploreFailure(error);
+  }
+  if (current.snapshot !== body.snapshot)
+    fail(
+      409,
+      'library_explore_snapshot_changed',
+      'Library metadata changed since this snapshot. Refresh it and select again; no substitute records were returned.',
+    );
+  try {
+    return selectLibraryExploreKeys(current, body.keys);
+  } catch (error) {
+    libraryExploreFailure(error);
+  }
 }

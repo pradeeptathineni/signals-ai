@@ -47,6 +47,28 @@ Absence means unavailable assessment, not unsupported claims. See
 
 The K12 v1 page contains `records`, `next_cursor` and `owner_coverage`. Each summary contains an owner-qualified exact ref, title, bounded description, kind, associated project refs, visibility, qualification, observation time and `open_capability`. A missing or invalid original appears as `unavailable`, never regenerated content. The cursor binds the filters and current result snapshot; a changed or malformed cursor returns `409` for a fresh first-page search. A corrupt run can reduce answer coverage while valid unrelated stores remain searchable; `owner_coverage.reason` reports that gap. These aggregate summaries include no private answer text or personal notes. Unsaving removes an item from aggregate selection without deleting its original history or its previously issued exact ref.
 
+## Explore a complete Library snapshot
+
+`GET provider/library-explore?q=<Unicode text>&kinds=<comma-separated kinds>&project_ref=<encoded RecordRef>` reuses the same saved-record query, supported kinds, current project binding and owner coverage as `provider/library`. It requires the same trusted owner headers. Empty filters mean the current complete saved Library. Pagination is performed by the owner; consumers receive no cursor and must not combine their own pages. More than 1000 items or 4 MiB is an explicit `413 library_explore_too_large` refusal, never a partial dataset.
+
+The `signals-library-explore-v1` response contains the exact filters, a lowercase SHA256 snapshot, complete `items`, actual `facets`, `owner_coverage` and qualifications. Each item wraps the existing Library summary and an opaque lowercase SHA256 `key` bound to its exact `RecordRef`. `facets.dated_keys` and `undated_keys` partition all item keys; kind facets report owner-supported kinds with actual counts and keys, including zero counts. Chart dates are normalized from retained `updated_at` only when an explicit timezone is present. Unknown, malformed and ambiguous local-time values remain null/undated; the original summary stays unchanged. The summary's per-read `observed_at` and coverage observation timestamps are excluded from the stable snapshot digest. Owner observation is not publication time, freshness, evidence quality or relevance.
+
+Select exact rows with the read-only POST route. It retains the ordinary session token, same-origin and CSRF checks in addition to owner binding:
+
+```json
+{
+  "snapshot": "LOWERCASE_SNAPSHOT_SHA256",
+  "filters": {
+    "q": "literal search text",
+    "kinds": ["answer", "entity"],
+    "project_ref": null
+  },
+  "keys": ["LOWERCASE_ITEM_KEY_SHA256"]
+}
+```
+
+The response uses `signals-library-selection-v1` and returns the snapshot, selected keys and their existing summaries in owner order. Empty selection is valid. Duplicate, malformed or non-member keys return `400`; any changed current snapshot returns `409 library_explore_snapshot_changed` without dropping rows or substituting successors. Reads and selection do not write Library state, launch a model, score evidence or refresh sources. `library_explore` is separately advertised as a nonmutating capability; existing Library routes and admission behavior are unchanged.
+
 Missing owner bindings return `428 provider_owner_binding_required`. Wrong instance/epoch/reference owner returns `409`. Missing snapshots return `404 provider_record_not_found`. Malformed references/extra query fields return `400`. Unsafe, oversized, corrupt or unsupported snapshots return `503 provider_record_unavailable`. Errors provide bounded `code` and actionable `reason` without private paths. Unavailable transport never causes inference fallback or automatic owner rebinding.
 
 ## Existing actions and recovery

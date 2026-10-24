@@ -39,7 +39,9 @@ import {
   exactOwnerRecord,
   providerCapabilities,
   providerLibrary,
+  providerLibraryExplore,
   providerRecord,
+  selectProviderLibraryExplore,
   ProviderError,
   validateProviderHeaders,
   validateProcessObserver,
@@ -610,7 +612,35 @@ export function searchApi(
             request.headers['x-signals-owner-epoch'],
           ),
         );
-      else if (route === 'provider/research-activity' && !mutation) {
+      else if (route === 'provider/library-explore' && !mutation)
+        json(
+          200,
+          await providerLibraryExplore(
+            root,
+            request.url!,
+            request.headers['x-signals-provider-version'],
+            request.headers['x-signals-instance-id'],
+            request.headers['x-signals-owner-epoch'],
+          ),
+        );
+      else if (route === 'provider/library-explore/select' && mutation) {
+        if (new URL(request.url!, 'http://127.0.0.1').searchParams.size)
+          throw new ProviderError(
+            400,
+            'invalid_library_selection',
+            'Selection does not accept query fields.',
+          );
+        json(
+          200,
+          await selectProviderLibraryExplore(
+            root,
+            body,
+            request.headers['x-signals-provider-version'],
+            request.headers['x-signals-instance-id'],
+            request.headers['x-signals-owner-epoch'],
+          ),
+        );
+      } else if (route === 'provider/research-activity' && !mutation) {
         if (request.headers['x-signals-provider-version'] === undefined)
           throw new ProviderError(
             428,
