@@ -127,7 +127,6 @@ type Summary = Static<typeof summarySchema>;
 type Topic = Static<typeof topicSchema>;
 type ExportRecord = Static<typeof exportedRecord>;
 export type KnowledgeSelection = Selection;
-export type KnowledgeCoverage = Awaited<ReturnType<typeof searchKnowledge>>['owner_coverage'];
 const owners = ['signals-ai', 'planning-ai', 'principles-ai'];
 const kinds: Record<string, string[]> = {
   'planning-ai': ['decision', 'review', 'reflection'],
