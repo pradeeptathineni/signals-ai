@@ -7,6 +7,31 @@ import { searchApi } from './search-api.js';
 import { defaultSettings, saveSettings } from './search-settings.js';
 
 const canary = 'PRIVATE_QUERY_THINKING_DIAGNOSTIC_CANARY';
+type ActivityEvent = {
+  sequence: number;
+  kind: string;
+  detail: Record<string, unknown>;
+};
+type ActivityBatch = {
+  events: ActivityEvent[];
+  next_cursor: number;
+  session_id: string | null;
+  store_epoch: string;
+  owner_settled: boolean;
+  session_settled: boolean;
+  complete: boolean;
+  availability: string;
+  observation_lost: boolean;
+  gap: boolean;
+};
+type ActivityUnavailable = { code: string };
+type ActivityResponse = ActivityBatch | ActivityUnavailable;
+
+async function responseJson<T>(response: Response): Promise<T> {
+  const value: unknown = await response.json();
+  return value as T;
+}
+
 const fake = `#!${process.execPath}
 const fs = require('node:fs'), path = require('node:path');
 const home = process.env.HOME, args = process.argv.slice(2);
@@ -76,20 +101,23 @@ it('forwards actual native activity through admitted owner requests without repl
       .trim()
       .split('\n')
       .filter(Boolean).length;
-  const wait = async (read: () => Promise<any>, ready: (value: any) => boolean) => {
+  const wait = async (
+    read: () => Promise<ActivityResponse>,
+    ready: (value: ActivityBatch) => boolean,
+  ): Promise<ActivityBatch> => {
     for (let index = 0; index < 200; index++) {
       const value = await read();
-      if (!value.code && ready(value)) return value;
+      if (!('code' in value) && ready(value)) return value;
       await new Promise((done) => setTimeout(done, 20));
     }
     throw new Error('fixture_activity_timeout');
   };
   try {
-    const { token } = await (await fetch(base + 'session')).json();
+    const { token } = await responseJson<{ token: string }>(await fetch(base + 'session'));
     const writeHeaders = { 'content-type': 'application/json', 'x-signals-token': token };
-    const scope = await (
-      await fetch(base + 'request-scope', { method: 'POST', headers: writeHeaders, body: '{}' })
-    ).json();
+    const scope = await responseJson<{ identity: string; epoch: string }>(
+      await fetch(base + 'request-scope', { method: 'POST', headers: writeHeaders, body: '{}' }),
+    );
     const headers = {
       ...writeHeaders,
       'x-signals-provider-version': '1.0',
@@ -120,37 +148,46 @@ it('forwards actual native activity through admitted owner requests without repl
         headers: selectedHeaders,
         body: JSON.stringify(body(number)),
       });
-    const read = async (id: string, cursor = '') => {
+    const read = async (id: string, cursor = ''): Promise<ActivityResponse> => {
       const response = await fetch(base + 'provider/research-activity?request_id=' + id + cursor, {
         headers,
       });
       if (response.status === 503) {
-        const unavailable = await response.json();
+        const unavailable = await responseJson<ActivityUnavailable>(response);
         expect(['provider_unavailable', 'request_store_unavailable']).toContain(unavailable.code);
         return unavailable; // The existing two-file ledger may be unavailable during publication
       }
       expect(response.status).toBe(200);
       expect(response.headers.get('cache-control')).toBe('no-store');
-      return response.json();
+      return responseJson<ActivityBatch>(response);
     };
-    const capabilities = await (await fetch(base + 'provider/capabilities', { headers })).json();
+    const batch = async (id: string, cursor = ''): Promise<ActivityBatch> => {
+      const value = await read(id, cursor);
+      if ('code' in value) throw new Error(value.code);
+      return value;
+    };
+    const capabilities = await responseJson<{
+      capabilities: { contracts: { id: string; versions: string[] }[] };
+    }>(await fetch(base + 'provider/capabilities', { headers }));
     expect(capabilities.capabilities.contracts).toContainEqual({
       id: 'research-activity',
       versions: ['1.0'],
     });
     const acceptedResponse = await post(1);
     expect(acceptedResponse.status).toBe(202);
-    const accepted = await acceptedResponse.json();
+    const accepted = await responseJson<{ id: string }>(acceptedResponse);
     const live = await wait(
       () => read(accepted.id),
-      (batch) => batch.events.some((row: any) => row.kind === 'checkpoint'),
+      (batch) => batch.events.some((row) => row.kind === 'checkpoint'),
     );
     expect(live.owner_settled).toBe(false);
     expect(live.session_settled).toBe(false);
     expect(live.session_id).toMatch(/^[a-f0-9-]{36}$/);
-    const checkpoint = await (await fetch(base + 'runs/' + accepted.id)).json();
+    const checkpoint = await responseJson<{ brief: { text: string } }>(
+      await fetch(base + 'runs/' + accepted.id),
+    );
     expect(checkpoint.brief.text).toBe('Partial fixture answer.');
-    const duplicate = await (await post(1)).json();
+    const duplicate = await responseJson<{ id: string }>(await post(1));
     expect(duplicate.id).toBe(accepted.id);
     expect(await invokeCount()).toBe(1);
     const endpoint = base + 'provider/research-activity?request_id=' + accepted.id;
@@ -170,13 +207,15 @@ it('forwards actual native activity through admitted owner requests without repl
       ).status,
     ).toBe(409);
     const cursor = `&after=${live.next_cursor}&session_id=${live.session_id}&store_epoch=${live.store_epoch}`;
-    const replay = await read(accepted.id, cursor);
-    expect(replay.events.every((row: any) => row.sequence > live.next_cursor)).toBe(true);
+    const replay = await batch(accepted.id, cursor);
+    expect(replay.events.every((row) => row.sequence > live.next_cursor)).toBe(true);
     const final = await wait(
       () => read(accepted.id),
       (batch) => batch.complete,
     );
-    const result = await (await fetch(base + 'runs/' + accepted.id)).json();
+    const result = await responseJson<{ result: { brief: { text: string } } }>(
+      await fetch(base + 'runs/' + accepted.id),
+    );
     expect(result.result.brief.text).toBe('Final fixture answer.');
     expect(final.events.at(-1)).toMatchObject({
       kind: 'session.settled',
@@ -184,8 +223,8 @@ it('forwards actual native activity through admitted owner requests without repl
     });
     expect(
       final.events.find(
-        (row: any) => row.kind === 'web.completed' && row.detail.urlStatus === 'withheld',
-      ).detail.url,
+        (row) => row.kind === 'web.completed' && row.detail.urlStatus === 'withheld',
+      )?.detail.url,
     ).toBeNull();
     expect(JSON.stringify(final)).not.toContain(canary);
     expect(JSON.stringify(final)).not.toContain('Partial fixture answer');
@@ -208,13 +247,13 @@ it('forwards actual native activity through admitted owner requests without repl
     );
 
     await writeFile(join(home, 'mode'), 'hang');
-    const second = await (await post(2)).json();
+    const second = await responseJson<{ id: string }>(await post(2));
     const concurrent = await wait(
       () => read(second.id),
       (batch) => batch.session_id !== null,
     );
     expect(concurrent.session_id).not.toBe(final.session_id);
-    expect((await read(accepted.id)).session_id).toBe(final.session_id);
+    expect((await batch(accepted.id)).session_id).toBe(final.session_id);
     const cancel = await fetch(base + 'cancel/' + second.id, {
       method: 'POST',
       headers,
@@ -229,24 +268,26 @@ it('forwards actual native activity through admitted owner requests without repl
       kind: 'session.settled',
       detail: { completed: false, cleanup: true },
     });
-    expect(cancelled.events.some((row: any) => row.kind === 'session.stopped')).toBe(true);
-    const cancelledReceipt = await (await fetch(base + 'requests/key-2', { headers })).json();
+    expect(cancelled.events.some((row) => row.kind === 'session.stopped')).toBe(true);
+    const cancelledReceipt = await responseJson<{ receipt: { state: string } }>(
+      await fetch(base + 'requests/key-2', { headers }),
+    );
     expect(cancelledReceipt.receipt.state).toBe('cancelled');
     journey.push({
       stage: 'cancelled',
       request: second.id,
       session: concurrent.session_id,
-      settlement: cancelled.events.at(-1).detail,
+      settlement: cancelled.events.at(-1)?.detail,
     });
 
     await writeFile(join(home, 'mode'), 'complete');
-    const third = await (await post(3)).json();
+    const third = await responseJson<{ id: string }>(await post(3));
     const beforeRestart = await wait(
       () => read(third.id),
       (batch) => batch.session_id !== null,
     );
     handler = searchApi(root);
-    const lost = await read(third.id);
+    const lost = await batch(third.id);
     expect(lost).toMatchObject({
       availability: 'unavailable',
       observation_lost: true,
@@ -264,11 +305,17 @@ it('forwards actual native activity through admitted owner requests without repl
         )
       ).status,
     ).toBe(409);
-    const recovery = await (await fetch(base + 'requests/key-3', { headers })).json();
+    const recovery = await responseJson<{ receipt: { state: string } }>(
+      await fetch(base + 'requests/key-3', { headers }),
+    );
     expect(recovery.receipt.state).toBe('unknown');
-    const renewed = await (await fetch(base + 'session')).json();
+    const renewed = await responseJson<{ token: string }>(await fetch(base + 'session'));
     expect(
-      (await (await post(3, { ...headers, 'x-signals-token': renewed.token })).json()).id,
+      (
+        await responseJson<{ id: string }>(
+          await post(3, { ...headers, 'x-signals-token': renewed.token }),
+        )
+      ).id,
     ).toBe(third.id);
     expect(await invokeCount()).toBe(3);
     journey.push({

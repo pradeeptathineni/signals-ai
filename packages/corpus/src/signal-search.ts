@@ -48,7 +48,7 @@ import { loadSettings } from './search-settings.js';
 import { updateInbox } from './search-inbox.js';
 import { recordSourceResultExposures } from './search-sources.js';
 import { decodeNativeResearch } from '../../domain/src/search-native.js';
-import type { AcquisitionHints } from './search-runner.js';
+import type { AcquisitionHints, ResearchObserver } from './search-runner.js';
 import { dimensionNames, type SignalBasis } from '../../domain/src/search-assessment.js';
 
 function entityUri(uri: string) {
@@ -784,7 +784,7 @@ export async function signalSearch(
     selectedPrimary?: SelectedPrimaryProducer;
     signal?: AbortSignal;
     progress?: (event: string) => void;
-    activity?: import('./search-runner.js').ResearchObserver;
+    activity?: ResearchObserver;
     provisional?: (leads: ProvisionalLead[]) => void;
     brief?: (brief: { format: 'markdown'; text: string }) => void;
     fetch?: typeof fetchEvidence;
